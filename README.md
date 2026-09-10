@@ -94,3 +94,13 @@ learning-futures-insight-hub/
 Use the included synthetic data for shared testing. Do not commit real learner records, credentials, local environments or generated private reports. Local copies and exported reports do not synchronise automatically.
 
 The desktop has been tested on Windows with Python 3.13.5, including 30 automated tests. Other operating systems require their own verification; see the application guide for setup.
+
+## macOS teammates
+
+After installing Python 3.13 from python.org, use a separate Mac environment from inside `ai-learning-evaluation`:
+
+```sh
+PYTHON=python3.13 DEMO_ENV=.venv-mac bash run_demo.sh
+```
+
+For blank-screen troubleshooting and diagnostics, see [TEAM_TESTING.md](ai-learning-evaluation/TEAM_TESTING.md#macos-blank-or-grey-window). The app checks the environment actually used, including when an older virtual environment already exists.

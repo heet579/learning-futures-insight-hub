@@ -1,6 +1,7 @@
 """Presentation interface for the native desktop workflow."""
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, font as tkfont
+from src.ui.runtime import _setup_environment
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tkinter import filedialog
@@ -13,11 +14,12 @@ from src.analytics.themes import extract_themes
 from src.models import AnalysisContext
 
 BG, WHITE, INK, MUTED = '#F3F6FA', '#FFFFFF', '#172B43', '#63758B'
+FONT = 'TkDefaultFont'
 NAVY, TEAL, BORDER = '#11273E', '#087F8C', '#DFE7EF'
 
 
 def label(parent, text='', size=10, color=INK, bold=False, **kwargs):
-    return tk.Label(parent, text=text, font=('Segoe UI', size, 'bold' if bold else 'normal'), bg=parent.cget('bg'), fg=color, anchor='w', **kwargs)
+    return tk.Label(parent, text=text, font=(FONT, size, 'bold' if bold else 'normal'), bg=parent.cget('bg'), fg=color, anchor='w', **kwargs)
 
 
 def panel(parent, **kwargs):
@@ -46,6 +48,8 @@ class DesktopApp:
               ('Data assistant', 'Quick, local answers based on the current analysis scope.')]
 
     def __init__(self, root, auto_demo=True):
+        global FONT
+        FONT = tkfont.nametofont('TkDefaultFont', root=root).actual('family')
         self.root = root
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.context = self.raw = self.report = self.frame = None
@@ -61,7 +65,7 @@ class DesktopApp:
         self.search = tk.StringVar()
         root.title('Learning Futures | Insight Hub')
         root.geometry(f'{min(1360, root.winfo_screenwidth()-70)}x{min(900, root.winfo_screenheight()-80)}+25+25')
-        root.minsize(1080, 740)
+        root.minsize(min(1080, root.winfo_screenwidth()-70), min(740, root.winfo_screenheight()-80))
         root.configure(bg=BG)
         self.styles()
         self.shell()
@@ -99,7 +103,11 @@ class DesktopApp:
     def styles(self):
         s = ttk.Style(self.root)
         s.theme_use('clam')
-        s.configure('.', font=('Segoe UI', 10))
+        s.configure('.', font=(FONT, 10))
+        s.configure('Nav.TButton', background=NAVY, foreground='#C1D0DC', anchor='w', padding=(15, 14), borderwidth=0, relief='flat')
+        s.map('Nav.TButton', background=[('active', '#25485F')], foreground=[('active', WHITE)])
+        s.configure('Selected.Nav.TButton', background='#25485F', foreground=WHITE)
+        s.map('Selected.Nav.TButton', background=[('active', '#25485F')], foreground=[('active', WHITE)])
         s.configure('TButton', background=WHITE, foreground=INK, bordercolor=BORDER, padding=(14, 9), relief='flat')
         s.map('TButton', background=[('active', '#E8F0F5')], foreground=[('disabled', '#93A1B2')])
         s.configure('Primary.TButton', background=TEAL, foreground=WHITE, bordercolor=TEAL)
@@ -110,7 +118,7 @@ class DesktopApp:
         s.configure('TCheckbutton', background=WHITE, foreground=INK, padding=5)
         s.map('TCheckbutton', background=[('active', WHITE)])
         s.configure('Treeview', background=WHITE, fieldbackground=WHITE, foreground=INK, rowheight=34, borderwidth=0)
-        s.configure('Treeview.Heading', background='#EAF0F6', foreground=MUTED, font=('Segoe UI', 9, 'bold'), padding=10, relief='flat')
+        s.configure('Treeview.Heading', background='#EAF0F6', foreground=MUTED, font=(FONT, 9, 'bold'), padding=10, relief='flat')
         s.map('Treeview', background=[('selected', '#D7EFF0')], foreground=[('selected', INK)])
         s.configure('TNotebook', background=WHITE, borderwidth=0)
         s.configure('TNotebook.Tab', padding=(18, 10), background='#EDF2F7')
@@ -131,9 +139,8 @@ class DesktopApp:
         tk.Frame(sidebar, bg='#294056', height=1).pack(fill='x', padx=20, pady=26)
         label(sidebar, 'WORKSPACE', 8, '#90ACBE', True).pack(anchor='w', padx=20, pady=(0, 12))
         for i, name in enumerate(['Overview', 'Survey data', 'Themes & evidence', 'Report studio', 'Data assistant']):
-            b = tk.Button(sidebar, text=f'{i+1:02}   {name}', anchor='w', font=('Segoe UI', 10), relief='flat', bd=0,
-                          padx=15, pady=14, bg=NAVY, fg='#C1D0DC', activebackground='#25485F', activeforeground=WHITE,
-                          cursor='hand2', command=lambda index=i: self.navigate(index))
+            b = ttk.Button(sidebar, text=f'{i+1:02}   {name}', style='Nav.TButton',
+                           cursor='hand2', command=lambda index=i: self.navigate(index))
             b.pack(fill='x', padx=10, pady=3)
             self.nav_buttons.append(b)
         bottom = tk.Frame(sidebar, bg=NAVY)
@@ -178,11 +185,11 @@ class DesktopApp:
 
     def text(self, parent, height=10, editable=False):
         from tkinter.scrolledtext import ScrolledText
-        w = ScrolledText(parent, wrap='word', font=('Segoe UI', 11), bg=WHITE, fg=INK, relief='flat', bd=0,
+        w = ScrolledText(parent, wrap='word', font=(FONT, 11), bg=WHITE, fg=INK, relief='flat', bd=0,
                          padx=10, pady=10, spacing1=3, spacing3=7, insertbackground=TEAL,
                          selectbackground='#C9E8EA', height=height, width=20, undo=editable)
-        w.tag_configure('title', font=('Segoe UI', 19, 'bold'), foreground=INK, spacing1=12, spacing3=12)
-        w.tag_configure('heading', font=('Segoe UI', 12, 'bold'), foreground=TEAL, spacing1=12)
+        w.tag_configure('title', font=(FONT, 19, 'bold'), foreground=INK, spacing1=12, spacing3=12)
+        w.tag_configure('heading', font=(FONT, 12, 'bold'), foreground=TEAL, spacing1=12)
         w.configure(state='normal' if editable else 'disabled')
         return w
 
@@ -221,8 +228,8 @@ class DesktopApp:
         label(side, 'At a glance', 14, INK, True).pack(anchor='w')
         self.highlights = self.text(side, height=8)
         self.highlights.pack(fill='both', expand=True, pady=(10, 6))
-        self.highlights.configure(font=('Segoe UI', 10), spacing3=3)
-        self.highlights.tag_configure('heading', font=('Segoe UI', 11, 'bold'), spacing1=6)
+        self.highlights.configure(font=(FONT, 10), spacing3=3)
+        self.highlights.tag_configure('heading', font=(FONT, 11, 'bold'), spacing1=6)
         self.show(self.highlights, 'Load a dataset to see strengths and opportunities.')
         self.action(side, 'Explore evidence →', lambda: self.navigate(2)).pack(fill='x')
         quality = panel(p, padx=16, pady=12)
@@ -350,12 +357,15 @@ class DesktopApp:
         self.show(self.answer, 'Choose a suggestion or ask about ratings, participation, themes, recommendations or limitations.')
 
     def navigate(self, index):
+        for page in self.pages:
+            page.grid_remove()
+        self.pages[index].grid()
         self.pages[index].tkraise()
         title, subtitle = self.TITLES[index]
         self.page_title.configure(text=title)
         self.page_subtitle.configure(text=subtitle)
         for i, b in enumerate(self.nav_buttons):
-            b.configure(bg='#25485F' if i == index else NAVY, fg=WHITE if i == index else '#C1D0DC')
+            b.configure(style='Selected.Nav.TButton' if i == index else 'Nav.TButton')
         if index == 0:
             self.root.after_idle(self.draw_chart)
 
@@ -388,20 +398,20 @@ class DesktopApp:
         if w < 50:
             return
         if not self.context:
-            c.create_text(w/2, h/2, text='Your rating chart will appear here', fill=MUTED, font=('Segoe UI', 11))
+            c.create_text(w/2, h/2, text='Your rating chart will appear here', fill=MUTED, font=(FONT, 11))
             return
         ratings = list(self.context.metrics['ratings'].values())
         step = max(40, min(66, (h-28)/len(ratings)))
         for i, rating in enumerate(ratings):
             y = 8 + i*step
-            c.create_text(2, y, anchor='nw', text=rating['label'], fill=INK, font=('Segoe UI', 10))
+            c.create_text(2, y, anchor='nw', text=rating['label'], fill=INK, font=(FONT, 10))
             mean = rating['mean']
-            c.create_text(w-4, y, anchor='ne', text=f'{mean:.2f} / 5' if mean is not None else 'N/A', fill=TEAL, font=('Segoe UI', 10, 'bold'))
+            c.create_text(w-4, y, anchor='ne', text=f'{mean:.2f} / 5' if mean is not None else 'N/A', fill=TEAL, font=(FONT, 10, 'bold'))
             c.create_rectangle(2, y+25, w-4, y+34, fill='#EAF0F5', width=0)
             if mean is not None:
                 c.create_rectangle(2, y+25, 2+(w-6)*mean/5, y+34, fill=TEAL, width=0)
-        c.create_text(2, h-6, anchor='sw', text='0', fill=MUTED, font=('Segoe UI', 8))
-        c.create_text(w-4, h-6, anchor='se', text='5', fill=MUTED, font=('Segoe UI', 8))
+        c.create_text(2, h-6, anchor='sw', text='0', fill=MUTED, font=(FONT, 8))
+        c.create_text(w-4, h-6, anchor='se', text='5', fill=MUTED, font=(FONT, 8))
 
     def edited(self, event=None):
         if self.editor.edit_modified():
@@ -623,25 +633,6 @@ class DesktopApp:
         self.root.destroy()
 
 
-def _setup_environment():
-    import os
-    import sys
-    if sys.platform == "win32":
-        prefix = Path(sys.prefix)
-        tcl_candidate = prefix / "tcl" / "tcl8.6"
-        tk_candidate = prefix / "tcl" / "tk8.6"
-        if not tcl_candidate.exists():
-            tcl_candidate = prefix / "Library" / "lib" / "tcl8.6"
-            tk_candidate = prefix / "Library" / "lib" / "tk8.6"
-        if tcl_candidate.exists() and "TCL_LIBRARY" not in os.environ:
-            os.environ["TCL_LIBRARY"] = str(tcl_candidate)
-        if tk_candidate.exists() and "TK_LIBRARY" not in os.environ:
-            os.environ["TK_LIBRARY"] = str(tk_candidate)
-
-
 def main():
-    _setup_environment()
-    root = tk.Tk()
-    DesktopApp(root)
-    root.mainloop()
-
+    from src.ui.runtime import main as start
+    return start()

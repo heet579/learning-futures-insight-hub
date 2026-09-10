@@ -31,3 +31,7 @@ dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Alternate Python environments and local test artifacts
+.venv-*/
+.pytest_temp/

@@ -154,3 +154,11 @@ def test_theme_evidence_and_assistant(desktop):
 def test_invalid_scope_is_rejected():
     with pytest.raises(ValueError, match='No responses'):
         analyse(build_synthetic_responses(500, 208), 'sample.csv', 'Missing course')
+
+def test_only_selected_page_is_mapped(desktop):
+    for index in range(len(desktop.pages)):
+        desktop.navigate(index)
+        desktop.root.update_idletasks()
+        for i, page in enumerate(desktop.pages):
+            assert page.winfo_manager() == ('grid' if i == index else '')
+        assert desktop.nav_buttons[index].cget('style') == 'Selected.Nav.TButton'

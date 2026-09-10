@@ -71,3 +71,28 @@ After setup on Windows:
 ```
 
 Current local verification: 30 tests passed on Windows. This is not a guarantee that every teammate's environment is identical.
+
+## macOS blank or grey window
+
+A partially blank window can be caused by an old or incompatible Tcl/Tk runtime. The updated app rejects macOS Tk versions below 8.6.11, uses native font selection and portable navigation styling, and reports startup exceptions. This does not prove that every blank window has the same cause.
+
+1. Install Python 3.13 from https://www.python.org/downloads/macos/ using its bundled Tcl/Tk support.
+2. Pull the latest project changes and open Terminal in `ai-learning-evaluation`.
+3. Run the following to create a fresh environment while keeping the previous one:
+
+```sh
+PYTHON=python3.13 DEMO_ENV=.venv-mac bash run_demo.sh
+```
+
+Use the same command for later launches. If Python was installed somewhere else, set PYTHON to its full executable path. The setup checks the selected environment before installing application dependencies.
+
+If the screen is still blank, send the output of:
+
+```sh
+.venv-mac/bin/python app.py --diagnose
+.venv-mac/bin/python -m tkinter
+```
+
+Also include the macOS version and whether the small Tk test window renders. `--diagnose` prints only runtime information and executable paths; it does not read survey data. Review the path before sharing it publicly.
+
+Python's official Tcl/Tk guidance: https://www.python.org/download/mac/tcltk/
