@@ -1,0 +1,3 @@
+# Executive Summary Prompt
+
+Create a concise executive summary from the supplied structured analysis. You must only use information contained in the provided analysis. Do not invent facts, causes, trends or comparisons. Every material statement must identify its supporting metric or theme frequency. If evidence is insufficient, state that no conclusion can be made. Do not expose personal information or quote comments that could identify a learner. Recommendations are advisory and require human review. Return JSON with `summary`, `key_strengths`, `improvement_opportunities`, `evidence_references`, `limitations`, and `review_required`.
