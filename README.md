@@ -4,7 +4,19 @@ A Python desktop application for analysing learner feedback, exploring survey in
 
 The application uses Tkinter and runs in its own desktop window. It includes synthetic demonstration data and works locally without API keys or external AI services.
 
-## Get the project on your PC
+## Docker quick start (recommended for teammates)
+
+Install and start Docker Desktop, then run from your cloned repository root:
+
+```sh
+docker compose up --build -d --wait
+```
+
+Open [the local desktop demo](http://localhost:6080/vnc.html?autoconnect=true&resize=scale). Python and Tk run inside the container, so teammates do not need a host Python installation. See [DOCKER.md](DOCKER.md) for cloning, file exchange through `shared`, updates, optional Azure AI and troubleshooting.
+
+**New: Feedback & revisions** in Report studio lets you enter feedback, preview a section revision, apply it and undo it. Offline edits cover shortening, bullet formatting and plain-language substitutions. Free-form AI revisions require the optional Azure configuration and explicit external-processing consent.
+
+## Get the project on your PC (native Python alternative)
 
 Install Git and Python 3.13 with Tkinter support. Open Command Prompt in the folder where you want to keep the project, then run:
 

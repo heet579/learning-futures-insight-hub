@@ -1,5 +1,6 @@
 """Desktop workflow regressions; no external services or interactive dialogs."""
 import time
+import os
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -15,7 +16,7 @@ def desktop(monkeypatch):
     try:
         root = tk.Tk()
     except tk.TclError as exc:
-        if sys.platform == 'win32':
+        if sys.platform == 'win32' or os.getenv('REQUIRE_DESKTOP_TESTS') == '1':
             raise
         pytest.skip(f'Tk display unavailable: {exc}')
     root.withdraw()
@@ -162,3 +163,44 @@ def test_only_selected_page_is_mapped(desktop):
         for i, page in enumerate(desktop.pages):
             assert page.winfo_manager() == ('grid' if i == index else '')
         assert desktop.nav_buttons[index].cget('style') == 'Selected.Nav.TButton'
+
+def test_feedback_preview_apply_undo_and_reset(desktop, monkeypatch):
+    load_sample(desktop)
+    desktop.generate()
+    desktop.root.update()
+    original = desktop.editor.get('1.0', 'end-1c')
+    desktop.feedback.insert('1.0', 'Make it shorter')
+    desktop.root.update()
+    desktop.confirmed.set(True)
+    desktop.propose_feedback()
+    wait_for_load(desktop)
+    assert desktop.pending_revision is not None
+    assert desktop.editor.get('1.0', 'end-1c') == original
+    desktop.apply_feedback()
+    assert desktop.editor.get('1.0', 'end-1c') != original
+    assert not desktop.confirmed.get()
+    assert len(desktop.revision_history) == 1
+    monkeypatch.setattr('tkinter.messagebox.askyesno', lambda *a, **k: True)
+    desktop.undo_revision()
+    assert desktop.editor.get('1.0', 'end-1c') == original
+    assert not desktop.revision_history
+    desktop.dirty = False
+    desktop.load_demo()
+    wait_for_load(desktop)
+    assert desktop.pending_revision is None
+    assert not desktop.revision_history
+    assert desktop.feedback.get('1.0', 'end-1c') == ''
+
+
+def test_manual_edit_invalidates_feedback_preview(desktop):
+    load_sample(desktop)
+    desktop.generate()
+    desktop.feedback.insert('1.0', 'Use bullet points')
+    desktop.root.update()
+    desktop.propose_feedback()
+    wait_for_load(desktop)
+    assert desktop.pending_revision
+    desktop.editor.insert('end', '\nManual edit')
+    desktop.root.update()
+    assert desktop.pending_revision is None
+    assert desktop.apply_button.instate(['disabled'])

@@ -1,0 +1,30 @@
+name: Docker demo checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  docker-demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate Compose
+        run: docker compose config --quiet
+      - name: Build image
+        run: docker compose build
+      - name: Start desktop and wait for health
+        run: docker compose up -d --wait --wait-timeout 120
+      - name: Check browser endpoint
+        run: curl --fail http://localhost:6080/vnc.html > /dev/null
+      - name: Run application and desktop tests inside the container
+        run: docker compose exec -T -e REQUIRE_DESKTOP_TESTS=1 insight-hub python -m pytest -q -p no:cacheprovider
+      - name: Collect service logs
+        if: always()
+        run: docker compose logs --no-color
+      - name: Stop test container
+        if: always()
+        run: docker compose down

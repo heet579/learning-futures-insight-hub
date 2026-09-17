@@ -1,0 +1,18 @@
+services:
+  insight-hub:
+    build: .
+    image: learning-futures-insight-hub:demo
+    ports:
+      - "127.0.0.1:6080:6080"
+    volumes:
+      - ./shared:/workspace
+    environment:
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
+    shm_size: 256mb
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

@@ -1,5 +1,7 @@
 """Presentation interface for the native desktop workflow."""
+import os
 import tkinter as tk
+from src.ui.revisions import RevisionUI
 from tkinter import ttk, messagebox, font as tkfont
 from src.ui.runtime import _setup_environment
 from concurrent.futures import ThreadPoolExecutor
@@ -40,7 +42,7 @@ def analyse(frame, name, scope):
     return masked, context, count, courses
 
 
-class DesktopApp:
+class DesktopApp(RevisionUI):
     TITLES = [('Evaluation overview', 'A clear view of learner experience, grounded in your survey data.'),
               ('Survey workspace', 'Search masked responses and inspect the source behind every insight.'),
               ('Themes & evidence', 'Explore recurring feedback and the comments supporting it.'),
@@ -73,6 +75,7 @@ class DesktopApp:
         self.build_data()
         self.build_themes()
         self.build_report()
+        self.build_revision_ui()
         self.build_assistant()
         self.navigate(0)
         self.sync_controls()
@@ -91,7 +94,7 @@ class DesktopApp:
     def open_file(self):
         if self.busy:
             return
-        path = filedialog.askopenfilename(parent=self.root, title='Open evaluation data', filetypes=[('CSV files', '*.csv')])
+        path = filedialog.askopenfilename(parent=self.root, title='Open evaluation data', initialdir=os.getenv('DEMO_SHARED_DIR', str(DATA_DIR)), filetypes=[('CSV files', '*.csv')])
         if path:
             self.load(Path(path), Path(path).name)
 
@@ -390,6 +393,7 @@ class DesktopApp:
         self.audience.configure(state='disabled' if self.busy else 'readonly')
         self.editor.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.review_check.configure(state='normal' if self.report and not self.busy else 'disabled')
+        self.sync_revision_controls()
 
     def draw_chart(self):
         c = self.chart
@@ -415,6 +419,7 @@ class DesktopApp:
 
     def edited(self, event=None):
         if self.editor.edit_modified():
+            self.invalidate_revision()
             self.confirmed.set(False)
             self.dirty = self.report is not None
             self.report_status.set('Draft • requires review' if self.report else 'No draft yet')
@@ -477,6 +482,7 @@ class DesktopApp:
         self.scope.configure(values=['All courses (aggregate)', *courses])
         self.scope.set(self.context.course_name)
         self.report, self.dirty = None, False
+        self.reset_revisions()
         self.editor.configure(state='normal')
         self.editor.delete('1.0', 'end')
         self.editor.edit_reset()
@@ -560,6 +566,7 @@ class DesktopApp:
         if not self.context or self.busy or (self.report and not self.may_replace()):
             return
         self.report = generate_report(self.context, self.audience.get(), LocalDemoProvider())
+        self.reset_revisions()
         self.editor.configure(state='normal')
         self.editor.delete('1.0', 'end')
         self.editor.insert('1.0', self.report.content)
@@ -588,7 +595,7 @@ class DesktopApp:
         if not content:
             messagebox.showerror('Empty report', 'Add report content before exporting.', parent=self.root)
             return False
-        path = filedialog.asksaveasfilename(parent=self.root, title='Export reviewed report' if reviewed else 'Save draft report',
+        path = filedialog.asksaveasfilename(parent=self.root, initialdir=os.getenv('DEMO_SHARED_DIR', str(Path.cwd())), title='Export reviewed report' if reviewed else 'Save draft report',
             initialfile=f'learning_evaluation_{self.report.audience}_{"reviewed" if reviewed else "draft"}.docx',
             defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('Markdown', '*.md')])
         if not path:
@@ -626,7 +633,7 @@ class DesktopApp:
     def close(self):
         if not self.may_replace():
             return
-        for pending in (getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), self.search_id):
+        for pending in (getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), self.search_id, self.revision_poll):
             if pending:
                 self.root.after_cancel(pending)
         self.pool.shutdown(wait=False, cancel_futures=True)

@@ -35,3 +35,7 @@ Thumbs.db
 # Alternate Python environments and local test artifacts
 .venv-*/
 .pytest_temp/
+
+# Teammate files shared with the Docker desktop
+/shared/*
+!/shared/README.txt

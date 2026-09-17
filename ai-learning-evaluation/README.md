@@ -55,3 +55,9 @@ Run `python -m pytest -q`. Desktop regression tests cover loading, navigation, s
 For a grey or partially blank screen, use the [Mac recovery steps](TEAM_TESTING.md#macos-blank-or-grey-window). The app now checks the actual Tk runtime before drawing the interface, uses the system font, and displays only the selected page. Startup and callback errors are reported instead of silently leaving an incomplete window.
 
 Run `python app.py --diagnose` to print the Python, Tcl/Tk and window-system versions without loading data. This release's compatibility changes were verified with Windows tests; the affected Mac must still be retested.
+
+## Feedback and Docker distribution
+
+Use the **Feedback & revisions** tab after generating a report. Preview before applying; every applied revision clears approval and can be undone. Offline edits are deterministic. Choose Azure AI for free-form instructions only after configuring the optional provider and approving external processing.
+
+The [Docker guide](../DOCKER.md) explains how teammates can clone the repository and run the same Python desktop in a local browser using Docker Compose, without host Python/Tk setup.

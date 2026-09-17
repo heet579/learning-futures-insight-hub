@@ -15,6 +15,8 @@ class AzureAIProvider(AIProvider):
             raise ValueError("Azure provider is not configured: " + ", ".join(missing))
         self.deployment = os.environ["AZURE_OPENAI_DEPLOYMENT"]
         self.client = AzureOpenAI(
+            timeout=45,
+            max_retries=1,
             azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
             api_key=os.environ["AZURE_OPENAI_API_KEY"],
             api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),

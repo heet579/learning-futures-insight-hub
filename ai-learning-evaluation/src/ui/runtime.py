@@ -59,6 +59,8 @@ def launch(diagnose=False):
                 f'{kind.__name__}: {value}\n\nPlease send the terminal error and '
                 'the output of python app.py --diagnose to the team.', parent=root)
         root.report_callback_exception = callback_error
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).resolve().parents[2] / '.env', override=False)
         from src.ui.desktop import DesktopApp
         app = DesktopApp(root)
         root.update_idletasks()
