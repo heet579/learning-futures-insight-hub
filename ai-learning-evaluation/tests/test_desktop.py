@@ -20,7 +20,7 @@ def desktop(monkeypatch):
             raise
         pytest.skip(f'Tk display unavailable: {exc}')
     root.withdraw()
-    app = DesktopApp(root, auto_demo=False)
+    app = DesktopApp(root, auto_load=False)
     errors = []
     root.report_callback_exception = lambda *args: errors.append(args)
     monkeypatch.setattr('tkinter.messagebox.showerror', lambda *a, **k: None)
@@ -49,7 +49,7 @@ def load_sample(app, count=500):
 
 def test_startup_demo_and_navigation(desktop):
     assert desktop.generate_button.instate(['disabled'])
-    desktop.load_demo()
+    desktop.load_startup_data()
     wait_for_load(desktop)
     assert desktop.context.metrics['response_count'] > 0
     assert desktop.generate_button.instate(['!disabled'])
@@ -107,6 +107,8 @@ def test_report_preview_edit_and_review_export(desktop, monkeypatch, tmp_path):
     load_sample(desktop)
     desktop.generate()
     desktop.root.update()
+    assert desktop.report_tabs.index('current') == 0
+    assert str(desktop.editor.cget('state')) == 'normal'
     assert 'Executive Summary' in desktop.preview.get('1.0', 'end')
     assert '**' not in desktop.preview.get('1.0', 'end')
     desktop.confirmed.set(True)
@@ -185,11 +187,42 @@ def test_feedback_preview_apply_undo_and_reset(desktop, monkeypatch):
     assert desktop.editor.get('1.0', 'end-1c') == original
     assert not desktop.revision_history
     desktop.dirty = False
-    desktop.load_demo()
+    desktop.load_startup_data()
     wait_for_load(desktop)
     assert desktop.pending_revision is None
     assert not desktop.revision_history
     assert desktop.feedback.get('1.0', 'end-1c') == ''
+
+
+def test_human_or_copilot_replacement_is_previewed_before_apply(desktop):
+    load_sample(desktop)
+    desktop.generate()
+    original = desktop.editor.get('1.0', 'end-1c')
+    desktop.revision_provider.set('Human / Copilot replacement')
+    desktop.feedback.insert('1.0', 'Make the recommendation specific')
+    desktop.replacement.insert('1.0', '- Run a practical exercise and review learner feedback after delivery.')
+    desktop.propose_feedback()
+    wait_for_load(desktop)
+    assert desktop.editor.get('1.0', 'end-1c') == original
+    assert 'Run a practical exercise' in desktop.revision_preview.get('1.0', 'end')
+    desktop.apply_feedback()
+    assert 'Run a practical exercise' in desktop.editor.get('1.0', 'end')
+    assert desktop.report_tabs.index('current') == 0
+    assert not desktop.confirmed.get()
+
+
+def test_copilot_workflow_opens_browser_and_copies_masked_prompt(desktop, monkeypatch):
+    load_sample(desktop)
+    desktop.generate()
+    desktop.feedback.insert('1.0', 'Make this clearer for person@example.com')
+    opened = []
+    monkeypatch.setattr('webbrowser.open', lambda url, new=0: opened.append(url) or True)
+    desktop.open_copilot()
+    prompt = desktop.root.clipboard_get()
+    assert opened == ['https://copilot.microsoft.com/']
+    assert '[EMAIL REMOVED]' in prompt
+    assert 'person@example.com' not in prompt
+    assert desktop.revision_provider.get() == 'Human / Copilot replacement'
 
 
 def test_manual_edit_invalidates_feedback_preview(desktop):
@@ -204,3 +237,13 @@ def test_manual_edit_invalidates_feedback_preview(desktop):
     desktop.root.update()
     assert desktop.pending_revision is None
     assert desktop.apply_button.instate(['disabled'])
+
+
+def test_configured_client_data_at_startup(desktop, monkeypatch, tmp_path):
+    client_csv = tmp_path / 'client.csv'
+    build_synthetic_responses(30, 208).to_csv(client_csv, index=False)
+    monkeypatch.setenv('EVALUATION_DATA_PATH', str(client_csv))
+    desktop.load_startup_data()
+    wait_for_load(desktop)
+    assert desktop.source == 'client.csv'
+    assert len(desktop.frame) == 30

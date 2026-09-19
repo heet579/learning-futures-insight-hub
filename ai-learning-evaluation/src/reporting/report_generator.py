@@ -37,8 +37,8 @@ def generate_report(context: AnalysisContext, audience: str, provider: AIProvide
         "This client-facing view focuses on participant outcomes, relevance and value delivered; internal coaching detail is excluded."
     )
     disclosure = (
-        "Generated in **Local Demonstration Mode** using calculated metrics, explainable theme rules/NMF and deterministic templates. No data was sent to an external AI service. This is not Microsoft Copilot."
-        if provider.name == "Local Demonstration Mode" else
+        "Generated in **Local Analysis** using calculated metrics, explainable theme rules/NMF and deterministic templates. No data was sent to an external AI service. This is not Microsoft Copilot."
+        if provider.name == "Local Analysis" else
         "Generated using the explicitly selected **Approved External Provider** from minimised calculated metrics and theme metadata. Masked source comments are not included in the provider payload. This Azure OpenAI adapter is not Microsoft Copilot or Copilot Studio. Human verification remains mandatory."
     )
     content = f"""# {title}

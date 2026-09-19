@@ -4,8 +4,8 @@ from src.models import AnalysisContext
 def _rating(context: AnalysisContext, key: str) -> float | None:
     return context.metrics.get("ratings", {}).get(key, {}).get("mean")
 
-class LocalDemoProvider(AIProvider):
-    name = "Local Demonstration Mode"
+class LocalAnalysisProvider(AIProvider):
+    name = "Local Analysis"
 
     def executive_summary(self, context: AnalysisContext, audience: str) -> str:
         count = context.metrics["response_count"]

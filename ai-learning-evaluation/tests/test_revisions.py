@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 import json
 import pytest
-from src.ai.local_provider import LocalDemoProvider
+from src.ai.local_provider import LocalAnalysisProvider
 from src.reporting.report_generator import generate_report
 from src.reporting.revisions import propose_revision, apply_proposal, section_text
 from src.ui.desktop import analyse
@@ -10,7 +10,7 @@ from src.ui.desktop import analyse
 @pytest.fixture
 def report_context(golden_df):
     _, context, _, _ = analyse(golden_df, 'demo.csv', 'All courses (aggregate)')
-    report = generate_report(context, 'facilitator', LocalDemoProvider())
+    report = generate_report(context, 'facilitator', LocalAnalysisProvider())
     return report, context
 
 
@@ -73,3 +73,25 @@ def test_reject_invalid_provider_output(report_context, body):
     report, context = report_context
     with pytest.raises(ValueError):
         propose_revision(report, report.content, context, 'Executive Summary', 'Rewrite', 'Azure AI', True, fake_client(body, {}))
+
+
+def test_human_copilot_revision_requires_review_and_preserves_metrics(report_context):
+    report, context = report_context
+    proposal = propose_revision(report, report.content, context, 'Recommendations',
+        'Add a practical exercise', 'Human / Copilot replacement', replacement='- Add a practical exercise and review it after the next delivery.')
+    updated = apply_proposal(report, report.content, proposal)
+    assert 'Add a practical exercise' in section_text(updated.content, 'Recommendations')
+    assert updated.content.split('## Key Metrics')[1].split('## What Worked Well')[0] == report.content.split('## Key Metrics')[1].split('## What Worked Well')[0]
+    assert updated.status == 'DRAFT — REQUIRES HUMAN REVIEW'
+    assert 'did not send data to Copilot' in updated.content
+    assert 'No data was sent to an external AI service' not in updated.content
+
+
+def test_local_feedback_supports_replace_and_add(report_context):
+    report, context = report_context
+    original = section_text(report.content, 'Recommendations')
+    word = original.split()[1]
+    proposal = propose_revision(report, report.content, context, 'Recommendations', f'Replace {word} with improved')
+    assert 'improved' in section_text(proposal.revised, 'Recommendations')
+    proposal = propose_revision(report, report.content, context, 'Recommendations', 'Add: - Confirm the action owner.')
+    assert 'Confirm the action owner' in section_text(proposal.revised, 'Recommendations')

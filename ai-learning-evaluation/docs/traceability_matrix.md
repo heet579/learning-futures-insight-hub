@@ -9,10 +9,10 @@
 | Themes with evidence | theme rules + TF-IDF/NMF + expanders | `test_themes.py` + visual QA |
 | Grounded reports | `AnalysisContext` and provider interface | reporting tests |
 | Facilitator/client difference | audience templates and disclosure | reporting tests |
-| Human review | editable draft, named role, confirmation, approval | reporting tests + UI walkthrough |
+| Human review | visible editable draft, feedback preview/apply/undo, named reviewer, confirmation, approval | revision/reporting tests + UI walkthrough |
 | Markdown/DOCX export | `src/reporting/exporter.py` | export signature test |
 | Auditability | metadata-only JSONL events | `test_audit.py` |
-| Local/no-credential mode | `LocalDemoProvider` default | end-to-end smoke test |
+| Local/no-credential mode | `LocalAnalysisProvider` default | end-to-end smoke test |
+| Copilot structured prompting | privacy-minimised copied prompt, approved external Copilot session, pasted replacement with preview | revision tests + UI walkthrough |
 | Optional approved provider | explicit UI consent + minimised Azure payload | configuration/manual integration test required |
 | Presentation/handover | `docs/` pack and sample reports | team rehearsal checklist |
-

@@ -14,9 +14,9 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Windows setup launcher: `./run_demo.ps1`. After dependencies are installed in your default Python, double-click `launch_demo.pyw` to open without a console. macOS/Linux: `bash run_demo.sh` (Linux may require `python3-tk`).
+Windows setup launcher: `./run_app.ps1`. After dependencies are installed in your default Python, double-click `launch_app.pyw` to open without a console. macOS/Linux: run `python app.py` after installing requirements (Linux may require `python3-tk`).
 
-## Demo walkthrough (about 3 minutes)
+## Application workflow
 
 1. Launch the app. Included synthetic data loads automatically. Show the response count, satisfaction, recommendation and completeness cards, then the rating chart.
 2. Change the course scope and show how the dashboard updates.
@@ -26,7 +26,7 @@ Windows setup launcher: `./run_demo.ps1`. After dependencies are installed in yo
 6. Enter a reviewer name, confirm the checks, and use **Approve & export** to save Word or Markdown. **Save draft** works without approval and retains a draft label.
 7. Open **Data assistant** and click a suggested question to show an answer grounded in the active scope.
 
-Use **Load demo** to return to the included file. **New sample** generates a reproducible 500-response scenario. **Open CSV** loads a compatible local export. Keep the included data for a predictable presentation.
+The application opens directly with the included synthetic CSV. **Import client CSV** replaces the active dataset with a compatible local export. Set `EVALUATION_DATA_PATH` in `.env` to load a client CSV automatically on later launches; relative paths resolve from this application folder. See [data requirements](data/README.md) and [column definitions](docs/data_dictionary.md). Synthetic records remain clearly identified by the source filename.
 
 ## Interface and workflow
 
@@ -42,9 +42,9 @@ The preview displays at most 1,000 matching rows; analysis and search include ev
 
 ## Scope and limitations
 
-The desktop UI uses local deterministic analysis; it does not call external AI providers. Pattern masking needs human checking. Themes are indicators and recommendations need review. Workspace state is in memory, so save before closing. Review names are entered by the operator, not authenticated identities.
+Initial reports use local deterministic analysis. Feedback revisions can use offline edits, human-supplied wording, or the optional configured Azure AI provider. Pattern masking needs human checking. Themes are indicators and recommendations need review. Workspace state is in memory, so save before closing. Review names are entered by the operator, not authenticated identities.
 
-Older architecture documents and unused UI helpers describe the previous prototype; their Streamlit instructions no longer apply. The desktop implementation is `src/ui/desktop.py`; `app.py` and `launch_demo.pyw` launch it. Existing ingestion, analytics, privacy and reporting modules are reused.
+Older architecture documents and unused UI helpers describe the previous prototype; their Streamlit instructions no longer apply. The desktop implementation is `src/ui/desktop.py`; `app.py` and `launch_app.pyw` launch it. Existing ingestion, analytics, privacy and reporting modules are reused.
 
 ## Verification
 
@@ -58,6 +58,6 @@ Run `python app.py --diagnose` to print the Python, Tcl/Tk and window-system ver
 
 ## Feedback and Docker distribution
 
-Use the **Feedback & revisions** tab after generating a report. Preview before applying; every applied revision clears approval and can be undone. Offline edits are deterministic. Choose Azure AI for free-form instructions only after configuring the optional provider and approving external processing.
+Use the **Feedback & revisions** tab after generating a report. Preview before applying; every applied revision clears approval and can be undone. Local feedback edits are deterministic. For Copilot, enter your requested changes and click **Open Copilot with prompt**. The app copies a privacy-minimised prompt and opens Microsoft Copilot; paste the Copilot answer into **Replacement section**, then preview and apply it before exporting. Choose Azure AI for free-form instructions only after configuring the optional provider and approving external processing.
 
 The [Docker guide](../DOCKER.md) explains how teammates can clone the repository and run the same Python desktop in a local browser using Docker Compose, without host Python/Tk setup.

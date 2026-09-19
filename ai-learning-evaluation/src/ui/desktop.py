@@ -49,7 +49,7 @@ class DesktopApp(RevisionUI):
               ('Report studio', 'Turn evidence into a draft, refine it, then review and export.'),
               ('Data assistant', 'Quick, local answers based on the current analysis scope.')]
 
-    def __init__(self, root, auto_demo=True):
+    def __init__(self, root, auto_load=True):
         global FONT
         FONT = tkfont.nametofont('TkDefaultFont', root=root).actual('family')
         self.root = root
@@ -61,7 +61,7 @@ class DesktopApp(RevisionUI):
         self.nav_buttons = []
         self.metric_values = []
         self.search_id = None
-        self.status = tk.StringVar(value='Ready • Open a CSV or load the included demonstration.')
+        self.status = tk.StringVar(value='Starting workspace • Loading evaluation data.')
         self.report_status = tk.StringVar(value='No draft yet')
         self.confirmed = tk.BooleanVar(value=False)
         self.search = tk.StringVar()
@@ -81,8 +81,8 @@ class DesktopApp(RevisionUI):
         self.sync_controls()
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.bind('<Control-o>', lambda e: self.open_file() if not self.busy else None)
-        if auto_demo:
-            self.startup_id = root.after(150, self.load_demo)
+        if auto_load:
+            self.startup_id = root.after(150, self.load_startup_data)
 
     @staticmethod
     def show(widget, content):
@@ -98,9 +98,11 @@ class DesktopApp(RevisionUI):
         if path:
             self.load(Path(path), Path(path).name)
 
-    def load_demo(self):
+    def load_startup_data(self):
         self.startup_id = None
-        path = DATA_DIR / 'synthetic_qualtrics_evaluation.csv'
+        path = Path(os.getenv('EVALUATION_DATA_PATH') or DATA_DIR / 'synthetic_qualtrics_evaluation.csv').expanduser()
+        if not path.is_absolute():
+            path = DATA_DIR.parent / path
         self.load(path, path.name)
 
     def styles(self):
@@ -154,16 +156,14 @@ class DesktopApp(RevisionUI):
         main.pack(side='left', fill='both', expand=True)
         head = tk.Frame(main, bg=BG)
         head.pack(fill='x', padx=24, pady=(24, 16))
-        label(head, 'DEMO EDITION', 9, TEAL, True).pack(anchor='w', pady=(0, 8))
+        label(head, 'EVALUATION WORKSPACE', 9, TEAL, True).pack(anchor='w', pady=(0, 8))
         self.page_title = label(head, '', 25, INK, True)
         self.page_title.pack(anchor='w')
         self.page_subtitle = label(head, '', 10, MUTED)
         self.page_subtitle.pack(anchor='w', pady=(4, 0))
         toolbar = panel(main, padx=12, pady=12)
         toolbar.pack(fill='x', padx=24, pady=(0, 18))
-        self.action(toolbar, '+ Open CSV', self.open_file, True).pack(side='left', padx=(0, 8))
-        self.action(toolbar, 'Load demo', self.load_demo).pack(side='left', padx=(0, 8))
-        self.action(toolbar, 'New sample', self.synthetic).pack(side='left')
+        self.action(toolbar, '+ Import client CSV', self.open_file, True).pack(side='left', padx=(0, 8))
         self.scope = ttk.Combobox(toolbar, state='disabled', width=28, values=['All courses (aggregate)'])
         self.scope.set('All courses (aggregate)')
         self.scope.pack(side='right')
@@ -319,7 +319,7 @@ class DesktopApp(RevisionUI):
         self.preview.pack(fill='both', expand=True)
         self.report_tabs.bind('<<NotebookTabChanged>>', lambda e: self.refresh_preview())
         self.show(self.preview, 'Generate a draft to see a formatted reading preview.')
-        self.report_tabs.select(1)
+        self.report_tabs.select(0)
         review = panel(p, padx=16, pady=18)
         review.grid(row=0, column=1, sticky='nsew')
         label(review, 'Human review', 14, INK, True).pack(anchor='w')
@@ -344,7 +344,7 @@ class DesktopApp(RevisionUI):
         box = panel(self.pages[4], padx=22, pady=18)
         box.pack(fill='both', expand=True)
         label(box, 'What would you like to understand?', 17, INK, True).pack(anchor='w')
-        label(box, 'Answers from the selected data. Local, rule-based demonstration.', 9, MUTED).pack(anchor='w', pady=(6, 16))
+        label(box, 'Answers from the selected data. Local, rule-based analysis.', 9, MUTED).pack(anchor='w', pady=(6, 16))
         suggestions = tk.Frame(box, bg=WHITE)
         suggestions.pack(fill='x', pady=(0, 16))
         for caption, question in [('Performance', 'How are the ratings performing?'), ('Key themes', 'What are the main feedback themes?'), ('Next steps', 'What should we improve next?')]:
@@ -473,10 +473,6 @@ class DesktopApp(RevisionUI):
             self.sync_controls()
         self.load_poll = self.root.after(80, finish)
 
-    def synthetic(self):
-        from src.synthetic import build_synthetic_responses
-        self.load(lambda: build_synthetic_responses(500, 208), 'synthetic_500_seed_208.csv')
-
     def apply_analysis(self, result):
         self.frame, self.context, count, courses = result
         self.scope.configure(values=['All courses (aggregate)', *courses])
@@ -562,10 +558,10 @@ class DesktopApp(RevisionUI):
 
     def generate(self):
         from src.reporting.report_generator import generate_report
-        from src.ai.local_provider import LocalDemoProvider
+        from src.ai.local_provider import LocalAnalysisProvider
         if not self.context or self.busy or (self.report and not self.may_replace()):
             return
-        self.report = generate_report(self.context, self.audience.get(), LocalDemoProvider())
+        self.report = generate_report(self.context, self.audience.get(), LocalAnalysisProvider())
         self.reset_revisions()
         self.editor.configure(state='normal')
         self.editor.delete('1.0', 'end')
@@ -576,8 +572,9 @@ class DesktopApp(RevisionUI):
         self.confirmed.set(False)
         self.report_status.set(f'{self.report.audience.title()} draft • requires review')
         self.refresh_preview()
-        self.report_tabs.select(1)
-        self.status.set('Draft ready • Read the preview, edit the wording, then complete human review.')
+        self.report_tabs.select(0)
+        self.editor.focus_set()
+        self.status.set('Draft ready • You can edit the text directly. Feedback assistance is available in the next tab.')
         self.sync_controls()
 
     def export(self, reviewed=True):

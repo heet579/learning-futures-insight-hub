@@ -30,5 +30,5 @@ class ReportDraft:
     audience: str
     content: str
     status: str = "DRAFT — REQUIRES HUMAN REVIEW"
-    mode: str = "Local Demonstration Mode"
+    mode: str = "Local Analysis"
 

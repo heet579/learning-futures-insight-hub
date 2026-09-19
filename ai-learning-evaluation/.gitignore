@@ -5,4 +5,5 @@ __pycache__/
 .env
 audit_log.jsonl
 reports/generated/
-
+scratch/
+.test-*/

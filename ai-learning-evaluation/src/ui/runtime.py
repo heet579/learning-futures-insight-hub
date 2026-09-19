@@ -11,6 +11,10 @@ def _setup_environment():
     import os
     if sys.platform == 'win32':
         prefix = Path(sys.prefix)
+        # Conda configures Tcl after its DLL search paths are activated. Its
+        # default discovery is correct; overriding it makes init.tcl unusable.
+        if (prefix / 'conda-meta').exists():
+            return
         for base in (prefix / 'tcl', prefix / 'Library' / 'lib'):
             for variable, directory in (('TCL_LIBRARY', 'tcl8.6'), ('TK_LIBRARY', 'tk8.6')):
                 candidate = base / directory
@@ -23,9 +27,9 @@ def check_tk_version(version, system=None):
     numbers = tuple(int(n) for n in re.findall(r'\d+', version)[:3])
     if system == 'Darwin' and numbers < (8, 6, 11):
         raise RuntimeError(
-            f'This Python uses Tk {version}, which is too old for this macOS demo. '
+            f'This Python uses Tk {version}, which is too old for this macOS application. '
             'Install Python 3.13 from python.org with its bundled Tcl/Tk, then run '
-            'bash run_demo.sh using that Python. An existing .venv keeps its old Python; '
+            'python app.py using that Python. An existing .venv keeps its old Python; '
             'use the new .venv-mac environment described in TEAM_TESTING.md. '
             'Do not suppress the Tk deprecation warning.')
 
@@ -40,6 +44,10 @@ def runtime_details(root):
 
 def launch(diagnose=False):
     root = app = None
+    # On Conda for Windows, importing a compiled dependency first registers
+    # the environment DLL directories needed by Tcl/Tk as well.
+    if sys.platform == 'win32':
+        import pandas  # noqa: F401
     _setup_environment()
     try:
         import tkinter as tk
@@ -84,7 +92,7 @@ def launch(diagnose=False):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description='Learning Futures desktop demo')
+    parser = argparse.ArgumentParser(description='Learning Futures evaluation application')
     parser.add_argument('--diagnose', action='store_true', help='Check Python and Tk without loading survey data')
     args = parser.parse_args()
     return launch(args.diagnose)
