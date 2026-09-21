@@ -9,8 +9,48 @@ class RevisionUI:
         self.pending_revision = None
         self.revision_history = []
         self.revision_poll = None
-        page = tk.Frame(self.report_tabs, bg='#FFFFFF', padx=10, pady=10)
-        self.report_tabs.add(page, text='Feedback & revisions')
+        outer = tk.Frame(self.report_tabs, bg='#FFFFFF')
+        self.report_tabs.add(outer, text='Feedback & revisions')
+
+        self.revision_canvas = tk.Canvas(
+            outer,
+            bg='#FFFFFF',
+            highlightthickness=0
+        )
+
+        scrollbar = ttk.Scrollbar(
+            outer,
+            orient='vertical',
+            command=self.revision_canvas.yview
+        )
+
+        self.revision_canvas.configure(
+            yscrollcommand=scrollbar.set
+        )
+
+        self.revision_canvas.pack(
+            side='left',
+            fill='both',
+            expand=True
+        )
+
+        scrollbar.pack(
+            side='right',
+            fill='y'
+        )
+
+        page = tk.Frame(
+            self.revision_canvas,
+            bg='#FFFFFF',
+            padx=10,
+            pady=10
+        )
+
+        self.revision_window = self.revision_canvas.create_window(
+            (0, 0),
+            window=page,
+            anchor='nw'
+        )
         tk.Label(page, text='Use local feedback, or send a safe prompt to Copilot and paste its answer. Nothing changes until you preview and apply it.', bg='#FFFFFF', fg='#172B43', anchor='w', wraplength=680).pack(fill='x', pady=(0, 8))
         options = tk.Frame(page, bg='#FFFFFF')
         options.pack(fill='x')
@@ -21,10 +61,10 @@ class RevisionUI:
         self.revision_provider.set('Local assistant')
         self.revision_provider.pack(side='left')
         tk.Label(page, text='Feedback / instruction', bg='#FFFFFF', fg='#63758B', anchor='w').pack(fill='x', pady=(8, 2))
-        self.feedback = self.text(page, height=1, editable=True)
+        self.feedback = self.text(page, height=2, editable=True)
         self.feedback.pack(fill='x')
         tk.Label(page, text='Replacement section (paste Copilot output here, or write it yourself)', bg='#FFFFFF', fg='#63758B', anchor='w').pack(fill='x', pady=(8, 2))
-        self.replacement = self.text(page, height=2, editable=True)
+        self.replacement = self.text(page, height=5, editable=True)
         self.replacement.pack(fill='x')
         self.external_consent = tk.BooleanVar(master=self.root, value=False)
         self.consent_check = ttk.Checkbutton(page, text='I approve sending the masked section, feedback and evidence\nto the configured Azure AI service.', variable=self.external_consent)
@@ -39,13 +79,90 @@ class RevisionUI:
         self.apply_button.pack(side='left', padx=6)
         self.undo_button = self.action(actions, 'Undo revision', self.undo_revision)
         self.undo_button.pack(side='left')
-        self.revision_preview = self.text(page, height=6)
+        self.revision_preview = self.text(page, height=1)
         self.revision_preview.pack(fill='both', expand=True)
         self.show(self.revision_preview, 'Your original draft stays unchanged until you click Apply.')
+        self.resize_revision_preview()
         self.feedback.bind('<<Modified>>', self.feedback_changed)
         self.replacement.bind('<<Modified>>', self.feedback_changed)
         for widget in (self.revision_section, self.revision_provider):
             widget.bind('<<ComboboxSelected>>', lambda event: self.invalidate_revision())
+
+        def update_scroll_region(event=None):
+            self.revision_canvas.configure(
+                scrollregion=self.revision_canvas.bbox('all')
+            )
+
+        page.bind(
+            '<Configure>',
+            update_scroll_region
+        )
+
+        def resize_inner_frame(event):
+            self.revision_canvas.itemconfigure(
+                self.revision_window,
+                width=event.width
+            )
+
+        self.revision_canvas.bind(
+            '<Configure>',
+            resize_inner_frame
+        )
+        def on_mousewheel(event):
+            widget = event.widget
+
+            # Let text boxes use their own scrolling.
+            if widget.winfo_class() == 'Text':
+                return
+
+            if event.delta > 0:
+                self.revision_canvas.yview_scroll(-1, 'units')
+            elif event.delta < 0:
+                self.revision_canvas.yview_scroll(1, 'units')
+        def enable_mousewheel(event=None):
+            self.revision_canvas.bind_all(
+                '<MouseWheel>',
+                on_mousewheel
+            )
+
+        def disable_mousewheel(event=None):
+            self.revision_canvas.unbind_all(
+                '<MouseWheel>'
+            )
+
+        outer.bind(
+            '<Enter>',
+            enable_mousewheel
+        )
+
+        outer.bind(
+            '<Leave>',
+            disable_mousewheel
+        )
+
+    def resize_revision_preview(self):
+        """Resize the read-only revision preview to fit its content."""
+        self.revision_preview.update_idletasks()
+
+        content = self.revision_preview.get('1.0', 'end-1c')
+        if not content.strip():
+            self.revision_preview.configure(height=3)
+            return
+
+        try:
+            display_lines = int(
+                self.revision_preview.count(
+                    '1.0',
+                    'end-1c',
+                    'displaylines'
+                )[0]
+            )
+        except Exception:
+            display_lines = content.count('\n') + 1
+
+        new_height = max(3, min(display_lines + 1, 18))
+        self.revision_preview.configure(height=new_height)
+
 
     def sync_revision_controls(self):
         ready = bool(self.report) and not self.busy
@@ -69,6 +186,7 @@ class RevisionUI:
         if self.pending_revision:
             self.pending_revision = None
             self.show(self.revision_preview, 'The draft or feedback changed. Preview a new revision before applying.')
+            self.resize_revision_preview()
         self.sync_revision_controls()
 
     def reset_revisions(self):
@@ -82,6 +200,7 @@ class RevisionUI:
         self.replacement.delete('1.0', 'end')
         self.replacement.edit_modified(False)
         self.show(self.revision_preview, 'Your original draft stays unchanged until you click Apply.')
+        self.resize_revision_preview()
 
     def open_copilot(self):
         if not self.report or self.busy:
@@ -141,6 +260,7 @@ class RevisionUI:
                 return
             self.pending_revision = proposal
             self.render(self.revision_preview, f'## Original — {section}\n{section_text(content, section)}\n\n## Proposed — {provider}\n{section_text(proposal.revised, section)}')
+            self.resize_revision_preview()
             self.status.set('Revision preview ready. Review the wording and click Apply to use it.')
             self.sync_controls()
         self.revision_poll = self.root.after(80, finish)
@@ -162,6 +282,7 @@ class RevisionUI:
         self.replace_revision_text(updated.content)
         self.report_status.set(f'Revision applied • {len(self.revision_history)} change(s) • review required')
         self.show(self.revision_preview, 'Revision applied. You can restore the preceding draft with Undo revision.')
+        self.resize_revision_preview()
         self.status.set('Feedback applied. Review approval has been reset.')
         self.report_tabs.select(0)
 
@@ -189,3 +310,5 @@ class RevisionUI:
         self.replace_revision_text(content)
         self.report_status.set('Previous draft restored • review required')
         self.show(self.revision_preview, 'Previous draft restored. All approval checks must be repeated.')
+        self.resize_revision_preview()
+
