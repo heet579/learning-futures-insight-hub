@@ -309,14 +309,35 @@ class DesktopApp(RevisionUI):
         self.generate_button.pack(side='right')
         self.report_tabs = ttk.Notebook(workspace)
         self.report_tabs.pack(fill='both', expand=True)
-        edit, preview = tk.Frame(self.report_tabs, bg=WHITE), tk.Frame(self.report_tabs, bg=WHITE)
+        edit, preview = tk.Frame(self.report_tabs, bg=WHITE), tk.Frame(self.report_tabs, bg='#E9EEF4')
         self.report_tabs.add(edit, text='Edit draft')
         self.report_tabs.add(preview, text='Reading preview')
         self.editor = self.text(edit, editable=True)
         self.editor.pack(fill='both', expand=True)
         self.editor.bind('<<Modified>>', self.edited)
-        self.preview = self.text(preview)
+        preview_head = tk.Frame(preview, bg=NAVY, padx=18, pady=12)
+        preview_head.pack(fill='x')
+        head_copy = tk.Frame(preview_head, bg=NAVY)
+        head_copy.pack(side='left', fill='x', expand=True)
+        label(head_copy, 'REPORT PREVIEW', 8, '#8ECBD0', True).pack(anchor='w')
+        label(head_copy, 'Final reading view', 14, WHITE, True).pack(anchor='w', pady=(2, 0))
+        self.preview_meta = label(head_copy, 'Generate a draft to begin', 9, '#C1D0DC')
+        self.preview_meta.pack(anchor='w', pady=(3, 0))
+        ttk.Button(preview_head, text='Edit report', command=lambda: self.report_tabs.select(0), style='TButton').pack(side='right', padx=(8, 0))
+        ttk.Button(preview_head, text='Refresh', command=self.refresh_preview, style='TButton').pack(side='right')
+        paper_shell = tk.Frame(preview, bg='#E9EEF4', padx=28, pady=20)
+        paper_shell.pack(fill='both', expand=True)
+        paper = tk.Frame(paper_shell, bg=WHITE, highlightbackground='#CAD5E0', highlightthickness=1)
+        paper.pack(fill='both', expand=True)
+        self.preview = self.text(paper)
+        self.preview.configure(padx=32, pady=26, spacing1=4, spacing3=8)
+        self.preview.tag_configure('title', font=(FONT, 20, 'bold'), foreground=NAVY, spacing1=4, spacing3=18)
+        self.preview.tag_configure('heading', font=(FONT, 12, 'bold'), foreground=TEAL, spacing1=18, spacing3=7)
+        self.preview.tag_configure('status', font=(FONT, 9, 'bold'), foreground='#8B5A00', background='#FFF4D6', lmargin1=8, lmargin2=8, spacing1=5, spacing3=10)
+        self.preview.tag_configure('bullet', lmargin1=18, lmargin2=32, spacing1=2, spacing3=4)
+        self.preview.tag_configure('body', foreground='#2F4054', spacing3=7)
         self.preview.pack(fill='both', expand=True)
+        label(preview, 'Preview only • Make changes in Edit draft or Feedback & revisions.', 9, MUTED).pack(anchor='w', padx=28, pady=(0, 12))
         self.report_tabs.bind('<<NotebookTabChanged>>', lambda e: self.refresh_preview())
         self.show(self.preview, 'Generate a draft to see a formatted reading preview.')
         self.report_tabs.select(0)
@@ -376,7 +397,7 @@ class DesktopApp(RevisionUI):
         widget.configure(state='normal')
         widget.delete('1.0', 'end')
         for line in content.splitlines():
-            tag = 'title' if line.startswith('# ') else 'heading' if line.startswith('## ') else ''
+            tag = 'title' if line.startswith('# ') else 'heading' if line.startswith('## ') else 'status' if line.startswith('**Status:') else 'bullet' if line.startswith('- ') else 'body'
             line = line.removeprefix('## ').removeprefix('# ').replace('**', '')
             if line.startswith('- '):
                 line = '•  ' + line[2:]
@@ -431,6 +452,9 @@ class DesktopApp(RevisionUI):
     def refresh_preview(self):
         if self.report:
             self.render(self.preview, self.editor.get('1.0', 'end-1c'))
+            self.preview_meta.configure(text=f'{self.report.audience.title()} report  •  {self.report_status.get()}')
+        else:
+            self.preview_meta.configure(text='Generate a draft to begin')
 
     def may_replace(self):
         return not self.dirty or messagebox.askyesno('Unsaved report', 'Continue and discard the unsaved report? Use Save draft to keep a copy.', parent=self.root)

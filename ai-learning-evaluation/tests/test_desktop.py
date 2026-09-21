@@ -111,6 +111,11 @@ def test_report_preview_edit_and_review_export(desktop, monkeypatch, tmp_path):
     assert str(desktop.editor.cget('state')) == 'normal'
     assert 'Executive Summary' in desktop.preview.get('1.0', 'end')
     assert '**' not in desktop.preview.get('1.0', 'end')
+    assert 'Facilitator report' in desktop.preview_meta.cget('text')
+    assert 'requires review' in desktop.preview_meta.cget('text')
+    assert desktop.preview.tag_ranges('title')
+    assert desktop.preview.tag_ranges('heading')
+    assert desktop.preview.tag_ranges('status')
     desktop.confirmed.set(True)
     desktop.editor.insert('end', '\nVerified edit for demonstration.')
     desktop.root.update()
