@@ -309,35 +309,14 @@ class DesktopApp(RevisionUI):
         self.generate_button.pack(side='right')
         self.report_tabs = ttk.Notebook(workspace)
         self.report_tabs.pack(fill='both', expand=True)
-        edit, preview = tk.Frame(self.report_tabs, bg=WHITE), tk.Frame(self.report_tabs, bg='#E9EEF4')
+        edit, preview = tk.Frame(self.report_tabs, bg=WHITE), tk.Frame(self.report_tabs, bg=WHITE)
         self.report_tabs.add(edit, text='Edit draft')
         self.report_tabs.add(preview, text='Reading preview')
         self.editor = self.text(edit, editable=True)
         self.editor.pack(fill='both', expand=True)
         self.editor.bind('<<Modified>>', self.edited)
-        preview_head = tk.Frame(preview, bg=NAVY, padx=18, pady=12)
-        preview_head.pack(fill='x')
-        head_copy = tk.Frame(preview_head, bg=NAVY)
-        head_copy.pack(side='left', fill='x', expand=True)
-        label(head_copy, 'REPORT PREVIEW', 8, '#8ECBD0', True).pack(anchor='w')
-        label(head_copy, 'Final reading view', 14, WHITE, True).pack(anchor='w', pady=(2, 0))
-        self.preview_meta = label(head_copy, 'Generate a draft to begin', 9, '#C1D0DC')
-        self.preview_meta.pack(anchor='w', pady=(3, 0))
-        ttk.Button(preview_head, text='Edit report', command=lambda: self.report_tabs.select(0), style='TButton').pack(side='right', padx=(8, 0))
-        ttk.Button(preview_head, text='Refresh', command=self.refresh_preview, style='TButton').pack(side='right')
-        paper_shell = tk.Frame(preview, bg='#E9EEF4', padx=28, pady=20)
-        paper_shell.pack(fill='both', expand=True)
-        paper = tk.Frame(paper_shell, bg=WHITE, highlightbackground='#CAD5E0', highlightthickness=1)
-        paper.pack(fill='both', expand=True)
-        self.preview = self.text(paper)
-        self.preview.configure(padx=32, pady=26, spacing1=4, spacing3=8)
-        self.preview.tag_configure('title', font=(FONT, 20, 'bold'), foreground=NAVY, spacing1=4, spacing3=18)
-        self.preview.tag_configure('heading', font=(FONT, 12, 'bold'), foreground=TEAL, spacing1=18, spacing3=7)
-        self.preview.tag_configure('status', font=(FONT, 9, 'bold'), foreground='#8B5A00', background='#FFF4D6', lmargin1=8, lmargin2=8, spacing1=5, spacing3=10)
-        self.preview.tag_configure('bullet', lmargin1=18, lmargin2=32, spacing1=2, spacing3=4)
-        self.preview.tag_configure('body', foreground='#2F4054', spacing3=7)
+        self.preview = self.text(preview)
         self.preview.pack(fill='both', expand=True)
-        label(preview, 'Preview only • Make changes in Edit draft or Feedback & revisions.', 9, MUTED).pack(anchor='w', padx=28, pady=(0, 12))
         self.report_tabs.bind('<<NotebookTabChanged>>', lambda e: self.refresh_preview())
         self.show(self.preview, 'Generate a draft to see a formatted reading preview.')
         self.report_tabs.select(0)
@@ -397,7 +376,7 @@ class DesktopApp(RevisionUI):
         widget.configure(state='normal')
         widget.delete('1.0', 'end')
         for line in content.splitlines():
-            tag = 'title' if line.startswith('# ') else 'heading' if line.startswith('## ') else 'status' if line.startswith('**Status:') else 'bullet' if line.startswith('- ') else 'body'
+            tag = 'title' if line.startswith('# ') else 'heading' if line.startswith('## ') else ''
             line = line.removeprefix('## ').removeprefix('# ').replace('**', '')
             if line.startswith('- '):
                 line = '•  ' + line[2:]
@@ -452,9 +431,6 @@ class DesktopApp(RevisionUI):
     def refresh_preview(self):
         if self.report:
             self.render(self.preview, self.editor.get('1.0', 'end-1c'))
-            self.preview_meta.configure(text=f'{self.report.audience.title()} report  •  {self.report_status.get()}')
-        else:
-            self.preview_meta.configure(text='Generate a draft to begin')
 
     def may_replace(self):
         return not self.dirty or messagebox.askyesno('Unsaved report', 'Continue and discard the unsaved report? Use Save draft to keep a copy.', parent=self.root)
@@ -548,25 +524,105 @@ class DesktopApp(RevisionUI):
         self.search_id = None
         if self.frame is None:
             return
+
         frame = self.frame.fillna('').astype(str)
         query = self.search.get().strip().casefold()
         if query:
             frame = frame[frame.apply(lambda col: col.str.casefold().str.contains(query, regex=False)).any(axis=1)]
+
+        # Keep the source data unchanged and only simplify values for table display.
+        display_frame = frame.copy()
+        if 'RecordedDate' in display_frame.columns:
+            display_frame['RecordedDate'] = display_frame['RecordedDate'].str.slice(0, 10)
+
+        display_columns = ['No.'] + list(display_frame.columns)
+
+        centered_columns = {
+            'No.',
+            'ResponseID',
+            'RecordedDate',
+            'CourseCode',
+            'DeliveryMode',
+            'ClientType',
+            'FacilitatorCode',
+            'OverallSatisfaction',
+            'ContentQuality',
+            'FacilitatorEffectiveness',
+            'CourseRelevance',
+            'WouldRecommend',
+        }
+
+        column_widths = {
+            'No.': 55,
+            'ResponseID': 95,
+            'RecordedDate': 120,
+            'CourseCode': 90,
+            'CourseName': 220,
+            'DeliveryMode': 110,
+            'ClientType': 110,
+            'FacilitatorCode': 110,
+            'OverallSatisfaction': 145,
+            'ContentQuality': 130,
+            'FacilitatorEffectiveness': 160,
+            'CourseRelevance': 130,
+            'WouldRecommend': 120,
+            'MostValuableAspect': 240,
+            'WhatCouldImprove': 240,
+            'AdditionalComments': 260,
+        }
+
         self.table.delete(*self.table.get_children())
-        self.table['columns'] = list(frame.columns)
-        for col in frame.columns:
-            self.table.heading(col, text=col)
-            self.table.column(col, width=210 if col in ('CourseName', 'MostValuableAspect', 'WhatCouldImprove', 'AdditionalComments') else 150, stretch=False)
-        for i, row in enumerate(frame.head(1000).itertuples(index=False, name=None)):
-            self.table.insert('', 'end', values=row, tags=('alternate',) if i % 2 else ())
+        self.table['columns'] = display_columns
+
+        for col in display_columns:
+            anchor = 'center' if col in centered_columns else 'w'
+            width = column_widths.get(col, 140)
+            self.table.heading(col, text=col, anchor=anchor)
+            self.table.column(
+                col,
+                width=width,
+                minwidth=width,
+                stretch=False,
+                anchor=anchor
+            )
+
+        for i, row in enumerate(
+            display_frame.head(1000).itertuples(index=False, name=None),
+            start=1
+        ):
+            self.table.insert(
+                '',
+                'end',
+                values=(i,) + row,
+                tags=('alternate',) if i % 2 == 0 else ()
+            )
+
         self.row_label.configure(text=f'{min(1000, len(frame)):,} shown / {len(frame):,} matching')
-        self.show(self.row_detail, 'Select a response to inspect its full contents.' if len(frame) else 'No matching responses. Clear the search to see all data.')
+        self.show(
+            self.row_detail,
+            'Select a response to inspect its full contents.'
+            if len(frame)
+            else 'No matching responses. Clear the search to see all data.'
+        )
 
     def inspect_row(self, event=None):
         selected = self.table.selection()
         if selected:
-            values = self.table.item(selected[0], 'values')
-            self.show(self.row_detail, '\n'.join(f'{col}: {value}' for col, value in zip(self.table['columns'], values)))
+            values = list(self.table.item(selected[0], 'values'))
+            columns = list(self.table['columns'])
+
+            # "No." is only a display index and is not part of the survey source data.
+            if columns and columns[0] == 'No.':
+                columns = columns[1:]
+                values = values[1:]
+
+            self.show(
+                self.row_detail,
+                '\n'.join(
+                    f'{col}: {value}'
+                    for col, value in zip(columns, values)
+                )
+            )
 
     def inspect_theme(self, event=None):
         selected = self.theme_table.selection()
