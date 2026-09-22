@@ -18,19 +18,19 @@ Windows setup launcher: `./run_app.ps1`. After dependencies are installed in you
 
 ## Application workflow
 
-1. Launch the app. Included synthetic data loads automatically. Show the response count, satisfaction, recommendation and completeness cards, then the rating chart.
+1. Launch the app. If a client export sits in `data/client/` (never committed), it loads automatically; otherwise the included synthetic data loads. Show the response count, satisfaction, recommendation and completeness cards, then the rating chart.
 2. Change the course scope and show how the dashboard updates.
-3. Open **Survey data**, search for a response or phrase, and select a row to inspect its full masked content.
-4. Open **Themes & evidence** and select a theme to show the supporting comments.
-5. Open **Report studio**, choose facilitator or client, and click **Generate draft**. Switch between the reading preview and editable draft.
-6. Enter a reviewer name, confirm the checks, and use **Approve & export** to save Word or Markdown. **Save draft** works without approval and retains a draft label.
-7. Open **Data assistant** and click a suggested question to show an answer grounded in the active scope.
+3. In **Explore data**, switch to the **Survey data** tab, search for a response or phrase, and select a row to inspect its full masked content.
+4. Open **Themes & evidence**, select a theme to show the supporting comments, or switch to **Ask a question** for a grounded local Q&A.
+5. Open **Report studio**, choose facilitator or client and a draft provider (Local Analysis, or Claude/Azure OpenAI if configured — external providers need consent ticked), and click **Generate draft**. Switch between the reading preview and editable draft.
+6. Enter a reviewer name, confirm the checks, and use **Approve & export** to save Word or Markdown. **Save draft** works without approval and retains a draft label. The **Evidence check** line next to the review checklist blocks approval if the draft contains a number or quote that doesn't match the analysed data.
+7. In **Feedback & revisions**, request changes via the local assistant, Copilot hand-off, or the same Claude/Azure OpenAI providers.
 
-The application opens directly with the included synthetic CSV. **Import client CSV** replaces the active dataset with a compatible local export. Set `EVALUATION_DATA_PATH` in `.env` to load a client CSV automatically on later launches; relative paths resolve from this application folder. See [data requirements](data/README.md) and [column definitions](docs/data_dictionary.md). Synthetic records remain clearly identified by the source filename.
+The application auto-detects `data/client/` (a folder of raw PACE/Qualtrics course export CSVs) at startup and combines and maps them onto the canonical schema; without it, the included synthetic CSV loads instead. **Import client CSV** (Ctrl+O) replaces the active dataset with any single compatible export. Set `EVALUATION_DATA_PATH` in `.env` to point at a specific CSV or folder instead. See [data requirements](data/README.md) and [column definitions](docs/data_dictionary.md). Synthetic records remain clearly identified by the source filename.
 
 ## Interface and workflow
 
-- Navy navigation sidebar, consistent typography, teal actions and clear page descriptions.
+- Purple/white navigation sidebar (3 sections: Explore data, Themes & evidence, Report studio), consistent typography, clear page descriptions.
 - Metric cards, proportional rating bars and an evidence summary.
 - Search across all selected responses, striped data rows, full response detail and quality warnings.
 - Selectable themes with keyword and comment evidence.
@@ -42,9 +42,17 @@ The preview displays at most 1,000 matching rows; analysis and search include ev
 
 ## Scope and limitations
 
-Initial reports use local deterministic analysis. Feedback revisions can use offline edits, human-supplied wording, or the optional configured Azure AI provider. Pattern masking needs human checking. Themes are indicators and recommendations need review. Workspace state is in memory, so save before closing. Review names are entered by the operator, not authenticated identities.
+Initial reports default to local deterministic analysis; Claude or Azure OpenAI can be selected instead (or for feedback revisions) once configured, with explicit per-use consent. Feedback revisions can also use offline edits or human-supplied wording (e.g. via Copilot). Pattern masking needs human checking. Themes are indicators and recommendations need review. Workspace state is in memory, so save before closing. Review names are entered by the operator, not authenticated identities.
 
 Older architecture documents and unused UI helpers describe the previous prototype; their Streamlit instructions no longer apply. The desktop implementation is `src/ui/desktop.py`; `app.py` and `launch_app.pyw` launch it. Existing ingestion, analytics, privacy and reporting modules are reused.
+
+### Known limitations
+
+- **PII masking is regex-based** (email, AU phone, URL patterns only). Free-text comments can still contain names or other identifying detail that no pattern catches; a human reviewer must read every comment before export, not just trust the mask count.
+- **Real PACE/Qualtrics exports carry no `ClientType` or `FacilitatorCode` column**, and `DeliveryMode` isn't present either. These fields are left blank for client data rather than guessed; any report language depending on them is unavailable for that scope.
+- **Theme extraction is rule-keyword plus TF-IDF/NMF**, not semantic understanding. It surfaces recurring terms, not verified sentiment; treat themes as a starting point for the reviewer, not a finding.
+- **The Evidence check (`src/reporting/grounding.py`) verifies numbers and quotes only** — percentages, rating means, response/comment counts and quoted feedback, checked against the computed metrics and theme evidence. It does not assess whether prose claims are reasonable, only whether the figures and quotes present are real; a human reviewer must still judge the writing itself.
+- **Rating sub-questions in real exports don't map one-to-one onto the four canonical rating categories.** Only the closest-matching item per category is used (see `docs/data_dictionary.md`); the remaining sub-questions (enrolment ease, communication timing, presenter subject knowledge, Q&A helpfulness) are not currently reported.
 
 ## Verification
 

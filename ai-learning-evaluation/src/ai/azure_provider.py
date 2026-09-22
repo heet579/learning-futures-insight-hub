@@ -1,7 +1,7 @@
 import json
 import os
 from openai import AzureOpenAI
-from src.ai.base_provider import AIProvider
+from src.ai.base_provider import AIProvider, minimised_context
 from src.models import AnalysisContext
 
 class AzureAIProvider(AIProvider):
@@ -24,15 +24,7 @@ class AzureAIProvider(AIProvider):
 
     @staticmethod
     def _minimised_context(context: AnalysisContext) -> dict:
-        return {
-            "course_name": context.course_name,
-            "metrics": context.metrics,
-            "themes": [
-                {"name": t.name, "keywords": t.keywords, "frequency": t.frequency, "category": t.category}
-                for t in context.themes
-            ],
-            "warnings": context.warnings,
-        }
+        return minimised_context(context)
 
     def _request(self, task: str, context: AnalysisContext, audience: str) -> str:
         system = (

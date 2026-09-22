@@ -39,3 +39,7 @@ Thumbs.db
 # Teammate files shared with the Docker desktop
 /shared/*
 !/shared/README.txt
+
+# Real client data - never commit
+ai-learning-evaluation/data/client/
+Learning Futures Qualtrics Data Set/

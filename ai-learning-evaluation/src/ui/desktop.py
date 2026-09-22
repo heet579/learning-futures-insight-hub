@@ -3,7 +3,7 @@ import os
 import tkinter as tk
 from src.ui.revisions import RevisionUI
 from tkinter import ttk, messagebox, font as tkfont
-from src.ui.runtime import _setup_environment
+from src.ui.runtime import _setup_environment  # noqa: F401 -- re-exported for tests
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tkinter import filedialog
@@ -14,10 +14,9 @@ from src.analytics.quantitative import calculate_metrics
 from src.analytics.qualitative import collect_comments
 from src.analytics.themes import extract_themes
 from src.models import AnalysisContext
+from src.ui.theme import BG, WHITE, INK, MUTED, NAVY, TEAL, BORDER
 
-BG, WHITE, INK, MUTED = '#F3F6FA', '#FFFFFF', '#172B43', '#63758B'
 FONT = 'TkDefaultFont'
-NAVY, TEAL, BORDER = '#11273E', '#087F8C', '#DFE7EF'
 
 
 def label(parent, text='', size=10, color=INK, bold=False, **kwargs):
@@ -43,11 +42,9 @@ def analyse(frame, name, scope):
 
 
 class DesktopApp(RevisionUI):
-    TITLES = [('Evaluation overview', 'A clear view of learner experience, grounded in your survey data.'),
-              ('Survey workspace', 'Search masked responses and inspect the source behind every insight.'),
-              ('Themes & evidence', 'Explore recurring feedback and the comments supporting it.'),
-              ('Report studio', 'Turn evidence into a draft, refine it, then review and export.'),
-              ('Data assistant', 'Quick, local answers based on the current analysis scope.')]
+    TITLES = [('Explore data', 'A clear view of learner experience, grounded in your survey data.'),
+              ('Themes & evidence', 'Explore recurring feedback and the comments supporting it, or ask a question.'),
+              ('Report studio', 'Turn evidence into a draft, refine it, then review and export.')]
 
     def __init__(self, root, auto_load=True):
         global FONT
@@ -63,6 +60,7 @@ class DesktopApp(RevisionUI):
         self.search_id = None
         self.status = tk.StringVar(value='Starting workspace • Loading evaluation data.')
         self.report_status = tk.StringVar(value='No draft yet')
+        self.evidence_status = tk.StringVar(value='Evidence check: generate a draft first.')
         self.confirmed = tk.BooleanVar(value=False)
         self.search = tk.StringVar()
         root.title('Learning Futures | Insight Hub')
@@ -71,12 +69,10 @@ class DesktopApp(RevisionUI):
         root.configure(bg=BG)
         self.styles()
         self.shell()
-        self.build_overview()
-        self.build_data()
-        self.build_themes()
+        self.build_data_page()
+        self.build_themes_page()
         self.build_report()
         self.build_revision_ui()
-        self.build_assistant()
         self.navigate(0)
         self.sync_controls()
         root.protocol('WM_DELETE_WINDOW', self.close)
@@ -100,33 +96,42 @@ class DesktopApp(RevisionUI):
 
     def load_startup_data(self):
         self.startup_id = None
-        path = Path(os.getenv('EVALUATION_DATA_PATH') or DATA_DIR / 'synthetic_qualtrics_evaluation.csv').expanduser()
-        if not path.is_absolute():
-            path = DATA_DIR.parent / path
-        self.load(path, path.name)
+        env_path = os.getenv('EVALUATION_DATA_PATH')
+        if env_path:
+            path = Path(env_path).expanduser()
+            if not path.is_absolute():
+                path = DATA_DIR.parent / path
+        else:
+            client_dir = DATA_DIR / 'client'
+            path = client_dir if client_dir.is_dir() and any(client_dir.glob('*.csv')) else DATA_DIR / 'synthetic_qualtrics_evaluation.csv'
+        if path.is_dir():
+            from src.ingestion.qualtrics_loader import load_qualtrics_folder
+            self.load(lambda p=path: load_qualtrics_folder(p), 'Learning Futures Qualtrics Data Set')
+        else:
+            self.load(path, path.name)
 
     def styles(self):
         s = ttk.Style(self.root)
         s.theme_use('clam')
         s.configure('.', font=(FONT, 10))
-        s.configure('Nav.TButton', background=NAVY, foreground='#C1D0DC', anchor='w', padding=(15, 14), borderwidth=0, relief='flat')
-        s.map('Nav.TButton', background=[('active', '#25485F')], foreground=[('active', WHITE)])
-        s.configure('Selected.Nav.TButton', background='#25485F', foreground=WHITE)
-        s.map('Selected.Nav.TButton', background=[('active', '#25485F')], foreground=[('active', WHITE)])
+        s.configure('Nav.TButton', background=NAVY, foreground='#C7BEE0', anchor='w', padding=(15, 14), borderwidth=0, relief='flat')
+        s.map('Nav.TButton', background=[('active', '#4A3574')], foreground=[('active', WHITE)])
+        s.configure('Selected.Nav.TButton', background='#4A3574', foreground=WHITE)
+        s.map('Selected.Nav.TButton', background=[('active', '#4A3574')], foreground=[('active', WHITE)])
         s.configure('TButton', background=WHITE, foreground=INK, bordercolor=BORDER, padding=(14, 9), relief='flat')
-        s.map('TButton', background=[('active', '#E8F0F5')], foreground=[('disabled', '#93A1B2')])
+        s.map('TButton', background=[('active', '#F1ECFB')], foreground=[('disabled', '#A79BC4')])
         s.configure('Primary.TButton', background=TEAL, foreground=WHITE, bordercolor=TEAL)
-        s.map('Primary.TButton', background=[('disabled', '#CCDEE1'), ('active', '#096B77')], foreground=[('disabled', '#718B91')])
+        s.map('Primary.TButton', background=[('disabled', '#DCCFF7'), ('active', '#6B2FD4')], foreground=[('disabled', '#8E7FB0')])
         s.configure('TCombobox', padding=7, fieldbackground=WHITE, foreground=INK, bordercolor=BORDER)
         s.map('TCombobox', fieldbackground=[('readonly', WHITE)], selectbackground=[('readonly', WHITE)], selectforeground=[('readonly', INK)])
         s.configure('TEntry', padding=8, fieldbackground=WHITE, bordercolor=BORDER)
         s.configure('TCheckbutton', background=WHITE, foreground=INK, padding=5)
         s.map('TCheckbutton', background=[('active', WHITE)])
         s.configure('Treeview', background=WHITE, fieldbackground=WHITE, foreground=INK, rowheight=34, borderwidth=0)
-        s.configure('Treeview.Heading', background='#EAF0F6', foreground=MUTED, font=(FONT, 9, 'bold'), padding=10, relief='flat')
-        s.map('Treeview', background=[('selected', '#D7EFF0')], foreground=[('selected', INK)])
+        s.configure('Treeview.Heading', background='#F0EBFA', foreground=MUTED, font=(FONT, 9, 'bold'), padding=10, relief='flat')
+        s.map('Treeview', background=[('selected', '#E6DBFB')], foreground=[('selected', INK)])
         s.configure('TNotebook', background=WHITE, borderwidth=0)
-        s.configure('TNotebook.Tab', padding=(18, 10), background='#EDF2F7')
+        s.configure('TNotebook.Tab', padding=(18, 10), background='#F1ECFB')
         s.map('TNotebook.Tab', background=[('selected', WHITE)], foreground=[('selected', TEAL)])
         s.configure('Horizontal.TProgressbar', background=TEAL, troughcolor=BG, borderwidth=0, thickness=3)
 
@@ -140,18 +145,18 @@ class DesktopApp(RevisionUI):
         sidebar.pack(side='left', fill='y')
         sidebar.pack_propagate(False)
         label(sidebar, 'LF / INSIGHT HUB', 13, WHITE, True).pack(anchor='w', padx=20, pady=(30, 5))
-        label(sidebar, 'LEARNING FUTURES', 8, '#90ACBE').pack(anchor='w', padx=20)
-        tk.Frame(sidebar, bg='#294056', height=1).pack(fill='x', padx=20, pady=26)
-        label(sidebar, 'WORKSPACE', 8, '#90ACBE', True).pack(anchor='w', padx=20, pady=(0, 12))
-        for i, name in enumerate(['Overview', 'Survey data', 'Themes & evidence', 'Report studio', 'Data assistant']):
+        label(sidebar, 'LEARNING FUTURES', 8, '#A9A0C9').pack(anchor='w', padx=20)
+        tk.Frame(sidebar, bg='#3D2B63', height=1).pack(fill='x', padx=20, pady=26)
+        label(sidebar, 'WORKSPACE', 8, '#A9A0C9', True).pack(anchor='w', padx=20, pady=(0, 12))
+        for i, name in enumerate(['Explore data', 'Themes & evidence', 'Report studio']):
             b = ttk.Button(sidebar, text=f'{i+1:02}   {name}', style='Nav.TButton',
                            cursor='hand2', command=lambda index=i: self.navigate(index))
             b.pack(fill='x', padx=10, pady=3)
             self.nav_buttons.append(b)
         bottom = tk.Frame(sidebar, bg=NAVY)
         bottom.pack(side='bottom', fill='x', padx=20, pady=24)
-        label(bottom, '●  LOCAL WORKSPACE', 9, '#6AD4C8', True).pack(anchor='w')
-        label(bottom, 'Your data stays on this device.\nReports require human review.', 9, '#A8BECB', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
+        label(bottom, '●  LOCAL WORKSPACE', 9, '#5EEAD4', True).pack(anchor='w')
+        label(bottom, 'Your data stays on this device.\nReports require human review.', 9, '#B8AED9', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
         main = tk.Frame(self.root, bg=BG)
         main.pack(side='left', fill='both', expand=True)
         head = tk.Frame(main, bg=BG)
@@ -190,14 +195,38 @@ class DesktopApp(RevisionUI):
         from tkinter.scrolledtext import ScrolledText
         w = ScrolledText(parent, wrap='word', font=(FONT, 11), bg=WHITE, fg=INK, relief='flat', bd=0,
                          padx=10, pady=10, spacing1=3, spacing3=7, insertbackground=TEAL,
-                         selectbackground='#C9E8EA', height=height, width=20, undo=editable)
+                         selectbackground='#E6DBFB', height=height, width=20, undo=editable)
         w.tag_configure('title', font=(FONT, 19, 'bold'), foreground=INK, spacing1=12, spacing3=12)
         w.tag_configure('heading', font=(FONT, 12, 'bold'), foreground=TEAL, spacing1=12)
         w.configure(state='normal' if editable else 'disabled')
         return w
 
-    def build_overview(self):
-        p = self.pages[0]
+    def build_data_page(self):
+        container = self.pages[0]
+        notebook = ttk.Notebook(container)
+        notebook.pack(fill='both', expand=True)
+        overview_tab, data_tab = tk.Frame(notebook, bg=BG), tk.Frame(notebook, bg=BG)
+        notebook.add(overview_tab, text='Overview')
+        notebook.add(data_tab, text='Survey data')
+        self.explore_notebook = notebook
+        self.build_overview(overview_tab)
+        self.build_data(data_tab)
+
+    def show_survey_data(self):
+        self.navigate(0)
+        self.explore_notebook.select(1)
+
+    def build_themes_page(self):
+        container = self.pages[1]
+        notebook = ttk.Notebook(container)
+        notebook.pack(fill='both', expand=True)
+        themes_tab, assistant_tab = tk.Frame(notebook, bg=BG), tk.Frame(notebook, bg=BG)
+        notebook.add(themes_tab, text='Themes & evidence')
+        notebook.add(assistant_tab, text='Ask a question')
+        self.build_themes(themes_tab)
+        self.build_assistant(assistant_tab)
+
+    def build_overview(self, p):
         p.columnconfigure(0, weight=1)
         p.rowconfigure(2, weight=1)
         self.dataset_label = label(p, 'Open a dataset to begin.', 10, MUTED)
@@ -234,15 +263,14 @@ class DesktopApp(RevisionUI):
         self.highlights.configure(font=(FONT, 10), spacing3=3)
         self.highlights.tag_configure('heading', font=(FONT, 11, 'bold'), spacing1=6)
         self.show(self.highlights, 'Load a dataset to see strengths and opportunities.')
-        self.action(side, 'Explore evidence →', lambda: self.navigate(2)).pack(fill='x')
+        self.action(side, 'Explore evidence →', lambda: self.navigate(1)).pack(fill='x')
         quality = panel(p, padx=16, pady=12)
         quality.grid(row=3, column=0, sticky='ew', pady=(14, 0))
         self.quality_label = label(quality, 'Data quality checks will appear here.', 9, MUTED, wraplength=630)
         self.quality_label.pack(side='left', fill='x', expand=True)
-        self.action(quality, 'Inspect data', lambda: self.navigate(1)).pack(side='right', padx=(12, 0))
+        self.action(quality, 'Inspect data', self.show_survey_data).pack(side='right', padx=(12, 0))
 
-    def build_data(self):
-        p = self.pages[1]
+    def build_data(self, p):
         tools = tk.Frame(p, bg=BG)
         tools.pack(fill='x', pady=(0, 12))
         label(tools, 'SEARCH RESPONSES', 8, MUTED, True).pack(side='left', padx=(0, 12))
@@ -260,7 +288,7 @@ class DesktopApp(RevisionUI):
         vs.pack(side='right', fill='y')
         hs.pack(side='bottom', fill='x')
         self.table.pack(fill='both', expand=True)
-        self.table.tag_configure('alternate', background='#F6F9FC')
+        self.table.tag_configure('alternate', background='#FAF8FD')
         self.table.bind('<<TreeviewSelect>>', self.inspect_row)
         self.row_detail = self.text(p, height=4)
         self.row_detail.pack(fill='x', pady=(12, 0))
@@ -269,8 +297,7 @@ class DesktopApp(RevisionUI):
         self.validation_text.pack(fill='x', pady=(8, 0))
         self.show(self.validation_text, 'Quality checks run automatically when a file is opened.')
 
-    def build_themes(self):
-        p = self.pages[2]
+    def build_themes(self, p):
         label(p, 'Select a theme to inspect the supporting learner comments.', 10, MUTED).pack(anchor='w', pady=(0, 12))
         panes = tk.PanedWindow(p, orient='horizontal', bg=BG, bd=0, sashwidth=12)
         panes.pack(fill='both', expand=True)
@@ -293,7 +320,7 @@ class DesktopApp(RevisionUI):
         label(p, 'Categories are indicators. Mentions may overlap across themes; inspect evidence before acting.', 9, MUTED, wraplength=800).pack(anchor='w', pady=(12, 0))
 
     def build_report(self):
-        p = self.pages[3]
+        p = self.pages[2]
         p.columnconfigure(0, weight=1)
         p.columnconfigure(1, minsize=242)
         p.rowconfigure(0, weight=1)
@@ -305,6 +332,12 @@ class DesktopApp(RevisionUI):
         self.audience.set('facilitator')
         self.audience.pack(side='left')
         self.audience.bind('<<ComboboxSelected>>', self.audience_changed)
+        self.draft_provider = ttk.Combobox(actions, values=['Local Analysis', 'Claude', 'Azure OpenAI'], state='readonly', width=13)
+        self.draft_provider.set('Local Analysis')
+        self.draft_provider.pack(side='left', padx=(8, 0))
+        self.draft_consent = tk.BooleanVar(value=False)
+        self.draft_consent_check = ttk.Checkbutton(actions, text='Approve sending minimised metrics/themes externally', variable=self.draft_consent)
+        self.draft_consent_check.pack(side='left', padx=(8, 0))
         self.generate_button = self.action(actions, 'Generate draft', self.generate, True)
         self.generate_button.pack(side='right')
         self.report_tabs = ttk.Notebook(workspace)
@@ -327,7 +360,10 @@ class DesktopApp(RevisionUI):
         state.configure(textvariable=self.report_status)
         state.pack(anchor='w', pady=(8, 20))
         label(review, '1   Verify the evidence', 10, INK, True).pack(anchor='w')
-        label(review, 'Check ratings, themes and source\ncomments before approving.', 9, MUTED, justify='left').pack(anchor='w', pady=(6, 16))
+        label(review, 'Check ratings, themes and source\ncomments before approving.', 9, MUTED, justify='left').pack(anchor='w', pady=(6, 6))
+        evidence_label = label(review, size=9, color=INK, bold=True, wraplength=205, justify='left')
+        evidence_label.configure(textvariable=self.evidence_status)
+        evidence_label.pack(anchor='w', pady=(0, 16))
         label(review, '2   Identify the reviewer', 10, INK, True).pack(anchor='w')
         self.reviewer = ttk.Entry(review, width=22)
         self.reviewer.pack(fill='x', pady=(8, 16))
@@ -340,14 +376,14 @@ class DesktopApp(RevisionUI):
         self.save_button.pack(fill='x')
         label(review, 'Word (.docx) or Markdown (.md)\nDrafts remain marked for review.', 9, MUTED, justify='left').pack(anchor='w', pady=(12, 0))
 
-    def build_assistant(self):
-        box = panel(self.pages[4], padx=22, pady=18)
+    def build_assistant(self, p):
+        box = panel(p, padx=22, pady=18)
         box.pack(fill='both', expand=True)
         label(box, 'What would you like to understand?', 17, INK, True).pack(anchor='w')
         label(box, 'Answers from the selected data. Local, rule-based analysis.', 9, MUTED).pack(anchor='w', pady=(6, 16))
         suggestions = tk.Frame(box, bg=WHITE)
         suggestions.pack(fill='x', pady=(0, 16))
-        for caption, question in [('Performance', 'How are the ratings performing?'), ('Key themes', 'What are the main feedback themes?'), ('Next steps', 'What should we improve next?')]:
+        for caption, question in [('Performance', 'How are the ratings performing?'), ('Key themes', 'What are the main feedback themes?'), ('Next steps', 'What should we improve next?'), ('Participation', 'How many responses do we have?'), ('Limitations', 'What are the risks or limitations of this data?')]:
             self.action(suggestions, caption, lambda q=question: self.ask(q)).pack(side='left', padx=(0, 8))
         entry = tk.Frame(box, bg=WHITE)
         entry.pack(fill='x')
@@ -391,6 +427,8 @@ class DesktopApp(RevisionUI):
             b.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.scope.configure(state='readonly' if self.context and not self.busy else 'disabled')
         self.audience.configure(state='disabled' if self.busy else 'readonly')
+        self.draft_provider.configure(state='disabled' if self.busy else 'readonly')
+        self.draft_consent_check.configure(state='disabled' if self.busy else 'normal')
         self.editor.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.review_check.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.sync_revision_controls()
@@ -411,7 +449,7 @@ class DesktopApp(RevisionUI):
             c.create_text(2, y, anchor='nw', text=rating['label'], fill=INK, font=(FONT, 10))
             mean = rating['mean']
             c.create_text(w-4, y, anchor='ne', text=f'{mean:.2f} / 5' if mean is not None else 'N/A', fill=TEAL, font=(FONT, 10, 'bold'))
-            c.create_rectangle(2, y+25, w-4, y+34, fill='#EAF0F5', width=0)
+            c.create_rectangle(2, y+25, w-4, y+34, fill='#EFE9FA', width=0)
             if mean is not None:
                 c.create_rectangle(2, y+25, 2+(w-6)*mean/5, y+34, fill=TEAL, width=0)
         c.create_text(2, h-6, anchor='sw', text='0', fill=MUTED, font=(FONT, 8))
@@ -424,9 +462,23 @@ class DesktopApp(RevisionUI):
             self.dirty = self.report is not None
             self.report_status.set('Draft • requires review' if self.report else 'No draft yet')
             self.editor.edit_modified(False)
+            self.update_evidence_check()
 
     def review_changed(self):
         self.report_status.set('Ready for named approval' if self.confirmed.get() else 'Draft • requires review')
+
+    def update_evidence_check(self):
+        if not self.report or not self.context:
+            self.evidence_status.set('Evidence check: generate a draft first.')
+            return []
+        from src.reporting.grounding import unsupported_claims
+        unsupported = unsupported_claims(self.editor.get('1.0', 'end-1c'), self.context)
+        if unsupported:
+            kinds = ', '.join(sorted({c.kind for c in unsupported}))
+            self.evidence_status.set(f'Evidence check: {len(unsupported)} unsupported claim(s) ({kinds}). Cannot approve.')
+        else:
+            self.evidence_status.set('Evidence check: all numbers and quotes match the data.')
+        return unsupported
 
     def refresh_preview(self):
         if self.report:
@@ -437,7 +489,7 @@ class DesktopApp(RevisionUI):
 
     def load(self, source, name, scope='All courses (aggregate)'):
         from pathlib import Path
-        from src.ingestion.qualtrics_loader import load_csv
+        from src.ingestion.qualtrics_loader import load_csv, load_qualtrics_export, is_raw_qualtrics_export
         if self.busy or source is None:
             return
         if not self.may_replace():
@@ -448,7 +500,12 @@ class DesktopApp(RevisionUI):
         self.progress.start(12)
         self.sync_controls()
         def work():
-            raw = source() if callable(source) else load_csv(source) if isinstance(source, (str, Path)) else source
+            if callable(source):
+                raw = source()
+            elif isinstance(source, (str, Path)):
+                raw = load_qualtrics_export(source) if is_raw_qualtrics_export(source) else load_csv(source)
+            else:
+                raw = source
             return raw, analyse(raw, name, scope)
         future = self.pool.submit(work)
         def finish():
@@ -641,7 +698,47 @@ class DesktopApp(RevisionUI):
         from src.ai.local_provider import LocalAnalysisProvider
         if not self.context or self.busy or (self.report and not self.may_replace()):
             return
-        self.report = generate_report(self.context, self.audience.get(), LocalAnalysisProvider())
+        provider_name = self.draft_provider.get()
+        if provider_name != 'Local Analysis' and not self.draft_consent.get():
+            messagebox.showinfo('Consent required', f'Tick the consent box before generating a draft with {provider_name}.', parent=self.root)
+            return
+        if provider_name == 'Local Analysis':
+            self._apply_generated_report(generate_report(self.context, self.audience.get(), LocalAnalysisProvider()))
+            return
+        self.busy = True
+        self.status.set(f'Generating draft with {provider_name}…')
+        self.progress.start(12)
+        self.sync_controls()
+        context, audience = self.context, self.audience.get()
+        def work():
+            if provider_name == 'Claude':
+                from src.ai.anthropic_provider import AnthropicAIProvider
+                provider = AnthropicAIProvider()
+            else:
+                from src.ai.azure_provider import AzureAIProvider
+                provider = AzureAIProvider()
+            return generate_report(context, audience, provider)
+        future = self.pool.submit(work)
+        def finish():
+            if not future.done():
+                self.generate_poll = self.root.after(80, finish)
+                return
+            self.generate_poll = None
+            self.busy = False
+            self.progress.stop()
+            self.progress.configure(value=0)
+            try:
+                report = future.result()
+            except Exception as exc:
+                self.status.set('Could not generate a draft.')
+                self.sync_controls()
+                messagebox.showerror('Draft generation failed', str(exc), parent=self.root)
+                return
+            self._apply_generated_report(report)
+        self.generate_poll = self.root.after(80, finish)
+
+    def _apply_generated_report(self, report):
+        self.report = report
         self.reset_revisions()
         self.editor.configure(state='normal')
         self.editor.delete('1.0', 'end')
@@ -651,6 +748,7 @@ class DesktopApp(RevisionUI):
         self.dirty = True
         self.confirmed.set(False)
         self.report_status.set(f'{self.report.audience.title()} draft • requires review')
+        self.update_evidence_check()
         self.refresh_preview()
         self.report_tabs.select(0)
         self.editor.focus_set()
@@ -668,6 +766,9 @@ class DesktopApp(RevisionUI):
         if reviewed and (not self.reviewer.get().strip() or not self.confirmed.get()):
             messagebox.showinfo('Review required', 'Enter the reviewer name and confirm the evidence, privacy and wording checks.', parent=self.root)
             return False
+        if reviewed and self.update_evidence_check():
+            messagebox.showerror('Evidence check failed', 'This draft has numbers or quotes that do not match the analysed data. Fix or remove them before approving.', parent=self.root)
+            return False
         content = self.editor.get('1.0', 'end-1c').strip()
         if not content:
             messagebox.showerror('Empty report', 'Add report content before exporting.', parent=self.root)
@@ -682,9 +783,9 @@ class DesktopApp(RevisionUI):
             return False
         final = approve_report(self.report, content).content if reviewed else '**DRAFT — REQUIRES HUMAN REVIEW**\n\n' + content
         if reviewed:
-            final += f'\n\nReviewed by: {self.reviewer.get().strip()}\nReviewed at: {datetime.now().astimezone().isoformat(timespec="minutes")}\n'
+            final += f'\n\nReviewed by: {self.reviewer.get().strip()}\nReviewed at: {datetime.now().strftime("%d/%m/%Y %H:%M")}\n'
         try:
-            Path(path).write_bytes(docx_bytes(final) if Path(path).suffix.lower() == '.docx' else markdown_bytes(final))
+            Path(path).write_bytes(docx_bytes(final, os.getenv('UNIVERSITY_LOGO_PATH')) if Path(path).suffix.lower() == '.docx' else markdown_bytes(final))
         except Exception as exc:
             messagebox.showerror('Export failed', str(exc), parent=self.root)
             return False
@@ -710,7 +811,7 @@ class DesktopApp(RevisionUI):
     def close(self):
         if not self.may_replace():
             return
-        for pending in (getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), self.search_id, self.revision_poll):
+        for pending in (getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), getattr(self, 'generate_poll', None), self.search_id, self.revision_poll):
             if pending:
                 self.root.after_cancel(pending)
         self.pool.shutdown(wait=False, cancel_futures=True)
