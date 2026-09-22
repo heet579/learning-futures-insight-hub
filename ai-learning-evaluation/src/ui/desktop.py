@@ -348,6 +348,10 @@ class DesktopApp(RevisionUI):
         self.editor = self.text(edit, editable=True)
         self.editor.pack(fill='both', expand=True)
         self.editor.bind('<<Modified>>', self.edited)
+
+        self.preview_meta = label(preview, 'No report generated yet', 9, MUTED)
+        self.preview_meta.pack(fill='x', padx=10, pady=(10, 4))
+
         self.preview = self.text(preview)
         self.preview.pack(fill='both', expand=True)
         self.report_tabs.bind('<<NotebookTabChanged>>', lambda e: self.refresh_preview())
@@ -482,7 +486,12 @@ class DesktopApp(RevisionUI):
 
     def refresh_preview(self):
         if self.report:
+            audience = self.report.audience.title()
+            scope = self.context.course_name if self.context else 'Unknown scope'
+            self.preview_meta.configure(text=f'{audience} report • {scope}')
             self.render(self.preview, self.editor.get('1.0', 'end-1c'))
+        else:
+            self.preview_meta.configure(text='No report generated yet')
 
     def may_replace(self):
         return not self.dirty or messagebox.askyesno('Unsaved report', 'Continue and discard the unsaved report? Use Save draft to keep a copy.', parent=self.root)
@@ -542,6 +551,7 @@ class DesktopApp(RevisionUI):
         self.editor.edit_modified(False)
         self.confirmed.set(False)
         self.report_status.set('No draft yet')
+        self.preview_meta.configure(text='No report generated yet')
         self.show(self.preview, 'Generate a draft to see a formatted reading preview.')
         self.show(self.answer, 'Ask about this dataset or choose a suggestion above.')
         self.question.delete(0, 'end')
