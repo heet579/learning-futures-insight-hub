@@ -1,4 +1,3 @@
-from pathlib import Path
 from src.config import ROOT
 
 def load_prompt(name: str) -> str:

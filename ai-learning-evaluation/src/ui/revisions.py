@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from src.reporting.revisions import SECTIONS, propose_revision, apply_proposal, section_text
+from src.ui.theme import WHITE, INK, MUTED
 
 
 class RevisionUI:
@@ -9,12 +10,12 @@ class RevisionUI:
         self.pending_revision = None
         self.revision_history = []
         self.revision_poll = None
-        outer = tk.Frame(self.report_tabs, bg='#FFFFFF')
+        outer = tk.Frame(self.report_tabs, bg=WHITE)
         self.report_tabs.add(outer, text='Feedback & revisions')
 
         self.revision_canvas = tk.Canvas(
             outer,
-            bg='#FFFFFF',
+            bg=WHITE,
             highlightthickness=0
         )
 
@@ -41,7 +42,7 @@ class RevisionUI:
 
         page = tk.Frame(
             self.revision_canvas,
-            bg='#FFFFFF',
+            bg=WHITE,
             padx=10,
             pady=10
         )
@@ -51,25 +52,25 @@ class RevisionUI:
             window=page,
             anchor='nw'
         )
-        tk.Label(page, text='Use local feedback, or send a safe prompt to Copilot and paste its answer. Nothing changes until you preview and apply it.', bg='#FFFFFF', fg='#172B43', anchor='w', wraplength=680).pack(fill='x', pady=(0, 8))
-        options = tk.Frame(page, bg='#FFFFFF')
+        tk.Label(page, text='Use local feedback, or send a safe prompt to Copilot and paste its answer. Nothing changes until you preview and apply it.', bg=WHITE, fg=INK, anchor='w', wraplength=680).pack(fill='x', pady=(0, 8))
+        options = tk.Frame(page, bg=WHITE)
         options.pack(fill='x')
         self.revision_section = ttk.Combobox(options, values=SECTIONS, state='readonly', width=23)
         self.revision_section.set(SECTIONS[0])
         self.revision_section.pack(side='left', padx=(0, 8))
-        self.revision_provider = ttk.Combobox(options, values=['Local assistant', 'Human / Copilot replacement', 'Azure AI'], state='readonly', width=26)
+        self.revision_provider = ttk.Combobox(options, values=['Local assistant', 'Human / Copilot replacement', 'Azure AI', 'Claude AI'], state='readonly', width=26)
         self.revision_provider.set('Local assistant')
         self.revision_provider.pack(side='left')
-        tk.Label(page, text='Feedback / instruction', bg='#FFFFFF', fg='#63758B', anchor='w').pack(fill='x', pady=(8, 2))
+        tk.Label(page, text='Feedback / instruction', bg=WHITE, fg=MUTED, anchor='w').pack(fill='x', pady=(8, 2))
         self.feedback = self.text(page, height=2, editable=True)
         self.feedback.pack(fill='x')
-        tk.Label(page, text='Replacement section (paste Copilot output here, or write it yourself)', bg='#FFFFFF', fg='#63758B', anchor='w').pack(fill='x', pady=(8, 2))
+        tk.Label(page, text='Replacement section (paste Copilot output here, or write it yourself)', bg=WHITE, fg=MUTED, anchor='w').pack(fill='x', pady=(8, 2))
         self.replacement = self.text(page, height=5, editable=True)
         self.replacement.pack(fill='x')
         self.external_consent = tk.BooleanVar(master=self.root, value=False)
-        self.consent_check = ttk.Checkbutton(page, text='I approve sending the masked section, feedback and evidence\nto the configured Azure AI service.', variable=self.external_consent)
+        self.consent_check = ttk.Checkbutton(page, text='I approve sending the masked section, feedback and evidence\nto the selected external AI provider (Azure or Claude).', variable=self.external_consent)
         self.consent_check.pack(anchor='w', pady=6)
-        actions = tk.Frame(page, bg='#FFFFFF')
+        actions = tk.Frame(page, bg=WHITE)
         actions.pack(fill='x', pady=(0, 8))
         self.propose_button = self.action(actions, 'Preview revision', self.propose_feedback, True)
         self.propose_button.pack(side='left')
@@ -294,6 +295,7 @@ class RevisionUI:
         self.editor.edit_modified(False)
         self.confirmed.set(False)
         self.dirty = True
+        self.update_evidence_check()
         self.refresh_preview()
         self.sync_controls()
 

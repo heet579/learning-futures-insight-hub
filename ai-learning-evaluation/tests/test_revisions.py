@@ -52,6 +52,35 @@ def fake_client(body, captured):
     return SimpleNamespace(deployment='test', client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
 
 
+def fake_claude_client(body, captured):
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(content=[SimpleNamespace(type='text', text=body)])
+    return SimpleNamespace(model='test-model', client=SimpleNamespace(messages=SimpleNamespace(create=create)))
+
+
+def test_claude_needs_explicit_consent(report_context):
+    report, context = report_context
+    with pytest.raises(ValueError, match='Confirm approved'):
+        propose_revision(report, report.content, context, 'Executive Summary', 'Improve wording', 'Claude AI')
+
+
+def test_claude_masks_patterns_and_corrects_disclosure(report_context):
+    report, context = report_context
+    captured = {}
+    proposal = propose_revision(report, report.content, context, 'Executive Summary',
+        'Please shorten this for private@example.com and https://example.com', 'Claude AI', True,
+        fake_claude_client('This draft covers three responses and needs human review.', captured))
+    assert 'private@example.com' not in str(captured['messages'])
+    assert '[EMAIL REMOVED]' in str(captured['messages'])
+    payload = json.loads(captured['messages'][0]['content'])
+    assert '[URL REMOVED]' in payload['feedback']
+    updated = apply_proposal(report, report.content, proposal)
+    assert 'No data was sent to an external AI service' not in updated.content
+    assert 'revised using Claude AI' in updated.content
+    assert updated.mode == 'Claude AI assisted revision'
+
+
 def test_azure_masks_patterns_and_corrects_disclosure(report_context):
     report, context = report_context
     captured = {}

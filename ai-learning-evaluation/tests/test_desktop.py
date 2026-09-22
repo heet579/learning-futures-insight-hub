@@ -8,6 +8,7 @@ import pytest
 from docx import Document
 from src.ui.desktop import DesktopApp, analyse, _setup_environment
 from src.synthetic import build_synthetic_responses
+from test_qualtrics_real_export import _fake_export_csv
 
 
 @pytest.fixture
@@ -111,11 +112,11 @@ def test_report_preview_edit_and_review_export(desktop, monkeypatch, tmp_path):
     assert str(desktop.editor.cget('state')) == 'normal'
     assert 'Executive Summary' in desktop.preview.get('1.0', 'end')
     assert '**' not in desktop.preview.get('1.0', 'end')
-    assert 'Facilitator report' in desktop.preview_meta.cget('text')
-    assert 'requires review' in desktop.preview_meta.cget('text')
+    assert 'Facilitator' in desktop.report_status.get()
+    assert 'requires review' in desktop.report_status.get()
     assert desktop.preview.tag_ranges('title')
     assert desktop.preview.tag_ranges('heading')
-    assert desktop.preview.tag_ranges('status')
+    assert 'DRAFT' in desktop.preview.get('1.0', 'end')
     desktop.confirmed.set(True)
     desktop.editor.insert('end', '\nVerified edit for demonstration.')
     desktop.root.update()
@@ -131,6 +132,21 @@ def test_report_preview_edit_and_review_export(desktop, monkeypatch, tmp_path):
     assert 'Reviewed by: Demo reviewer' in text
     assert 'Verified edit for demonstration.' in text
     assert not desktop.dirty
+
+
+def test_approval_refused_when_draft_has_fabricated_claim(desktop, monkeypatch, tmp_path):
+    load_sample(desktop)
+    desktop.generate()
+    desktop.root.update()
+    desktop.editor.insert('end', '\n99.9% of learners said this was flawless.')
+    desktop.root.update()
+    assert 'unsupported' in desktop.evidence_status.get()
+    desktop.reviewer.insert(0, 'Demo reviewer')
+    desktop.confirmed.set(True)
+    path = tmp_path / 'reviewed.docx'
+    monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kw: str(path))
+    assert desktop.export() is False
+    assert not path.exists()
 
 
 def test_draft_save_cancel_and_write_failure(desktop, monkeypatch, tmp_path):
@@ -157,6 +173,25 @@ def test_theme_evidence_and_assistant(desktop):
     desktop.ask('How many responses participated?')
     assert '500' in desktop.answer.get('1.0', 'end')
     assert desktop.context.course_name in desktop.answer.get('1.0', 'end')
+
+
+def test_external_draft_provider_requires_consent(desktop, monkeypatch):
+    load_sample(desktop)
+    desktop.draft_provider.set('Claude')
+    desktop.generate()
+    assert desktop.report is None
+    assert not desktop.busy
+
+
+def test_external_draft_provider_failure_is_reported(desktop, monkeypatch, tmp_path):
+    load_sample(desktop)
+    desktop.draft_provider.set('Claude')
+    desktop.draft_consent.set(True)
+    monkeypatch.delenv('ANTHROPIC_API_KEY', raising=False)
+    desktop.generate()
+    wait_for_load(desktop)
+    assert desktop.report is None
+    assert not desktop.busy
 
 
 def test_invalid_scope_is_rejected():
@@ -242,6 +277,16 @@ def test_manual_edit_invalidates_feedback_preview(desktop):
     desktop.root.update()
     assert desktop.pending_revision is None
     assert desktop.apply_button.instate(['disabled'])
+
+
+def test_import_csv_auto_maps_a_raw_qualtrics_export(desktop, tmp_path):
+    path = tmp_path / '8325+-+Fake+Course+-+August+2023_time.csv'
+    path.write_text(_fake_export_csv(), encoding='utf-8')
+    desktop.load(path, path.name)
+    wait_for_load(desktop)
+    assert desktop.context is not None
+    assert len(desktop.frame) == 2
+    assert 'Fake Course' in str(desktop.frame['CourseName'].iloc[0])
 
 
 def test_configured_client_data_at_startup(desktop, monkeypatch, tmp_path):

@@ -41,8 +41,12 @@ def extract_themes(comments: list[str], max_themes: int = 8) -> list[Theme]:
                 terms = vec.get_feature_names_out()
                 for component in model.components_:
                     words = [terms[i] for i in component.argsort()[-4:][::-1]]
-                    if not any(set(words) & set(theme.keywords) for theme in found):
-                        found.append(Theme("Emerging: " + ", ".join(words[:2]), words, 0, "Review", []))
+                    if any(set(words) & set(theme.keywords) for theme in found):
+                        continue
+                    idx = [i for i, text in enumerate(lower) if any(re.search(rf"\b{re.escape(w)}\b", text) for w in words)]
+                    if not idx:
+                        continue  # no comment actually matches these terms; not a real theme
+                    found.append(Theme("Emerging: " + ", ".join(words[:2]), words, len(idx), "Review", [clean[i] for i in idx[:3]]))
         except ValueError:
             pass
     return sorted(found, key=lambda t: t.frequency, reverse=True)[:max_themes]
