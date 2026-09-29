@@ -15,7 +15,6 @@ def _normalize_qualtrics_headers(df: pd.DataFrame) -> pd.DataFrame:
         if (
             "ImportId" in row_str
             or "Response ID" in row_str
-            or "{" in row_str
             or (idx == 0 and len(row_values) > 0 and row_values[0] == df.columns[0])
         ):
             drop_indices.append(idx)
@@ -68,6 +67,7 @@ RATING_TEXT_MAP = [
 ]
 TEXT_QUESTION_MAP = [
     (("really", "enjoyed"), "MostValuableAspect"),
+    (("aspects", "enjoyed", "selected choice"), "MostValuableAspect"),
     (("could", "improved"), "WhatCouldImprove"),
     (("feedback", "suggestions", "presenters"), "AdditionalComments"),
     (("would", "recommend"), "AdditionalComments"),
@@ -109,7 +109,11 @@ def is_raw_qualtrics_export(path: str | Path) -> bool:
 def load_qualtrics_export(path: str | Path) -> pd.DataFrame:
     """Load one real PACE/Qualtrics course export and map it onto the canonical schema."""
     path = Path(path)
-    raw = pd.read_csv(path)
+    raw = _read_table(path)
+    return _map_export(raw, path.name)
+
+
+def _map_export(raw: pd.DataFrame, filename: str) -> pd.DataFrame:
     if raw.empty:
         return pd.DataFrame(columns=REQUIRED_COLUMNS)
 
@@ -136,7 +140,8 @@ def load_qualtrics_export(path: str | Path) -> pd.DataFrame:
 
     for column in RATING_COLUMNS:
         if column in df:
-            df[column] = df[column].astype(str).str.strip().str.lower().map(LIKERT_SCALE)
+            values = df[column].astype(str).str.strip().str.lower()
+            df[column] = values.map(LIKERT_SCALE).fillna(pd.to_numeric(values, errors="coerce"))
 
     if "NPSScore" in df:
         nps = pd.to_numeric(df["NPSScore"], errors="coerce")
@@ -147,12 +152,35 @@ def load_qualtrics_export(path: str | Path) -> pd.DataFrame:
         parsed = pd.to_datetime(df["RecordedDate"], dayfirst=True, errors="coerce")
         df["RecordedDate"] = parsed.dt.strftime("%Y-%m-%dT%H:%M:%S")
 
-    df["CourseCode"], df["CourseName"] = _course_from_filename(path.name)
+    df["CourseCode"], df["CourseName"] = _course_from_filename(filename)
 
     for column in REQUIRED_COLUMNS:
         if column not in df:
             df[column] = pd.NA
     return df[REQUIRED_COLUMNS]
+
+
+def _read_table(path: str | Path) -> pd.DataFrame:
+    path = Path(path)
+    if path.suffix.lower() in {".xlsx", ".xls"}:
+        try:
+            return pd.read_excel(path, engine="calamine", sheet_name=0)
+        except Exception as exc:
+            raise ValueError("Cannot read this Excel workbook. Use a valid .xlsx/.xls file with survey data on its first sheet.") from exc
+    if path.suffix.lower() == ".csv":
+        try:
+            return pd.read_csv(path)
+        except UnicodeDecodeError:
+            return pd.read_csv(path, encoding="latin-1")
+    raise ValueError("Choose a CSV, XLSX or XLS survey file.")
+
+
+def load_survey(path: str | Path) -> pd.DataFrame:
+    """Import canonical or three-header Qualtrics data from CSV or Excel."""
+    raw = _read_table(path)
+    if "ResponseID" not in raw and ("ResponseId" in raw or "StartDate" in raw):
+        return _map_export(raw, Path(path).name)
+    return _normalize_qualtrics_headers(raw)
 
 
 def load_qualtrics_folder(folder: str | Path) -> pd.DataFrame:

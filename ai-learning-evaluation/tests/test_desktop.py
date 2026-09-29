@@ -11,8 +11,10 @@ from src.synthetic import build_synthetic_responses
 from test_qualtrics_real_export import _fake_export_csv
 
 
-@pytest.fixture
-def desktop(monkeypatch):
+@pytest.fixture(scope='module')
+def tk_runtime():
+    # Keep one Tcl interpreter, with a fresh window per test. Repeated interpreter
+    # creation intermittently fails loading Tcl library files on Windows.
     _setup_environment()
     try:
         root = tk.Tk()
@@ -21,14 +23,23 @@ def desktop(monkeypatch):
             raise
         pytest.skip(f'Tk display unavailable: {exc}')
     root.withdraw()
+    yield root
+    root.destroy()
+
+
+@pytest.fixture
+def desktop(monkeypatch, tk_runtime):
+    root = tk.Toplevel(tk_runtime)
+    root.withdraw()
     app = DesktopApp(root, auto_load=False)
     errors = []
-    root.report_callback_exception = lambda *args: errors.append(args)
+    monkeypatch.setattr(tk_runtime, 'report_callback_exception', lambda *args: errors.append(args))
     monkeypatch.setattr('tkinter.messagebox.showerror', lambda *a, **k: None)
     monkeypatch.setattr('tkinter.messagebox.showinfo', lambda *a, **k: None)
     monkeypatch.setattr('tkinter.messagebox.askyesno', lambda *a, **k: False)
     yield app
     app.dirty = False
+    app.pool.shutdown(wait=True, cancel_futures=True)
     app.close()
     assert not errors, errors
 
@@ -297,3 +308,68 @@ def test_configured_client_data_at_startup(desktop, monkeypatch, tmp_path):
     wait_for_load(desktop)
     assert desktop.source == 'client.csv'
     assert len(desktop.frame) == 30
+
+
+def test_gemini_insights_consent_cache_and_scope_reset(desktop, monkeypatch):
+    from test_gemini import RESULT
+    load_sample(desktop, 30)
+    assert 'Local insights' in desktop.insights_text.get('1.0', 'end')
+    calls = []
+    monkeypatch.setenv('GEMINI_API_KEY', 'test')
+    monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.insights',
+                        lambda *a, **k: calls.append(True) or RESULT)
+    desktop.generate_insights()
+    assert not calls
+    desktop.insights_consent.set(True)
+    desktop.generate_insights()
+    wait_for_load(desktop)
+    assert len(calls) == 1
+    assert 'Gemini insights' in desktop.insights_text.get('1.0', 'end')
+    desktop.generate_insights()
+    assert len(calls) == 1
+    course = desktop.scope['values'][1]
+    desktop.load(desktop.raw, desktop.source, course)
+    wait_for_load(desktop)
+    assert 'Local insights' in desktop.insights_text.get('1.0', 'end')
+    desktop.generate_insights()
+    wait_for_load(desktop)
+    assert len(calls) == 2
+
+
+def test_failed_gemini_request_keeps_local_analysis(desktop, monkeypatch):
+    load_sample(desktop, 30)
+    monkeypatch.setenv('GEMINI_API_KEY', 'test')
+    def fail(*a, **k):
+        raise RuntimeError('quota reached')
+    monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.insights', fail)
+    desktop.insights_consent.set(True)
+    desktop.generate_insights()
+    wait_for_load(desktop)
+    assert 'Local insights' in desktop.insights_text.get('1.0', 'end')
+    assert desktop.insights_button.instate(['!disabled'])
+    assert not desktop.insights_cache
+
+
+def test_import_multiple_csv_and_excel_files(desktop, monkeypatch, tmp_path, golden_df):
+    from test_excel_import import write_xlsx_fixture
+    csv = tmp_path / 'survey.csv'
+    xlsx = tmp_path / 'survey.xlsx'
+    golden_df.to_csv(csv, index=False)
+    write_xlsx_fixture(xlsx, golden_df)
+    monkeypatch.setattr('tkinter.filedialog.askopenfilenames', lambda **kwargs: [str(csv), str(xlsx)])
+    desktop.open_file()
+    wait_for_load(desktop)
+    assert len(desktop.frame) == 6
+    assert desktop.source == '2 survey files'
+
+
+def test_gemini_report_provider_can_be_selected(desktop, monkeypatch):
+    from test_gemini import response
+    load_sample(desktop, 30)
+    monkeypatch.setenv('GEMINI_API_KEY', 'test')
+    monkeypatch.setattr('src.ai.gemini_provider.urlopen', lambda *a, **k: response())
+    desktop.draft_provider.set('Gemini')
+    desktop.draft_consent.set(True)
+    desktop.generate()
+    wait_for_load(desktop)
+    assert desktop.report.mode == 'Gemini'

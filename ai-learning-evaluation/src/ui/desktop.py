@@ -2,6 +2,7 @@
 import os
 import tkinter as tk
 from src.ui.revisions import RevisionUI
+from src.ui.insights import InsightsUI
 from tkinter import ttk, messagebox, font as tkfont
 from src.ui.runtime import _setup_environment  # noqa: F401 -- re-exported for tests
 from concurrent.futures import ThreadPoolExecutor
@@ -41,7 +42,7 @@ def analyse(frame, name, scope):
     return masked, context, count, courses
 
 
-class DesktopApp(RevisionUI):
+class DesktopApp(RevisionUI, InsightsUI):
     TITLES = [('Explore data', 'A clear view of learner experience, grounded in your survey data.'),
               ('Themes & evidence', 'Explore recurring feedback and the comments supporting it, or ask a question.'),
               ('Report studio', 'Turn evidence into a draft, refine it, then review and export.')]
@@ -90,9 +91,12 @@ class DesktopApp(RevisionUI):
     def open_file(self):
         if self.busy:
             return
-        path = filedialog.askopenfilename(parent=self.root, title='Open evaluation data', initialdir=os.getenv('DEMO_SHARED_DIR', str(DATA_DIR)), filetypes=[('CSV files', '*.csv')])
-        if path:
-            self.load(Path(path), Path(path).name)
+        paths = filedialog.askopenfilenames(parent=self.root, title='Open evaluation data', initialdir=os.getenv('DEMO_SHARED_DIR', str(DATA_DIR)), filetypes=[('Survey files', '*.csv *.xlsx *.xls')])
+        if paths:
+            import pandas as pd
+            from src.ingestion.qualtrics_loader import load_survey
+            self.load(lambda: pd.concat([load_survey(path) for path in paths], ignore_index=True),
+                      Path(paths[0]).name if len(paths) == 1 else f'{len(paths)} survey files')
 
     def load_startup_data(self):
         self.startup_id = None
@@ -156,7 +160,7 @@ class DesktopApp(RevisionUI):
         bottom = tk.Frame(sidebar, bg=NAVY)
         bottom.pack(side='bottom', fill='x', padx=20, pady=24)
         label(bottom, '●  LOCAL WORKSPACE', 9, '#5EEAD4', True).pack(anchor='w')
-        label(bottom, 'Your data stays on this device.\nReports require human review.', 9, '#B8AED9', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
+        label(bottom, 'Local analysis by default.\nExternal AI uses approved summaries.\nReports require human review.', 9, '#B8AED9', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
         main = tk.Frame(self.root, bg=BG)
         main.pack(side='left', fill='both', expand=True)
         head = tk.Frame(main, bg=BG)
@@ -168,7 +172,7 @@ class DesktopApp(RevisionUI):
         self.page_subtitle.pack(anchor='w', pady=(4, 0))
         toolbar = panel(main, padx=12, pady=12)
         toolbar.pack(fill='x', padx=24, pady=(0, 18))
-        self.action(toolbar, '+ Import client CSV', self.open_file, True).pack(side='left', padx=(0, 8))
+        self.action(toolbar, '+ Import CSV / Excel', self.open_file, True).pack(side='left', padx=(0, 8))
         self.scope = ttk.Combobox(toolbar, state='disabled', width=28, values=['All courses (aggregate)'])
         self.scope.set('All courses (aggregate)')
         self.scope.pack(side='right')
@@ -208,6 +212,9 @@ class DesktopApp(RevisionUI):
         overview_tab, data_tab = tk.Frame(notebook, bg=BG), tk.Frame(notebook, bg=BG)
         notebook.add(overview_tab, text='Overview')
         notebook.add(data_tab, text='Survey data')
+        insights_tab = tk.Frame(notebook, bg=BG)
+        notebook.add(insights_tab, text='AI insights & suggestions')
+        self.build_insights(insights_tab)
         self.explore_notebook = notebook
         self.build_overview(overview_tab)
         self.build_data(data_tab)
@@ -332,12 +339,13 @@ class DesktopApp(RevisionUI):
         self.audience.set('facilitator')
         self.audience.pack(side='left')
         self.audience.bind('<<ComboboxSelected>>', self.audience_changed)
-        self.draft_provider = ttk.Combobox(actions, values=['Local Analysis', 'Claude', 'Azure OpenAI'], state='readonly', width=13)
+        self.draft_provider = ttk.Combobox(actions, values=['Local Analysis', 'Gemini', 'Claude', 'Azure OpenAI'], state='readonly', width=13)
         self.draft_provider.set('Local Analysis')
         self.draft_provider.pack(side='left', padx=(8, 0))
         self.draft_consent = tk.BooleanVar(value=False)
-        self.draft_consent_check = ttk.Checkbutton(actions, text='Approve sending minimised metrics/themes externally', variable=self.draft_consent)
-        self.draft_consent_check.pack(side='left', padx=(8, 0))
+        self.draft_consent_check = ttk.Checkbutton(workspace, text='Approve sending minimised metrics/themes externally', variable=self.draft_consent)
+        self.draft_consent_check.pack(anchor='w')
+        label(workspace, 'Gemini free tier: Google may use submitted summaries to improve its products.', 9, MUTED, wraplength=650).pack(anchor='w', pady=(0, 6))
         self.generate_button = self.action(actions, 'Generate draft', self.generate, True)
         self.generate_button.pack(side='right')
         self.report_tabs = ttk.Notebook(workspace)
@@ -427,6 +435,8 @@ class DesktopApp(RevisionUI):
         for b in self.controls:
             b.configure(state='disabled' if self.busy else 'normal')
         self.generate_button.configure(state='normal' if self.context and not self.busy else 'disabled')
+        self.insights_button.configure(state='normal' if self.context and not self.busy else 'disabled')
+        self.insights_consent_check.configure(state='disabled' if self.busy else 'normal')
         for b in (self.export_button, self.save_button):
             b.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.scope.configure(state='readonly' if self.context and not self.busy else 'disabled')
@@ -498,7 +508,7 @@ class DesktopApp(RevisionUI):
 
     def load(self, source, name, scope='All courses (aggregate)'):
         from pathlib import Path
-        from src.ingestion.qualtrics_loader import load_csv, load_qualtrics_export, is_raw_qualtrics_export
+        from src.ingestion.qualtrics_loader import load_survey
         if self.busy or source is None:
             return
         if not self.may_replace():
@@ -512,7 +522,7 @@ class DesktopApp(RevisionUI):
             if callable(source):
                 raw = source()
             elif isinstance(source, (str, Path)):
-                raw = load_qualtrics_export(source) if is_raw_qualtrics_export(source) else load_csv(source)
+                raw = load_survey(source)
             else:
                 raw = source
             return raw, analyse(raw, name, scope)
@@ -541,6 +551,7 @@ class DesktopApp(RevisionUI):
 
     def apply_analysis(self, result):
         self.frame, self.context, count, courses = result
+        self.show_local_insights()
         self.scope.configure(values=['All courses (aggregate)', *courses])
         self.scope.set(self.context.course_name)
         self.report, self.dirty = None, False
@@ -721,7 +732,10 @@ class DesktopApp(RevisionUI):
         self.sync_controls()
         context, audience = self.context, self.audience.get()
         def work():
-            if provider_name == 'Claude':
+            if provider_name == 'Gemini':
+                from src.ai.gemini_provider import GeminiAIProvider
+                provider = GeminiAIProvider()
+            elif provider_name == 'Claude':
                 from src.ai.anthropic_provider import AnthropicAIProvider
                 provider = AnthropicAIProvider()
             else:
@@ -821,7 +835,7 @@ class DesktopApp(RevisionUI):
     def close(self):
         if not self.may_replace():
             return
-        for pending in (getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), getattr(self, 'generate_poll', None), self.search_id, self.revision_poll):
+        for pending in (getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), getattr(self, 'generate_poll', None), self.insights_poll, self.search_id, self.revision_poll):
             if pending:
                 self.root.after_cancel(pending)
         self.pool.shutdown(wait=False, cancel_futures=True)
