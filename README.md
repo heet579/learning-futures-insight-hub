@@ -4,6 +4,41 @@ A Python desktop application for analysing learner feedback, exploring survey in
 
 The application uses Tkinter and runs in its own desktop window. It includes synthetic demonstration data and works locally without API keys or external AI services.
 
+## Gemini insights and Excel imports
+
+Import one or more `.csv`, `.xlsx` or `.xls` survey files with **Import CSV / Excel**.
+Excel data is read from the first worksheet. Supported layouts are the canonical
+survey schema and the Qualtrics exports with question-text and ImportId header rows,
+including the supplied 2023–2025 course formats. Other layouts need column mapping.
+
+**Explore data → AI insights & suggestions** shows local evidence and suggested
+next steps immediately. To enable Gemini interpretation:
+
+1. Get an API key from [Google AI Studio](https://aistudio.google.com/apikey).
+2. For native Python, copy `ai-learning-evaluation/.env.example` to
+   `ai-learning-evaluation/.env`; set `GEMINI_API_KEY`. For Docker, use the root `.env`.
+3. Keep `GEMINI_MODEL=gemini-2.5-flash-lite`, or set another supported model.
+4. Restart the app (Docker: `docker compose up -d --force-recreate`), tick the
+   external-processing checkbox and select **Generate Gemini insights**.
+
+Gemini is also available in the Report studio provider selector. Insights include
+findings, suggested actions, supporting calculated evidence and limitations. Requests
+run in the background; repeated insights reuse a session cache. Errors leave local
+analysis available. Evidence IDs are validated, but AI interpretations still require
+human review. The existing question assistant and revision workflows remain separate.
+
+Gemini receives calculated rating summaries and fixed-vocabulary theme counts, without
+raw comments, learned keywords, learner IDs, course names or filenames. Source text is
+treated as data, never instructions. The recommendation indicator from Qualtrics means
+a score of 7 or above; it is **not NPS**. Theme frequencies count matching comments,
+not unique learners. No course trends or causal effects are inferred automatically.
+
+Google lists a [free tier for Gemini 2.5 Flash-Lite](https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash-lite)
+subject to project quotas and availability. This is not unlimited free usage: a project
+with billing enabled can incur charges. Google says free-tier content may be used to
+improve its products. Use only data approved for this processing and keep the key in
+the ignored `.env` file. No key is bundled with the app.
+
 ## Docker quick start (recommended for teammates)
 
 Install and start Docker Desktop, then run from your cloned repository root:
