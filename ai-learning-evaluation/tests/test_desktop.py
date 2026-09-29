@@ -181,6 +181,7 @@ def test_theme_evidence_and_assistant(desktop):
     desktop.theme_table.selection_set('0')
     desktop.inspect_theme()
     assert desktop.context.themes[0].name in desktop.theme_detail.get('1.0', 'end')
+    desktop.question_provider.set('Local analysis')
     desktop.ask('How many responses participated?')
     assert '500' in desktop.answer.get('1.0', 'end')
     assert desktop.context.course_name in desktop.answer.get('1.0', 'end')
@@ -373,3 +374,49 @@ def test_gemini_report_provider_can_be_selected(desktop, monkeypatch):
     desktop.generate()
     wait_for_load(desktop)
     assert desktop.report.mode == 'Gemini'
+
+
+def test_question_uses_gemini_caches_and_resets_on_scope_change(desktop, monkeypatch):
+    load_sample(desktop, 30)
+    monkeypatch.setenv('GEMINI_API_KEY', 'test')
+    calls = []
+    def answer(provider, context, question):
+        calls.append((context.course_name, question))
+        return {'answer': 'Review the supplied response count.', 'evidence_ids': ['responses']}
+    monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.answer_question', answer)
+    assert desktop.question_provider.get() == 'Gemini'
+    desktop.ask('How many responses?')
+    assert desktop.busy
+    wait_for_load(desktop)
+    text = desktop.answer.get('1.0', 'end')
+    assert 'Gemini answer' in text and '30 survey responses' in text
+    desktop.ask('How many responses?')
+    assert len(calls) == 1
+    desktop.load(desktop.raw, desktop.source, desktop.scope['values'][1])
+    wait_for_load(desktop)
+    assert desktop.question.get() == ''
+    assert 'Gemini answer' not in desktop.answer.get('1.0', 'end')
+    desktop.ask('How many responses?')
+    wait_for_load(desktop)
+    assert len(calls) == 2
+
+
+def test_question_failure_is_not_disguised_as_ai_answer(desktop, monkeypatch):
+    load_sample(desktop, 30)
+    monkeypatch.setenv('GEMINI_API_KEY', 'test')
+    def fail(*args):
+        raise RuntimeError('Quota reached')
+    monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.answer_question', fail)
+    desktop.ask('What should we improve?')
+    wait_for_load(desktop)
+    assert 'Gemini could not answer' in desktop.answer.get('1.0', 'end')
+    assert not desktop.question_cache
+    assert desktop.question_provider.instate(['readonly'])
+
+
+def test_question_requires_configuration_without_network_call(desktop, monkeypatch):
+    load_sample(desktop, 30)
+    monkeypatch.delenv('GEMINI_API_KEY', raising=False)
+    desktop.ask('How many responses?')
+    assert 'not configured' in desktop.answer.get('1.0', 'end')
+    assert not desktop.busy

@@ -3,6 +3,7 @@ import os
 import tkinter as tk
 from src.ui.revisions import RevisionUI
 from src.ui.insights import InsightsUI
+from src.ui.questions import QuestionsUI
 from tkinter import ttk, messagebox, font as tkfont
 from src.ui.runtime import _setup_environment  # noqa: F401 -- re-exported for tests
 from concurrent.futures import ThreadPoolExecutor
@@ -42,7 +43,7 @@ def analyse(frame, name, scope):
     return masked, context, count, courses
 
 
-class DesktopApp(RevisionUI, InsightsUI):
+class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
     TITLES = [('Explore data', 'A clear view of learner experience, grounded in your survey data.'),
               ('Themes & evidence', 'Explore recurring feedback and the comments supporting it, or ask a question.'),
               ('Report studio', 'Turn evidence into a draft, refine it, then review and export.')]
@@ -389,10 +390,21 @@ class DesktopApp(RevisionUI, InsightsUI):
         label(review, 'Word (.docx) or Markdown (.md)\nDrafts remain marked for review.', 9, MUTED, justify='left').pack(anchor='w', pady=(12, 0))
 
     def build_assistant(self, p):
+        self.question_cache = {}
+        self.question_poll = None
         box = panel(p, padx=22, pady=18)
         box.pack(fill='both', expand=True)
         label(box, 'What would you like to understand?', 17, INK, True).pack(anchor='w')
-        label(box, 'Answers from the selected data. Local, rule-based analysis.', 9, MUTED).pack(anchor='w', pady=(6, 16))
+        label(box, 'Gemini answers using the selected survey metrics and themes. Each question is independent.', 9, MUTED, wraplength=780).pack(anchor='w', pady=(6, 8))
+        options = tk.Frame(box, bg=WHITE)
+        options.pack(fill='x', pady=(0, 8))
+        label(options, 'Answer with', 9, MUTED).pack(side='left', padx=(0, 8))
+        self.question_provider = ttk.Combobox(options, values=['Gemini', 'Local analysis'], state='readonly', width=18)
+        self.question_provider.set('Gemini')
+        self.question_provider.pack(side='left')
+        label(box, 'Ask sends your question and calculated summaries to the selected provider. Avoid personal details.\n'
+              'Raw survey comments stay local. Google may use free-tier inputs to improve its products.',
+              9, MUTED, justify='left', wraplength=780).pack(anchor='w', pady=(0, 12))
         suggestions = tk.Frame(box, bg=WHITE)
         suggestions.pack(fill='x', pady=(0, 16))
         for caption, question in [('Performance', 'How are the ratings performing?'), ('Key themes', 'What are the main feedback themes?'), ('Next steps', 'What should we improve next?'), ('Participation', 'How many responses do we have?'), ('Limitations', 'What are the risks or limitations of this data?')]:
@@ -437,6 +449,8 @@ class DesktopApp(RevisionUI, InsightsUI):
         self.generate_button.configure(state='normal' if self.context and not self.busy else 'disabled')
         self.insights_button.configure(state='normal' if self.context and not self.busy else 'disabled')
         self.insights_consent_check.configure(state='disabled' if self.busy else 'normal')
+        self.question_provider.configure(state='disabled' if self.busy else 'readonly')
+        self.question.configure(state='disabled' if self.busy else 'normal')
         for b in (self.export_button, self.save_button):
             b.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.scope.configure(state='readonly' if self.context and not self.busy else 'disabled')
@@ -565,6 +579,7 @@ class DesktopApp(RevisionUI, InsightsUI):
         self.preview_meta.configure(text='No report generated yet')
         self.show(self.preview, 'Generate a draft to see a formatted reading preview.')
         self.show(self.answer, 'Ask about this dataset or choose a suggestion above.')
+        self.question.configure(state='normal')
         self.question.delete(0, 'end')
         self.search.set('')
         self.filter_rows()
@@ -818,24 +833,10 @@ class DesktopApp(RevisionUI, InsightsUI):
         self.status.set(f'{"Reviewed report" if reviewed else "Draft"} saved • {path}')
         return True
 
-    def ask(self, question=None):
-        from src.ai.copilot import answer_question
-        if not self.context or self.busy:
-            self.show(self.answer, 'Load a dataset first, then choose a question.')
-            return
-        text = question if question is not None else self.question.get().strip()
-        if question is not None:
-            self.question.delete(0, 'end')
-            self.question.insert(0, question)
-        if not text:
-            self.show(self.answer, 'Enter a question or choose a suggestion above.')
-            return
-        self.render(self.answer, f'## {text}\n\n{answer_question(text, self.context)}\n\n## Analysis scope\n{self.context.course_name} • {self.context.metrics["response_count"]:,} responses')
-
     def close(self):
         if not self.may_replace():
             return
-        for pending in (getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), getattr(self, 'generate_poll', None), self.insights_poll, self.search_id, self.revision_poll):
+        for pending in (getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), getattr(self, 'generate_poll', None), self.insights_poll, self.question_poll, self.search_id, self.revision_poll):
             if pending:
                 self.root.after_cancel(pending)
         self.pool.shutdown(wait=False, cancel_futures=True)
