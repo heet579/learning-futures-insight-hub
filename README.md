@@ -25,7 +25,13 @@ Gemini is also available in the Report studio provider selector. Insights includ
 findings, suggested actions, supporting calculated evidence and limitations. Requests
 run in the background; repeated insights reuse a session cache. Errors leave local
 analysis available. Evidence IDs are validated, but AI interpretations still require
-human review. The existing question assistant and revision workflows remain separate.
+human review. In **Themes & evidence → Ask a question**, Gemini is now the default
+answer provider. Clicking Ask sends the question (with obvious contact details masked)
+and the selected scope's calculated evidence to Gemini. Answers show their provider,
+scope and supporting evidence. Each question is independent; no chat history is sent.
+Avoid personal details in questions. Choose **Local analysis** for offline answers.
+Unavailable evidence is explained rather than guessed; errors are displayed without
+silently substituting a local answer. Revision workflows remain separate.
 
 Gemini receives calculated rating summaries and fixed-vocabulary theme counts, without
 raw comments, learned keywords, learner IDs, course names or filenames. Source text is
