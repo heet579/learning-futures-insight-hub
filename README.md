@@ -11,7 +11,7 @@ Excel data is read from the first worksheet. Supported layouts are the canonical
 survey schema and the Qualtrics exports with question-text and ImportId header rows,
 including the supplied 2023–2025 course formats. Other layouts need column mapping.
 
-**Explore data → AI insights & suggestions** shows local evidence and suggested
+**Explore data → Insights & suggestions** shows local evidence and suggested
 next steps immediately. To enable Gemini interpretation:
 
 1. Get an API key from [Google AI Studio](https://aistudio.google.com/apikey).
@@ -19,19 +19,23 @@ next steps immediately. To enable Gemini interpretation:
    `ai-learning-evaluation/.env`; set `GEMINI_API_KEY`. For Docker, use the root `.env`.
 3. Keep `GEMINI_MODEL=gemini-2.5-flash-lite`, or set another supported model.
 4. Restart the app (Docker: `docker compose up -d --force-recreate`), tick the
-   external-processing checkbox and select **Generate Gemini insights**.
+   external-processing checkbox and select **Generate insights**.
 
-Gemini is also available in the Report studio provider selector. Insights include
+Gemini powers **Cloud analysis** in the Report studio mode selector. Insights include
 findings, suggested actions, supporting calculated evidence and limitations. Requests
 run in the background; repeated insights reuse a session cache. Errors leave local
 analysis available. Evidence IDs are validated, but AI interpretations still require
-human review. In **Themes & evidence → Ask a question**, Gemini is now the default
-answer provider. Clicking Ask sends the question (with obvious contact details masked)
-and the selected scope's calculated evidence to Gemini. Answers show their provider,
+human review. In **Themes & evidence → Ask a question**, **Cloud analysis** is the default
+mode. Clicking Ask sends the question (with obvious contact details masked)
+and the selected scope's calculated evidence to Gemini. Answers show their
 scope and supporting evidence. Each question is independent; no chat history is sent.
 Avoid personal details in questions. Choose **Local analysis** for offline answers.
 Unavailable evidence is explained rather than guessed; errors are displayed without
 silently substituting a local answer. Revision workflows remain separate.
+
+Interface labels use product terms instead of provider/model branding. Cloud processing
+notices and consent controls remain visible; internal provider identifiers are retained.
+Report drafts include an **Analysis method** disclosure distinguishing local and cloud processing.
 
 Gemini receives calculated rating summaries and fixed-vocabulary theme counts, without
 raw comments, learned keywords, learner IDs, course names or filenames. Source text is

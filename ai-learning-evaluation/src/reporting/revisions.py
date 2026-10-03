@@ -139,13 +139,15 @@ def apply_proposal(report, current_content, proposal):
             else 'Human / Copilot supplied revision')
     content = proposal.revised
     if proposal.provider in ('Azure AI', 'Claude AI', 'Human / Copilot text', 'Human / Copilot replacement'):
-        heading = '## AI / Automated Analysis Disclosure'
+        heading = '## Analysis method'
+        if heading not in content:
+            heading = '## AI / Automated Analysis Disclosure'  # Existing saved drafts.
         start = content.find(heading)
         if start >= 0:
             end = content.find('\n## ', start + len(heading))
             end = len(content) if end < 0 else end
             if proposal.provider in ('Azure AI', 'Claude AI'):
-                disclosure = f'Draft initially generated locally. A section was revised using {proposal.provider} with explicit approval to send the masked section, feedback and minimised evidence. Human verification remains required.'
+                disclosure = 'A section was revised using cloud processing with explicit approval to send the masked section, feedback and minimised evidence to an external service. Human verification remains required.'
             else:
                 disclosure = 'Draft initially generated locally. Replacement wording was supplied by a human, potentially using Microsoft Copilot externally. The app did not send data to Copilot. Human verification remains required.'
             content = content[:start] + heading + '\n\n' + disclosure + '\n' + content[end:]

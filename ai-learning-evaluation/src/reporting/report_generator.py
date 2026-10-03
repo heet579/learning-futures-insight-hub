@@ -4,7 +4,7 @@ from src.models import AnalysisContext, ReportDraft
 REQUIRED_HEADINGS = [
     "Course Information", "Executive Summary", "Participation Overview", "Key Metrics",
     "What Worked Well", "Key Themes", "Areas for Improvement", "Learner Feedback Summary",
-    "Recommendations", "Evidence / Supporting Metrics", "AI / Automated Analysis Disclosure",
+    "Recommendations", "Evidence / Supporting Metrics", "Analysis method",
     "Human Review Status",
 ]
 
@@ -37,9 +37,9 @@ def generate_report(context: AnalysisContext, audience: str, provider: AIProvide
         "This client-facing view focuses on participant outcomes, relevance and value delivered; internal coaching detail is excluded."
     )
     disclosure = (
-        "Generated in **Local Analysis** using calculated metrics, explainable theme rules/NMF and deterministic templates. No data was sent to an external AI service. This is not Microsoft Copilot."
+        "Generated using **Local analysis** with calculated metrics, theme rules and statistical methods. No data was sent to an external service."
         if provider.name == "Local Analysis" else
-        f"Generated using the explicitly selected **{provider.name}** from minimised calculated metrics and theme metadata. Source comments are not included in the provider payload. Human verification remains mandatory."
+        "Generated using **Cloud analysis** from minimised calculated metrics and theme metadata sent to an external service. Source comments are not included in that submission. Human verification remains mandatory."
     )
     content = f"""# {title}
 
@@ -87,7 +87,7 @@ def generate_report(context: AnalysisContext, audience: str, provider: AIProvide
 
 {chr(10).join(evidence) or '- Quantitative metrics above are the available supporting evidence.'}
 
-## AI / Automated Analysis Disclosure
+## Analysis method
 
 {disclosure}
 

@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from src.reporting.revisions import SECTIONS, propose_revision, apply_proposal, section_text
+from src.ui.wording import REVISION_MODES, service_message
 from src.ui.theme import WHITE, INK, MUTED
 
 
@@ -58,7 +59,7 @@ class RevisionUI:
         self.revision_section = ttk.Combobox(options, values=SECTIONS, state='readonly', width=23)
         self.revision_section.set(SECTIONS[0])
         self.revision_section.pack(side='left', padx=(0, 8))
-        self.revision_provider = ttk.Combobox(options, values=['Local assistant', 'Human / Copilot replacement', 'Azure AI', 'Claude AI'], state='readonly', width=26)
+        self.revision_provider = ttk.Combobox(options, values=list(REVISION_MODES), state='readonly', width=26)
         self.revision_provider.set('Local assistant')
         self.revision_provider.pack(side='left')
         tk.Label(page, text='Feedback / instruction', bg=WHITE, fg=MUTED, anchor='w').pack(fill='x', pady=(8, 2))
@@ -68,7 +69,7 @@ class RevisionUI:
         self.replacement = self.text(page, height=5, editable=True)
         self.replacement.pack(fill='x')
         self.external_consent = tk.BooleanVar(master=self.root, value=False)
-        self.consent_check = ttk.Checkbutton(page, text='I approve sending the masked section, feedback and evidence\nto the selected external AI provider (Azure or Claude).', variable=self.external_consent)
+        self.consent_check = ttk.Checkbutton(page, text='I approve sending the masked section, feedback and evidence\nto the selected external service.', variable=self.external_consent)
         self.consent_check.pack(anchor='w', pady=6)
         actions = tk.Frame(page, bg=WHITE)
         actions.pack(fill='x', pady=(0, 8))
@@ -226,7 +227,7 @@ class RevisionUI:
         self.root.clipboard_append(prompt)
         import webbrowser
         opened = webbrowser.open('https://copilot.microsoft.com/', new=2)
-        self.revision_provider.set('Human / Copilot replacement')
+        self.revision_provider.set('Manual replacement')
         self.status.set(('Copilot opened and the safe prompt was copied.' if opened else 'The safe prompt was copied.') + ' Paste the Copilot answer into Replacement section, then preview it.')
         self.invalidate_revision()
 
@@ -236,7 +237,8 @@ class RevisionUI:
         content = self.editor.get('1.0', 'end-1c')
         feedback = self.feedback.get('1.0', 'end-1c')
         replacement = self.replacement.get('1.0', 'end-1c')
-        section, provider = self.revision_section.get(), self.revision_provider.get()
+        section, mode_label = self.revision_section.get(), self.revision_provider.get()
+        provider = REVISION_MODES.get(mode_label, mode_label)
         consent = self.external_consent.get()
         self.pending_revision = None
         self.busy = True
@@ -257,10 +259,10 @@ class RevisionUI:
             except Exception as exc:
                 self.status.set('Revision failed. The original draft is unchanged.')
                 self.sync_controls()
-                messagebox.showerror('Could not revise draft', str(exc), parent=self.root)
+                messagebox.showerror('Could not revise draft', service_message(exc), parent=self.root)
                 return
             self.pending_revision = proposal
-            self.render(self.revision_preview, f'## Original — {section}\n{section_text(content, section)}\n\n## Proposed — {provider}\n{section_text(proposal.revised, section)}')
+            self.render(self.revision_preview, f'## Original — {section}\n{section_text(content, section)}\n\n## Proposed — {mode_label}\n{section_text(proposal.revised, section)}')
             self.resize_revision_preview()
             self.status.set('Revision preview ready. Review the wording and click Apply to use it.')
             self.sync_controls()
