@@ -49,13 +49,13 @@ def local_insights(context: AnalysisContext) -> str:
     lines.extend(["", "## Evidence"])
     lines.extend(f"- {value}" for key, value in facts.items() if key not in {"limitations", "small_sample"})
     lines.extend(["", "## Limitations", facts["limitations"], facts.get("small_sample", ""),
-                  "", "Select Generate Gemini insights for AI interpretation and tailored suggestions."])
+                  "", "Select Generate insights for interpretation and tailored suggestions."])
     return "\n".join(lines)
 
 
 def render_insights(result: dict, context: AnalysisContext, model: str) -> str:
     facts = insight_evidence(context)
-    lines = ["# Gemini insights", f"Model: {model} | Draft interpretation; human review required.", result["summary"]]
+    lines = ["# Insights", "Draft interpretation; human review required.", result["summary"]]
     for item in result["insights"]:
         lines.extend([f"\n## {item['title']}", item["finding"], f"Suggested action: {item['suggestion']}", "Supporting calculated evidence:"])
         lines.extend(f"- {facts[key]}" for key in item["evidence_ids"])

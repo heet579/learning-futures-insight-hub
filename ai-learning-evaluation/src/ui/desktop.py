@@ -4,6 +4,7 @@ import tkinter as tk
 from src.ui.revisions import RevisionUI
 from src.ui.insights import InsightsUI
 from src.ui.questions import QuestionsUI
+from src.ui.wording import DRAFT_MODES, service_message
 from tkinter import ttk, messagebox, font as tkfont
 from src.ui.runtime import _setup_environment  # noqa: F401 -- re-exported for tests
 from concurrent.futures import ThreadPoolExecutor
@@ -161,7 +162,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         bottom = tk.Frame(sidebar, bg=NAVY)
         bottom.pack(side='bottom', fill='x', padx=20, pady=24)
         label(bottom, '●  LOCAL WORKSPACE', 9, '#5EEAD4', True).pack(anchor='w')
-        label(bottom, 'Local analysis by default.\nExternal AI uses approved summaries.\nReports require human review.', 9, '#B8AED9', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
+        label(bottom, 'Explore feedback.\nTurn insights into action.\nReports require human review.', 9, '#B8AED9', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
         main = tk.Frame(self.root, bg=BG)
         main.pack(side='left', fill='both', expand=True)
         head = tk.Frame(main, bg=BG)
@@ -214,7 +215,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         notebook.add(overview_tab, text='Overview')
         notebook.add(data_tab, text='Survey data')
         insights_tab = tk.Frame(notebook, bg=BG)
-        notebook.add(insights_tab, text='AI insights & suggestions')
+        notebook.add(insights_tab, text='Insights & suggestions')
         self.build_insights(insights_tab)
         self.explore_notebook = notebook
         self.build_overview(overview_tab)
@@ -340,13 +341,13 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.audience.set('facilitator')
         self.audience.pack(side='left')
         self.audience.bind('<<ComboboxSelected>>', self.audience_changed)
-        self.draft_provider = ttk.Combobox(actions, values=['Local Analysis', 'Gemini', 'Claude', 'Azure OpenAI'], state='readonly', width=13)
-        self.draft_provider.set('Local Analysis')
+        self.draft_provider = ttk.Combobox(actions, values=list(DRAFT_MODES), state='readonly', width=18)
+        self.draft_provider.set('Local analysis')
         self.draft_provider.pack(side='left', padx=(8, 0))
         self.draft_consent = tk.BooleanVar(value=False)
         self.draft_consent_check = ttk.Checkbutton(workspace, text='Approve sending minimised metrics/themes externally', variable=self.draft_consent)
         self.draft_consent_check.pack(anchor='w')
-        label(workspace, 'Gemini free tier: Google may use submitted summaries to improve its products.', 9, MUTED, wraplength=650).pack(anchor='w', pady=(0, 6))
+        label(workspace, 'Cloud processing sends summaries to an external service; free-tier inputs may be used to improve its products.', 9, MUTED, wraplength=650).pack(anchor='w', pady=(0, 6))
         self.generate_button = self.action(actions, 'Generate draft', self.generate, True)
         self.generate_button.pack(side='right')
         self.report_tabs = ttk.Notebook(workspace)
@@ -395,15 +396,15 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         box = panel(p, padx=22, pady=18)
         box.pack(fill='both', expand=True)
         label(box, 'What would you like to understand?', 17, INK, True).pack(anchor='w')
-        label(box, 'Gemini answers using the selected survey metrics and themes. Each question is independent.', 9, MUTED, wraplength=780).pack(anchor='w', pady=(6, 8))
+        label(box, 'Explore the selected survey metrics and themes. Each question is independent.', 9, MUTED, wraplength=780).pack(anchor='w', pady=(6, 8))
         options = tk.Frame(box, bg=WHITE)
         options.pack(fill='x', pady=(0, 8))
         label(options, 'Answer with', 9, MUTED).pack(side='left', padx=(0, 8))
-        self.question_provider = ttk.Combobox(options, values=['Gemini', 'Local analysis'], state='readonly', width=18)
-        self.question_provider.set('Gemini')
+        self.question_provider = ttk.Combobox(options, values=['Cloud analysis', 'Local analysis'], state='readonly', width=18)
+        self.question_provider.set('Cloud analysis')
         self.question_provider.pack(side='left')
-        label(box, 'Ask sends your question and calculated summaries to the selected provider. Avoid personal details.\n'
-              'Raw survey comments stay local. Google may use free-tier inputs to improve its products.',
+        label(box, 'Cloud analysis sends your question and summaries to an external service. Avoid personal details.\n'
+              'Raw survey comments stay local. Free-tier inputs may be used to improve the service.',
               9, MUTED, justify='left', wraplength=780).pack(anchor='w', pady=(0, 12))
         suggestions = tk.Frame(box, bg=WHITE)
         suggestions.pack(fill='x', pady=(0, 16))
@@ -734,15 +735,15 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         from src.ai.local_provider import LocalAnalysisProvider
         if not self.context or self.busy or (self.report and not self.may_replace()):
             return
-        provider_name = self.draft_provider.get()
+        provider_name = DRAFT_MODES.get(self.draft_provider.get(), self.draft_provider.get())
         if provider_name != 'Local Analysis' and not self.draft_consent.get():
-            messagebox.showinfo('Consent required', f'Tick the consent box before generating a draft with {provider_name}.', parent=self.root)
+            messagebox.showinfo('Consent required', 'Tick the consent box before generating a draft using cloud processing.', parent=self.root)
             return
         if provider_name == 'Local Analysis':
             self._apply_generated_report(generate_report(self.context, self.audience.get(), LocalAnalysisProvider()))
             return
         self.busy = True
-        self.status.set(f'Generating draft with {provider_name}…')
+        self.status.set('Generating report draft…')
         self.progress.start(12)
         self.sync_controls()
         context, audience = self.context, self.audience.get()
@@ -771,7 +772,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             except Exception as exc:
                 self.status.set('Could not generate a draft.')
                 self.sync_controls()
-                messagebox.showerror('Draft generation failed', str(exc), parent=self.root)
+                messagebox.showerror('Draft generation failed', service_message(exc), parent=self.root)
                 return
             self._apply_generated_report(report)
         self.generate_poll = self.root.after(80, finish)

@@ -105,7 +105,8 @@ def test_gemini_report_discloses_actual_provider(monkeypatch, context):
     monkeypatch.setattr("src.ai.gemini_provider.urlopen", lambda *a, **k: response())
     report = generate_report(context, "client", GeminiAIProvider())
     assert report.mode == "Gemini"
-    assert "**Gemini**" in report.content
+    assert "**Cloud analysis**" in report.content
+    assert "external service" in report.content
     assert "Azure OpenAI adapter" not in report.content
 
 

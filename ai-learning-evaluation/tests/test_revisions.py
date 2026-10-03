@@ -77,7 +77,7 @@ def test_claude_masks_patterns_and_corrects_disclosure(report_context):
     assert '[URL REMOVED]' in payload['feedback']
     updated = apply_proposal(report, report.content, proposal)
     assert 'No data was sent to an external AI service' not in updated.content
-    assert 'revised using Claude AI' in updated.content
+    assert 'revised using cloud processing' in updated.content
     assert updated.mode == 'Claude AI assisted revision'
 
 
@@ -93,7 +93,7 @@ def test_azure_masks_patterns_and_corrects_disclosure(report_context):
     assert '[URL REMOVED]' in payload['feedback']
     updated = apply_proposal(report, report.content, proposal)
     assert 'No data was sent to an external AI service' not in updated.content
-    assert 'revised using Azure AI' in updated.content
+    assert 'revised using cloud processing' in updated.content
     assert updated.mode == 'Azure AI assisted revision'
 
 

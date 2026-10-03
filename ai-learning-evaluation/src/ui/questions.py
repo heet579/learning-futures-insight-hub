@@ -3,6 +3,7 @@ import json
 
 from src.ai.insights import insight_evidence
 from src.privacy.pii_masker import mask_text
+from src.ui.wording import service_message
 
 
 class QuestionsUI:
@@ -29,26 +30,26 @@ class QuestionsUI:
         try:
             provider = GeminiAIProvider()
         except ValueError as exc:
-            self.show(self.answer, f'Gemini is not configured.\n\n{exc}\n\nSelect Local analysis to answer without an API.')
+            self.show(self.answer, f'Cloud analysis is not configured.\n\n{service_message(exc)}\n\nSelect Local analysis for an offline answer.')
             return
         facts = insight_evidence(context)
         key = json.dumps([provider.model, mask_text(text.strip()), facts], sort_keys=True)
 
         def display(result):
             evidence = '\n'.join(f'- {facts[ref]}' for ref in result['evidence_ids'])
-            content = f'## Gemini answer\n{result["answer"]}'
+            content = f'## Answer\n{result["answer"]}'
             if evidence:
                 content += f'\n\n## Supporting calculated evidence\n{evidence}'
-            content += f'{scope}\n\nModel: {provider.model}. AI interpretation; verify against the evidence.'
+            content += f'{scope}\n\nReview interpretations against the supporting evidence.'
             self.render(self.answer, content)
 
         if key in self.question_cache:
             display(self.question_cache[key])
-            self.status.set('Gemini answer restored from this session; no new API request.')
+            self.status.set('Answer restored from this session.')
             return
         self.busy = True
-        self.show(self.answer, 'Gemini is analysing your question and the selected survey evidence...')
-        self.status.set('Asking Gemini about the selected data...')
+        self.show(self.answer, 'Analysing your question and the selected survey evidence...')
+        self.status.set('Preparing an answer from the selected data...')
         self.progress.start(12)
         self.sync_controls()
         future = self.pool.submit(provider.answer_question, context, text)
@@ -64,12 +65,12 @@ class QuestionsUI:
             try:
                 result = future.result()
             except Exception as exc:
-                self.show(self.answer, f'Gemini could not answer this question.\n\n{exc}\n\nTry again later, or select Local analysis for a rule-based answer.')
-                self.status.set('Gemini request failed. Your survey data is unchanged.')
+                self.show(self.answer, f'Could not answer this question.\n\n{service_message(exc)}\n\nTry again later, or select Local analysis for an offline answer.')
+                self.status.set('Request failed. Your survey data is unchanged.')
             else:
                 self.question_cache[key] = result
                 display(result)
-                self.status.set('Gemini answered using the selected survey evidence.')
+                self.status.set('Answer ready, based on the selected survey evidence.')
             self.sync_controls()
 
         self.question_poll = self.root.after(80, finish)

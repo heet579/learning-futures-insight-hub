@@ -274,7 +274,7 @@ def test_copilot_workflow_opens_browser_and_copies_masked_prompt(desktop, monkey
     assert opened == ['https://copilot.microsoft.com/']
     assert '[EMAIL REMOVED]' in prompt
     assert 'person@example.com' not in prompt
-    assert desktop.revision_provider.get() == 'Human / Copilot replacement'
+    assert desktop.revision_provider.get() == 'Manual replacement'
 
 
 def test_manual_edit_invalidates_feedback_preview(desktop):
@@ -325,7 +325,7 @@ def test_gemini_insights_consent_cache_and_scope_reset(desktop, monkeypatch):
     desktop.generate_insights()
     wait_for_load(desktop)
     assert len(calls) == 1
-    assert 'Gemini insights' in desktop.insights_text.get('1.0', 'end')
+    assert 'Insights' in desktop.insights_text.get('1.0', 'end')
     desktop.generate_insights()
     assert len(calls) == 1
     course = desktop.scope['values'][1]
@@ -369,7 +369,7 @@ def test_gemini_report_provider_can_be_selected(desktop, monkeypatch):
     load_sample(desktop, 30)
     monkeypatch.setenv('GEMINI_API_KEY', 'test')
     monkeypatch.setattr('src.ai.gemini_provider.urlopen', lambda *a, **k: response())
-    desktop.draft_provider.set('Gemini')
+    desktop.draft_provider.set('Cloud analysis')
     desktop.draft_consent.set(True)
     desktop.generate()
     wait_for_load(desktop)
@@ -384,18 +384,18 @@ def test_question_uses_gemini_caches_and_resets_on_scope_change(desktop, monkeyp
         calls.append((context.course_name, question))
         return {'answer': 'Review the supplied response count.', 'evidence_ids': ['responses']}
     monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.answer_question', answer)
-    assert desktop.question_provider.get() == 'Gemini'
+    assert desktop.question_provider.get() == 'Cloud analysis'
     desktop.ask('How many responses?')
     assert desktop.busy
     wait_for_load(desktop)
     text = desktop.answer.get('1.0', 'end')
-    assert 'Gemini answer' in text and '30 survey responses' in text
+    assert 'Answer' in text and '30 survey responses' in text
     desktop.ask('How many responses?')
     assert len(calls) == 1
     desktop.load(desktop.raw, desktop.source, desktop.scope['values'][1])
     wait_for_load(desktop)
     assert desktop.question.get() == ''
-    assert 'Gemini answer' not in desktop.answer.get('1.0', 'end')
+    assert 'Supporting calculated evidence' not in desktop.answer.get('1.0', 'end')
     desktop.ask('How many responses?')
     wait_for_load(desktop)
     assert len(calls) == 2
@@ -409,7 +409,7 @@ def test_question_failure_is_not_disguised_as_ai_answer(desktop, monkeypatch):
     monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.answer_question', fail)
     desktop.ask('What should we improve?')
     wait_for_load(desktop)
-    assert 'Gemini could not answer' in desktop.answer.get('1.0', 'end')
+    assert 'Could not answer' in desktop.answer.get('1.0', 'end')
     assert not desktop.question_cache
     assert desktop.question_provider.instate(['readonly'])
 
