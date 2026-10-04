@@ -49,19 +49,20 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
               ('Themes & evidence', 'Explore recurring feedback and the comments supporting it, or ask a question.'),
               ('Report studio', 'Turn evidence into a draft, refine it, then review and export.')]
 
-    def __init__(self, root, auto_load=True):
+    def __init__(self, root, auto_load=False):
         global FONT
         FONT = tkfont.nametofont('TkDefaultFont', root=root).actual('family')
         self.root = root
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.context = self.raw = self.report = self.frame = None
         self.source = ''
+        self.loaded_file_label = ''
         self.busy = self.dirty = False
         self.controls = []
         self.nav_buttons = []
         self.metric_values = []
         self.search_id = None
-        self.status = tk.StringVar(value='Starting workspace • Loading evaluation data.')
+        self.status = tk.StringVar(value='Awaiting import. Choose a CSV or Excel file to begin.')
         self.report_status = tk.StringVar(value='No draft yet')
         self.evidence_status = tk.StringVar(value='Evidence check: generate a draft first.')
         self.confirmed = tk.BooleanVar(value=False)
@@ -98,7 +99,8 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             import pandas as pd
             from src.ingestion.qualtrics_loader import load_survey
             self.load(lambda: pd.concat([load_survey(path) for path in paths], ignore_index=True),
-                      Path(paths[0]).name if len(paths) == 1 else f'{len(paths)} survey files')
+                      Path(paths[0]).name if len(paths) == 1 else f'{len(paths)} survey files',
+                      file_label=Path(paths[0]).name + (f' (+{len(paths)-1} MORE FILES)' if len(paths) > 1 else ''))
 
     def load_startup_data(self):
         self.startup_id = None
@@ -174,12 +176,20 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.page_subtitle.pack(anchor='w', pady=(4, 0))
         toolbar = panel(main, padx=12, pady=12)
         toolbar.pack(fill='x', padx=24, pady=(0, 18))
-        self.action(toolbar, '+ Import CSV / Excel', self.open_file, True).pack(side='left', padx=(0, 8))
+        toolbar.columnconfigure(1, weight=1)
+        self.action(toolbar, '+ Import CSV / Excel', self.open_file, True).grid(row=0, column=0, padx=(0, 12), sticky='w')
+        file_badge = tk.Frame(toolbar, bg='#EFE9FA', padx=12, pady=8)
+        file_badge.grid(row=0, column=1, sticky='nsew')
+        self.file_state = label(file_badge, 'AWAITING IMPORT', 8, MUTED, True)
+        self.file_state.pack(anchor='w')
+        self.file_name = label(file_badge, 'NO FILE SELECTED', 11, TEAL, True, width=1, wraplength=420, justify='left')
+        self.file_name.pack(fill='x', pady=(3, 0))
+        file_badge.bind('<Configure>', lambda event: self.file_name.configure(wraplength=max(120, event.width-24)))
         self.scope = ttk.Combobox(toolbar, state='disabled', width=28, values=['All courses (aggregate)'])
         self.scope.set('All courses (aggregate)')
-        self.scope.pack(side='right')
+        self.scope.grid(row=1, column=1, sticky='e', pady=(8, 0))
         self.scope.bind('<<ComboboxSelected>>', lambda e: self.load(self.raw, self.source, self.scope.get()))
-        label(toolbar, 'SCOPE', 8, MUTED, True).pack(side='right', padx=10)
+        label(toolbar, 'SCOPE', 8, MUTED, True).grid(row=1, column=0, sticky='e', padx=12, pady=(8, 0))
         footer = tk.Frame(main, bg=BG)
         footer.pack(side='bottom', fill='x', padx=24, pady=10)
         status = label(footer, size=9, color=MUTED, wraplength=800)
@@ -248,7 +258,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             card = panel(cards, padx=14, pady=16)
             card.grid(row=0, column=i, sticky='nsew', padx=(0 if i == 0 else 6, 0 if i == 3 else 6))
             label(card, title, 8, MUTED, True).pack(anchor='w')
-            value = label(card, '—', 28, TEAL if i == 1 else INK, True)
+            value = label(card, 'PENDING', 18, MUTED, True)
             value.pack(anchor='w', pady=(9, 5))
             label(card, note, 8, MUTED).pack(anchor='w')
             self.metric_values.append(value)
@@ -521,7 +531,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
     def may_replace(self):
         return not self.dirty or messagebox.askyesno('Unsaved report', 'Continue and discard the unsaved report? Use Save draft to keep a copy.', parent=self.root)
 
-    def load(self, source, name, scope='All courses (aggregate)'):
+    def load(self, source, name, scope='All courses (aggregate)', file_label=None):
         from pathlib import Path
         from src.ingestion.qualtrics_loader import load_survey
         if self.busy or source is None:
@@ -530,6 +540,9 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             self.scope.set(self.context.course_name if self.context else 'All courses (aggregate)')
             return
         self.busy = True
+        pending_label = file_label or (self.loaded_file_label if source is self.raw else name) or name
+        self.file_state.configure(text='PROCESSING FILE', fg=TEAL)
+        self.file_name.configure(text=pending_label.upper())
         self.status.set('Reading, validating and analysing data…')
         self.progress.start(12)
         self.sync_controls()
@@ -553,12 +566,17 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             try:
                 raw, result = future.result()
             except Exception as exc:
+                self.file_state.configure(text='LOADED FILE' if self.context else 'AWAITING IMPORT', fg=MUTED)
+                self.file_name.configure(text=self.loaded_file_label.upper() if self.context else 'NO FILE SELECTED')
                 self.scope.set(self.context.course_name if self.context else 'All courses (aggregate)')
                 self.status.set('Could not load this file. Your previous workspace is unchanged.')
                 self.sync_controls()
                 messagebox.showerror('Cannot analyse file', str(exc), parent=self.root)
                 return
             self.raw, self.source = raw, name
+            self.loaded_file_label = pending_label
+            self.file_state.configure(text='LOADED FILE', fg=TEAL)
+            self.file_name.configure(text=pending_label.upper())
             self.apply_analysis(result)
             self.status.set(f'Ready • {len(self.frame):,} responses analysed • All processing is local')
             self.sync_controls()
@@ -588,7 +606,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         mean, rec = m['ratings']['OverallSatisfaction']['mean'], m['recommendation_percent']
         values = [f"{m['response_count']:,}", f'{mean:.2f}' if mean is not None else 'N/A', f'{rec:.0f}%' if rec is not None else 'N/A', f"{m['response_completeness']:.1f}%"]
         for widget, value in zip(self.metric_values, values):
-            widget.configure(text=value)
+            widget.configure(text=value, font=(FONT, 28, 'bold'), fg=TEAL if widget is self.metric_values[1] else INK)
         self.dataset_label.configure(text=f'{self.source}  /  {self.context.course_name}')
         strongest = m['ratings'].get(m['strongest_area'], {}).get('label', 'Insufficient rating data')
         improvement = next((t.name for t in self.context.themes if t.category == 'Improvement'), 'No recurring improvement theme')

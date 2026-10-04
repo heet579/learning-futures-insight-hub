@@ -18,7 +18,7 @@ Windows setup launcher: `./run_app.ps1`. After dependencies are installed in you
 
 ## Application workflow
 
-1. Launch the app. If a client export sits in `data/client/` (never committed), it loads automatically; otherwise the included synthetic data loads. Show the response count, satisfaction, recommendation and completeness cards, then the rating chart.
+1. Launch the app. Cards show PENDING until you choose **Import CSV / Excel**. Import your survey files or `data/synthetic_qualtrics_evaluation.csv` for a demo, then review the response count, satisfaction, recommendation and completeness cards and rating chart.
 2. Change the course scope and show how the dashboard updates.
 3. In **Explore data**, switch to the **Survey data** tab, search for a response or phrase, and select a row to inspect its full masked content.
 4. Open **Themes & evidence**, select a theme to show the supporting comments, or switch to **Ask a question** for a grounded local Q&A.
@@ -26,7 +26,7 @@ Windows setup launcher: `./run_app.ps1`. After dependencies are installed in you
 6. Enter a reviewer name, confirm the checks, and use **Approve & export** to save Word or Markdown. **Save draft** works without approval and retains a draft label. The **Evidence check** line next to the review checklist blocks approval if the draft contains a number or quote that doesn't match the analysed data.
 7. In **Feedback & revisions**, request changes via the local assistant, Copilot hand-off, or the same Claude/Azure OpenAI providers.
 
-The application auto-detects `data/client/` (a folder of raw PACE/Qualtrics course export CSVs) at startup and combines and maps them onto the canonical schema; without it, the included synthetic CSV loads instead. **Import client CSV** (Ctrl+O) replaces the active dataset with any single compatible export. Set `EVALUATION_DATA_PATH` in `.env` to point at a specific CSV or folder instead. See [data requirements](data/README.md) and [column definitions](docs/data_dictionary.md). Synthetic records remain clearly identified by the source filename.
+The application starts empty, even when `data/client/` or `EVALUATION_DATA_PATH` is configured. **Import CSV / Excel** (Ctrl+O) accepts one or more compatible survey files and replaces the active dataset after validation. A bold uppercase filename beside the import button identifies the selected file during processing and after loading; multiple imports also show the additional file count. See [data requirements](data/README.md) and [column definitions](docs/data_dictionary.md). Synthetic records remain identified by the source filename when explicitly imported.
 
 ## Interface and workflow
 

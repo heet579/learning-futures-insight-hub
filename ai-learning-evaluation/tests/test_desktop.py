@@ -31,7 +31,7 @@ def tk_runtime():
 def desktop(monkeypatch, tk_runtime):
     root = tk.Toplevel(tk_runtime)
     root.withdraw()
-    app = DesktopApp(root, auto_load=False)
+    app = DesktopApp(root)
     errors = []
     monkeypatch.setattr(tk_runtime, 'report_callback_exception', lambda *args: errors.append(args))
     monkeypatch.setattr('tkinter.messagebox.showerror', lambda *a, **k: None)
@@ -60,6 +60,10 @@ def load_sample(app, count=500):
 
 
 def test_startup_demo_and_navigation(desktop):
+    assert desktop.context is None
+    assert getattr(desktop, 'startup_id', None) is None
+    assert [widget.cget('text') for widget in desktop.metric_values] == ['PENDING'] * 4
+    assert desktop.file_name.cget('text') == 'NO FILE SELECTED'
     assert desktop.generate_button.instate(['disabled'])
     desktop.load_startup_data()
     wait_for_load(desktop)
@@ -359,9 +363,25 @@ def test_import_multiple_csv_and_excel_files(desktop, monkeypatch, tmp_path, gol
     write_xlsx_fixture(xlsx, golden_df)
     monkeypatch.setattr('tkinter.filedialog.askopenfilenames', lambda **kwargs: [str(csv), str(xlsx)])
     desktop.open_file()
+    assert desktop.file_state.cget('text') == 'PROCESSING FILE'
+    assert desktop.file_name.cget('text') == 'SURVEY.CSV (+1 MORE FILES)'
     wait_for_load(desktop)
     assert len(desktop.frame) == 6
     assert desktop.source == '2 survey files'
+    assert desktop.file_state.cget('text') == 'LOADED FILE'
+    assert desktop.metric_values[0].cget('text') == '6'
+
+
+def test_failed_import_restores_loaded_file_badge(desktop, tmp_path):
+    load_sample(desktop, 30)
+    broken = tmp_path / 'broken.csv'
+    broken.write_text('wrong,columns\n1,2\n', encoding='utf-8')
+    desktop.load(broken, broken.name)
+    assert desktop.file_name.cget('text') == 'BROKEN.CSV'
+    wait_for_load(desktop)
+    assert desktop.file_name.cget('text') == 'SAMPLE.CSV'
+    assert desktop.file_state.cget('text') == 'LOADED FILE'
+    assert desktop.metric_values[0].cget('text') == '30'
 
 
 def test_gemini_report_provider_can_be_selected(desktop, monkeypatch):

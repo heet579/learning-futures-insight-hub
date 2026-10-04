@@ -4,6 +4,11 @@ A Python desktop application for analysing learner feedback, exploring survey in
 
 The application uses Tkinter and runs in its own desktop window. It includes synthetic demonstration data and works locally without API keys or external AI services.
 
+The app opens with an empty workspace and **PENDING** metric cards. Use **Import CSV / Excel**
+to load survey data. A bold uppercase filename beside the import button shows the file
+being processed and remains visible after loading. Startup does not automatically load
+demo data or the configured `EVALUATION_DATA_PATH`.
+
 ## Gemini insights and Excel imports
 
 Import one or more `.csv`, `.xlsx` or `.xls` survey files with **Import CSV / Excel**.
@@ -71,7 +76,7 @@ cd learning-futures-insight-hub\ai-learning-evaluation
 START_DEMO.cmd
 ```
 
-The first launch creates a local Python environment and installs dependencies; internet access is required for setup. Later launches reuse that environment. The demo data loads automatically.
+The first launch creates a local Python environment and installs dependencies; internet access is required for setup. Later launches reuse that environment. Import a survey file to populate the dashboard.
 
 Your folder path does not need to match Heet's PC. After cloning, all application files are inside `learning-futures-insight-hub/ai-learning-evaluation`.
 
