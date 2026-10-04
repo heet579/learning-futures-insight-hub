@@ -234,7 +234,6 @@ class RevisionUI:
         consent = False  # Visible revision modes only edit or replace text on-device.
         self.pending_revision = None
         self.busy = True
-        self.progress.start(12)
         self.status.set('Preparing revision preview…')
         self.sync_controls()
         future = self.pool.submit(propose_revision, self.report, content, self.context, section, feedback, provider, consent, None, replacement)
@@ -244,8 +243,6 @@ class RevisionUI:
                 return
             self.revision_poll = None
             self.busy = False
-            self.progress.stop()
-            self.progress.configure(value=0)
             try:
                 proposal = future.result()
             except Exception as exc:

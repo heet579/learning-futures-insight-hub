@@ -10,6 +10,7 @@ The app opens with an empty workspace and **PENDING** metric cards. Use **Import
 to load survey data. A bold uppercase filename beside the import button shows the file
 being processed and remains visible after loading. Startup does not automatically load
 demo data or the configured `EVALUATION_DATA_PATH`.
+The dashboard analyses all responses in the imported files together; there is no course-scope dropdown.
 
 ## Gemini insights and Excel imports
 
@@ -88,11 +89,11 @@ If you do not want to install Git, download and extract the repository ZIP from 
 ## What to try
 
 - Review dashboard metrics and rating charts.
-- Select a course and inspect searchable, masked survey responses.
+- Inspect searchable, masked survey responses from the imported files.
 - Explore themes and their supporting comments.
 - Generate and edit a facilitator or client report.
 - Enter a reviewer name, confirm review, and export Word or Markdown.
-- Ask the local data assistant about the selected scope.
+- Ask questions about the imported survey data.
 
 See the [teammate testing checklist](ai-learning-evaluation/TEAM_TESTING.md) and [application guide](ai-learning-evaluation/README.md).
 

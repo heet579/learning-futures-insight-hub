@@ -190,19 +190,14 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.file_name = label(file_badge, 'NO FILE SELECTED', 11, TEAL, True, width=1, wraplength=420, justify='left')
         self.file_name.pack(fill='x', pady=(3, 0))
         file_badge.bind('<Configure>', lambda event: self.file_name.configure(wraplength=max(120, event.width-24)))
-        self.scope = ttk.Combobox(toolbar, state='disabled', width=28, values=['All courses (aggregate)'])
-        self.scope.set('All courses (aggregate)')
-        self.scope.grid(row=1, column=1, sticky='e', pady=(8, 0))
-        self.scope.bind('<<ComboboxSelected>>', lambda e: self.load(self.raw, self.source, self.scope.get()))
-        label(toolbar, 'SCOPE', 8, MUTED, True).grid(row=1, column=0, sticky='e', padx=12, pady=(8, 0))
         footer = tk.Frame(main, bg=BG)
         footer.pack(side='bottom', fill='x', padx=24, pady=10)
         status = label(footer, size=9, color=MUTED, wraplength=800)
         status.configure(textvariable=self.status)
         status.pack(side='left')
         self.progress = ttk.Progressbar(main, mode='indeterminate')
-        self.progress.pack(side='bottom', fill='x', padx=24)
         content = tk.Frame(main, bg=BG)
+        self.content_frame = content
         content.pack(fill='both', expand=True, padx=24, pady=(0, 6))
         content.rowconfigure(0, weight=1)
         content.columnconfigure(0, weight=1)
@@ -444,6 +439,14 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         widget.configure(state='disabled')
 
     def sync_controls(self):
+        if self.busy:
+            if not self.progress.winfo_manager():
+                self.progress.pack(side='bottom', fill='x', padx=24, before=self.content_frame)
+                self.progress.start(20)
+        else:
+            self.progress.stop()
+            self.progress.configure(value=0)
+            self.progress.pack_forget()
         for b in self.controls:
             b.configure(state='disabled' if self.busy else 'normal')
         self.generate_button.configure(state='normal' if self.context and not self.busy else 'disabled')
@@ -451,7 +454,6 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.question.configure(state='disabled' if self.busy else 'normal')
         for b in (self.export_button, self.save_button):
             b.configure(state='normal' if self.report and not self.busy else 'disabled')
-        self.scope.configure(state='readonly' if self.context and not self.busy else 'disabled')
         self.audience.configure(state='disabled' if self.busy else 'readonly')
         self.editor.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.review_check.configure(state='normal' if self.report and not self.busy else 'disabled')
@@ -522,14 +524,12 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         if self.busy or source is None:
             return
         if not self.may_replace():
-            self.scope.set(self.context.course_name if self.context else 'All courses (aggregate)')
             return
         self.busy = True
         pending_label = file_label or (self.loaded_file_label if source is self.raw else name) or name
         self.file_state.configure(text='PROCESSING FILE', fg=TEAL)
         self.file_name.configure(text=pending_label.upper())
         self.status.set('Reading, validating and analysing data…')
-        self.progress.start(12)
         self.sync_controls()
         def work():
             if callable(source):
@@ -546,14 +546,11 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
                 return
             self.load_poll = None
             self.busy = False
-            self.progress.stop()
-            self.progress.configure(value=0)
             try:
                 raw, result = future.result()
             except Exception as exc:
                 self.file_state.configure(text='LOADED FILE' if self.context else 'AWAITING IMPORT', fg=MUTED)
                 self.file_name.configure(text=self.loaded_file_label.upper() if self.context else 'NO FILE SELECTED')
-                self.scope.set(self.context.course_name if self.context else 'All courses (aggregate)')
                 self.status.set('Could not load this file. Your previous workspace is unchanged.')
                 self.sync_controls()
                 messagebox.showerror('Cannot analyse file', str(exc), parent=self.root)
@@ -570,8 +567,6 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
     def apply_analysis(self, result):
         self.frame, self.context, count, courses = result
         self.show_local_insights()
-        self.scope.configure(values=['All courses (aggregate)', *courses])
-        self.scope.set(self.context.course_name)
         self.report, self.dirty = None, False
         self.reset_revisions()
         self.editor.configure(state='normal')
@@ -739,7 +734,6 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             return
         self.busy = True
         self.status.set('Preparing report draft…')
-        self.progress.start(12)
         self.sync_controls()
         context, audience = self.context, self.audience.get()
         def work():
@@ -753,8 +747,6 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
                 return
             self.generate_poll = None
             self.busy = False
-            self.progress.stop()
-            self.progress.configure(value=0)
             try:
                 report = future.result()
             except Exception as exc:

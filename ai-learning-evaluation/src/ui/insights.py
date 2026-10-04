@@ -41,7 +41,6 @@ class InsightsUI:
         context = self.context
         self.busy = True
         self.status.set('Preparing insights from calculated evidence...')
-        self.progress.start(12)
         self.sync_controls()
         future = self.pool.submit(provider.insights, context)
 
@@ -51,8 +50,6 @@ class InsightsUI:
                 return
             self.insights_poll = None
             self.busy = False
-            self.progress.stop()
-            self.progress.configure(value=0)
             try:
                 content = render_insights(future.result(), context, provider.model)
             except Exception as exc:

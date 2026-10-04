@@ -46,7 +46,6 @@ class QuestionsUI:
         self.busy = True
         self.show(self.answer, 'Analysing your question and the selected survey evidence...')
         self.status.set('Preparing an answer from the selected data...')
-        self.progress.start(12)
         self.sync_controls()
         future = self.pool.submit(provider.answer_question, context, text)
 
@@ -56,8 +55,6 @@ class QuestionsUI:
                 return
             self.question_poll = None
             self.busy = False
-            self.progress.stop()
-            self.progress.configure(value=0)
             try:
                 result = future.result()
             except Exception as exc:

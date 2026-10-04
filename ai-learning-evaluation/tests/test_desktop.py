@@ -69,6 +69,7 @@ def load_sample(app, count=500):
 
 
 def test_startup_demo_and_navigation(desktop):
+    assert desktop.progress.winfo_manager() == ''
     assert desktop.context is None
     assert getattr(desktop, 'startup_id', None) is None
     assert [widget.cget('text') for widget in desktop.metric_values] == ['PENDING'] * 4
@@ -78,6 +79,7 @@ def test_startup_demo_and_navigation(desktop):
     wait_for_load(desktop)
     assert desktop.context.metrics['response_count'] > 0
     assert desktop.generate_button.instate(['!disabled'])
+    assert desktop.progress.winfo_manager() == ''
     for i, (title, _) in enumerate(desktop.TITLES):
         desktop.navigate(i)
         desktop.root.update()
@@ -344,7 +346,7 @@ def test_insights_generate_directly_cache_and_reset_on_scope_change(desktop, mon
     assert 'Insights' in desktop.insights_text.get('1.0', 'end')
     desktop.generate_insights()
     assert len(calls) == 1
-    course = desktop.scope['values'][1]
+    course = sorted(desktop.raw['CourseName'].dropna().unique())[0]
     desktop.load(desktop.raw, desktop.source, course)
     wait_for_load(desktop)
     assert 'Survey overview' in desktop.insights_text.get('1.0', 'end')
@@ -416,12 +418,14 @@ def test_question_uses_gemini_caches_and_resets_on_scope_change(desktop, monkeyp
     assert not hasattr(desktop, 'question_provider')
     desktop.ask('How many responses?')
     assert desktop.busy
+    assert desktop.progress.winfo_manager() == 'pack'
     wait_for_load(desktop)
+    assert desktop.progress.winfo_manager() == ''
     text = desktop.answer.get('1.0', 'end')
     assert 'Answer' in text and '30 survey responses' in text
     desktop.ask('How many responses?')
     assert len(calls) == 1
-    desktop.load(desktop.raw, desktop.source, desktop.scope['values'][1])
+    desktop.load(desktop.raw, desktop.source, sorted(desktop.raw['CourseName'].dropna().unique())[0])
     wait_for_load(desktop)
     assert desktop.question.get() == ''
     assert 'Supporting calculated evidence' not in desktop.answer.get('1.0', 'end')
@@ -439,6 +443,7 @@ def test_question_failure_is_not_disguised_as_ai_answer(desktop, monkeypatch):
     desktop.ask('What should we improve?')
     wait_for_load(desktop)
     assert 'Could not answer' in desktop.answer.get('1.0', 'end')
+    assert desktop.progress.winfo_manager() == ''
     assert not desktop.question_cache
     assert desktop.question.instate(['!disabled'])
 
