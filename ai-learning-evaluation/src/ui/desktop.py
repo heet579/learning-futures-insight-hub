@@ -4,7 +4,7 @@ import tkinter as tk
 from src.ui.revisions import RevisionUI
 from src.ui.insights import InsightsUI
 from src.ui.questions import QuestionsUI
-from src.ui.wording import DRAFT_MODES, service_message
+from src.ui.wording import service_message
 from tkinter import ttk, messagebox, font as tkfont
 from src.ui.runtime import _setup_environment  # noqa: F401 -- re-exported for tests
 from concurrent.futures import ThreadPoolExecutor
@@ -64,7 +64,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.search_id = None
         self.status = tk.StringVar(value='Awaiting import. Choose a CSV or Excel file to begin.')
         self.report_status = tk.StringVar(value='No draft yet')
-        self.evidence_status = tk.StringVar(value='Evidence check: generate a draft first.')
+        self.evidence_status = tk.StringVar(value='Evidence check: get a draft first.')
         self.confirmed = tk.BooleanVar(value=False)
         self.search = tk.StringVar()
         root.title('Learning Futures | Insight Hub')
@@ -163,7 +163,12 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             self.nav_buttons.append(b)
         bottom = tk.Frame(sidebar, bg=NAVY)
         bottom.pack(side='bottom', fill='x', padx=20, pady=24)
-        label(bottom, '●  LOCAL WORKSPACE', 9, '#5EEAD4', True).pack(anchor='w')
+        label(bottom, '●  WORKSPACE', 9, '#5EEAD4', True).pack(anchor='w')
+        self.action(bottom, 'Data use', lambda: messagebox.showinfo(
+            'Data use', 'Insights, answers and report drafts use an external processing service. '
+            'Only calculated metrics, fixed theme counts and your question are submitted; raw survey comments stay on this device. '
+            'Submitted summaries may be used by the service to improve its products. Avoid personal details in questions.',
+            parent=self.root)).pack(anchor='w', pady=(8, 0))
         label(bottom, 'Explore feedback.\nTurn insights into action.\nReports require human review.', 9, '#B8AED9', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
         main = tk.Frame(self.root, bg=BG)
         main.pack(side='left', fill='both', expand=True)
@@ -351,14 +356,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.audience.set('facilitator')
         self.audience.pack(side='left')
         self.audience.bind('<<ComboboxSelected>>', self.audience_changed)
-        self.draft_provider = ttk.Combobox(actions, values=list(DRAFT_MODES), state='readonly', width=18)
-        self.draft_provider.set('Local analysis')
-        self.draft_provider.pack(side='left', padx=(8, 0))
-        self.draft_consent = tk.BooleanVar(value=False)
-        self.draft_consent_check = ttk.Checkbutton(workspace, text='Approve sending minimised metrics/themes externally', variable=self.draft_consent)
-        self.draft_consent_check.pack(anchor='w')
-        label(workspace, 'Cloud processing sends summaries to an external service; free-tier inputs may be used to improve its products.', 9, MUTED, wraplength=650).pack(anchor='w', pady=(0, 6))
-        self.generate_button = self.action(actions, 'Generate draft', self.generate, True)
+        self.generate_button = self.action(actions, 'Get draft', self.generate, True)
         self.generate_button.pack(side='right')
         self.report_tabs = ttk.Notebook(workspace)
         self.report_tabs.pack(fill='both', expand=True)
@@ -369,13 +367,13 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.editor.pack(fill='both', expand=True)
         self.editor.bind('<<Modified>>', self.edited)
 
-        self.preview_meta = label(preview, 'No report generated yet', 9, MUTED)
+        self.preview_meta = label(preview, 'No report available yet', 9, MUTED)
         self.preview_meta.pack(fill='x', padx=10, pady=(10, 4))
 
         self.preview = self.text(preview)
         self.preview.pack(fill='both', expand=True)
         self.report_tabs.bind('<<NotebookTabChanged>>', lambda e: self.refresh_preview())
-        self.show(self.preview, 'Generate a draft to see a formatted reading preview.')
+        self.show(self.preview, 'Get a draft to see a formatted reading preview.')
         self.report_tabs.select(0)
         review = panel(p, padx=16, pady=18)
         review.grid(row=0, column=1, sticky='nsew')
@@ -407,15 +405,6 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         box.pack(fill='both', expand=True)
         label(box, 'What would you like to understand?', 17, INK, True).pack(anchor='w')
         label(box, 'Explore the selected survey metrics and themes. Each question is independent.', 9, MUTED, wraplength=780).pack(anchor='w', pady=(6, 8))
-        options = tk.Frame(box, bg=WHITE)
-        options.pack(fill='x', pady=(0, 8))
-        label(options, 'Answer with', 9, MUTED).pack(side='left', padx=(0, 8))
-        self.question_provider = ttk.Combobox(options, values=['Cloud analysis', 'Local analysis'], state='readonly', width=18)
-        self.question_provider.set('Cloud analysis')
-        self.question_provider.pack(side='left')
-        label(box, 'Cloud analysis sends your question and summaries to an external service. Avoid personal details.\n'
-              'Raw survey comments stay local. Free-tier inputs may be used to improve the service.',
-              9, MUTED, justify='left', wraplength=780).pack(anchor='w', pady=(0, 12))
         suggestions = tk.Frame(box, bg=WHITE)
         suggestions.pack(fill='x', pady=(0, 16))
         for caption, question in [('Performance', 'How are the ratings performing?'), ('Key themes', 'What are the main feedback themes?'), ('Next steps', 'What should we improve next?'), ('Participation', 'How many responses do we have?'), ('Limitations', 'What are the risks or limitations of this data?')]:
@@ -459,15 +448,11 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             b.configure(state='disabled' if self.busy else 'normal')
         self.generate_button.configure(state='normal' if self.context and not self.busy else 'disabled')
         self.insights_button.configure(state='normal' if self.context and not self.busy else 'disabled')
-        self.insights_consent_check.configure(state='disabled' if self.busy else 'normal')
-        self.question_provider.configure(state='disabled' if self.busy else 'readonly')
         self.question.configure(state='disabled' if self.busy else 'normal')
         for b in (self.export_button, self.save_button):
             b.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.scope.configure(state='readonly' if self.context and not self.busy else 'disabled')
         self.audience.configure(state='disabled' if self.busy else 'readonly')
-        self.draft_provider.configure(state='disabled' if self.busy else 'readonly')
-        self.draft_consent_check.configure(state='disabled' if self.busy else 'normal')
         self.editor.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.review_check.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.sync_revision_controls()
@@ -508,7 +493,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
 
     def update_evidence_check(self):
         if not self.report or not self.context:
-            self.evidence_status.set('Evidence check: generate a draft first.')
+            self.evidence_status.set('Evidence check: get a draft first.')
             return []
         from src.reporting.grounding import unsupported_claims
         unsupported = unsupported_claims(self.editor.get('1.0', 'end-1c'), self.context)
@@ -526,7 +511,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             self.preview_meta.configure(text=f'{audience} report • {scope}')
             self.render(self.preview, self.editor.get('1.0', 'end-1c'))
         else:
-            self.preview_meta.configure(text='No report generated yet')
+            self.preview_meta.configure(text='No report available yet')
 
     def may_replace(self):
         return not self.dirty or messagebox.askyesno('Unsaved report', 'Continue and discard the unsaved report? Use Save draft to keep a copy.', parent=self.root)
@@ -578,7 +563,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             self.file_state.configure(text='LOADED FILE', fg=TEAL)
             self.file_name.configure(text=pending_label.upper())
             self.apply_analysis(result)
-            self.status.set(f'Ready • {len(self.frame):,} responses analysed • All processing is local')
+            self.status.set(f'Ready • {len(self.frame):,} responses analysed')
             self.sync_controls()
         self.load_poll = self.root.after(80, finish)
 
@@ -595,8 +580,8 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.editor.edit_modified(False)
         self.confirmed.set(False)
         self.report_status.set('No draft yet')
-        self.preview_meta.configure(text='No report generated yet')
-        self.show(self.preview, 'Generate a draft to see a formatted reading preview.')
+        self.preview_meta.configure(text='No report available yet')
+        self.show(self.preview, 'Get a draft to see a formatted reading preview.')
         self.show(self.answer, 'Ask about this dataset or choose a suggestion above.')
         self.question.configure(state='normal')
         self.question.delete(0, 'end')
@@ -746,35 +731,20 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
 
     def audience_changed(self, event=None):
         if self.report and self.audience.get() != self.report.audience:
-            self.status.set(f'Current draft is for {self.report.audience}. Generate a new draft to change audience.')
+            self.status.set(f'Current draft is for {self.report.audience}. Get a new draft to change audience.')
 
     def generate(self):
         from src.reporting.report_generator import generate_report
-        from src.ai.local_provider import LocalAnalysisProvider
         if not self.context or self.busy or (self.report and not self.may_replace()):
             return
-        provider_name = DRAFT_MODES.get(self.draft_provider.get(), self.draft_provider.get())
-        if provider_name != 'Local Analysis' and not self.draft_consent.get():
-            messagebox.showinfo('Consent required', 'Tick the consent box before generating a draft using cloud processing.', parent=self.root)
-            return
-        if provider_name == 'Local Analysis':
-            self._apply_generated_report(generate_report(self.context, self.audience.get(), LocalAnalysisProvider()))
-            return
         self.busy = True
-        self.status.set('Generating report draft…')
+        self.status.set('Preparing report draft…')
         self.progress.start(12)
         self.sync_controls()
         context, audience = self.context, self.audience.get()
         def work():
-            if provider_name == 'Gemini':
-                from src.ai.gemini_provider import GeminiAIProvider
-                provider = GeminiAIProvider()
-            elif provider_name == 'Claude':
-                from src.ai.anthropic_provider import AnthropicAIProvider
-                provider = AnthropicAIProvider()
-            else:
-                from src.ai.azure_provider import AzureAIProvider
-                provider = AzureAIProvider()
+            from src.ai.gemini_provider import GeminiAIProvider
+            provider = GeminiAIProvider()
             return generate_report(context, audience, provider)
         future = self.pool.submit(work)
         def finish():
@@ -788,9 +758,9 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             try:
                 report = future.result()
             except Exception as exc:
-                self.status.set('Could not generate a draft.')
+                self.status.set('Could not get a draft.')
                 self.sync_controls()
-                messagebox.showerror('Draft generation failed', service_message(exc), parent=self.root)
+                messagebox.showerror('Draft unavailable', service_message(exc), parent=self.root)
                 return
             self._apply_generated_report(report)
         self.generate_poll = self.root.after(80, finish)

@@ -22,7 +22,7 @@ Windows setup launcher: `./run_app.ps1`. After dependencies are installed in you
 2. Change the course scope and show how the dashboard updates.
 3. In **Explore data**, switch to the **Survey data** tab, search for a response or phrase, and select a row to inspect its full masked content.
 4. Open **Themes & evidence**, select a theme to show the supporting comments, or switch to **Ask a question** for a grounded local Q&A.
-5. Open **Report studio**, choose facilitator or client and a draft provider (Local Analysis, or Claude/Azure OpenAI if configured — external providers need consent ticked), and click **Generate draft**. Switch between the reading preview and editable draft.
+5. Open **Report studio**, choose facilitator or client and a draft provider (Local Analysis, or Claude/Azure OpenAI if configured — external providers need consent ticked), and click **Get draft**. Switch between the reading preview and editable draft.
 6. Enter a reviewer name, confirm the checks, and use **Approve & export** to save Word or Markdown. **Save draft** works without approval and retains a draft label. The **Evidence check** line next to the review checklist blocks approval if the draft contains a number or quote that doesn't match the analysed data.
 7. In **Feedback & revisions**, request changes via the local assistant, Copilot hand-off, or the same Claude/Azure OpenAI providers.
 

@@ -149,6 +149,6 @@ def apply_proposal(report, current_content, proposal):
             if proposal.provider in ('Azure AI', 'Claude AI'):
                 disclosure = 'A section was revised using cloud processing with explicit approval to send the masked section, feedback and minimised evidence to an external service. Human verification remains required.'
             else:
-                disclosure = 'Draft initially generated locally. Replacement wording was supplied by a human, potentially using Microsoft Copilot externally. The app did not send data to Copilot. Human verification remains required.'
+                disclosure = 'Replacement wording was supplied by a reviewer. The application did not transmit that replacement for processing. Human verification remains required.'
             content = content[:start] + heading + '\n\n' + disclosure + '\n' + content[end:]
     return ReportDraft(report.audience, content, DRAFT, mode)

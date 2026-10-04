@@ -22,15 +22,11 @@ class QuestionsUI:
             return
         context = self.context
         scope = f'\n\n## Analysis scope\n{context.course_name} | {context.metrics["response_count"]:,} responses'
-        if self.question_provider.get() == 'Local analysis':
-            from src.ai.copilot import answer_question
-            self.render(self.answer, f'## Local answer\n{answer_question(text, context)}{scope}')
-            return
         from src.ai.gemini_provider import GeminiAIProvider
         try:
             provider = GeminiAIProvider()
         except ValueError as exc:
-            self.show(self.answer, f'Cloud analysis is not configured.\n\n{service_message(exc)}\n\nSelect Local analysis for an offline answer.')
+            self.show(self.answer, 'Question answering is not configured. Contact your workspace administrator.')
             return
         facts = insight_evidence(context)
         key = json.dumps([provider.model, mask_text(text.strip()), facts], sort_keys=True)
@@ -65,7 +61,7 @@ class QuestionsUI:
             try:
                 result = future.result()
             except Exception as exc:
-                self.show(self.answer, f'Could not answer this question.\n\n{service_message(exc)}\n\nTry again later, or select Local analysis for an offline answer.')
+                self.show(self.answer, f'Could not answer this question.\n\n{service_message(exc)}\n\nPlease try again later.')
                 self.status.set('Request failed. Your survey data is unchanged.')
             else:
                 self.question_cache[key] = result

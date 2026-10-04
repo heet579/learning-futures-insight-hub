@@ -53,30 +53,25 @@ class RevisionUI:
             window=page,
             anchor='nw'
         )
-        tk.Label(page, text='Use local feedback, or send a safe prompt to Copilot and paste its answer. Nothing changes until you preview and apply it.', bg=WHITE, fg=INK, anchor='w', wraplength=680).pack(fill='x', pady=(0, 8))
+        tk.Label(page, text='Describe an edit or supply replacement wording. Preview the change before applying it.', bg=WHITE, fg=INK, anchor='w', wraplength=680).pack(fill='x', pady=(0, 8))
         options = tk.Frame(page, bg=WHITE)
         options.pack(fill='x')
         self.revision_section = ttk.Combobox(options, values=SECTIONS, state='readonly', width=23)
         self.revision_section.set(SECTIONS[0])
         self.revision_section.pack(side='left', padx=(0, 8))
         self.revision_provider = ttk.Combobox(options, values=list(REVISION_MODES), state='readonly', width=26)
-        self.revision_provider.set('Local assistant')
+        self.revision_provider.set('Edit from feedback')
         self.revision_provider.pack(side='left')
         tk.Label(page, text='Feedback / instruction', bg=WHITE, fg=MUTED, anchor='w').pack(fill='x', pady=(8, 2))
         self.feedback = self.text(page, height=2, editable=True)
         self.feedback.pack(fill='x')
-        tk.Label(page, text='Replacement section (paste Copilot output here, or write it yourself)', bg=WHITE, fg=MUTED, anchor='w').pack(fill='x', pady=(8, 2))
+        tk.Label(page, text='Replacement section (paste or write your preferred wording)', bg=WHITE, fg=MUTED, anchor='w').pack(fill='x', pady=(8, 2))
         self.replacement = self.text(page, height=5, editable=True)
         self.replacement.pack(fill='x')
-        self.external_consent = tk.BooleanVar(master=self.root, value=False)
-        self.consent_check = ttk.Checkbutton(page, text='I approve sending the masked section, feedback and evidence\nto the selected external service.', variable=self.external_consent)
-        self.consent_check.pack(anchor='w', pady=6)
         actions = tk.Frame(page, bg=WHITE)
         actions.pack(fill='x', pady=(0, 8))
         self.propose_button = self.action(actions, 'Preview revision', self.propose_feedback, True)
         self.propose_button.pack(side='left')
-        self.copilot_button = self.action(actions, 'Open Copilot with prompt', self.open_copilot)
-        self.copilot_button.pack(side='left', padx=6)
         self.apply_button = self.action(actions, 'Apply', self.apply_feedback)
         self.apply_button.pack(side='left', padx=6)
         self.undo_button = self.action(actions, 'Undo revision', self.undo_revision)
@@ -169,14 +164,12 @@ class RevisionUI:
     def sync_revision_controls(self):
         ready = bool(self.report) and not self.busy
         self.propose_button.configure(state='normal' if ready else 'disabled')
-        self.copilot_button.configure(state='normal' if ready else 'disabled')
         self.apply_button.configure(state='normal' if ready and self.pending_revision else 'disabled')
         self.undo_button.configure(state='normal' if ready and self.revision_history else 'disabled')
         self.feedback.configure(state='normal' if ready else 'disabled')
         self.replacement.configure(state='normal' if ready else 'disabled')
         for widget in (self.revision_section, self.revision_provider):
             widget.configure(state='readonly' if ready else 'disabled')
-        self.consent_check.configure(state='normal' if ready else 'disabled')
 
     def feedback_changed(self, event=None):
         if self.feedback.edit_modified() or self.replacement.edit_modified():
@@ -194,7 +187,6 @@ class RevisionUI:
     def reset_revisions(self):
         self.pending_revision = None
         self.revision_history.clear()
-        self.external_consent.set(False)
         self.feedback.configure(state='normal')
         self.feedback.delete('1.0', 'end')
         self.feedback.edit_modified(False)
@@ -239,7 +231,7 @@ class RevisionUI:
         replacement = self.replacement.get('1.0', 'end-1c')
         section, mode_label = self.revision_section.get(), self.revision_provider.get()
         provider = REVISION_MODES.get(mode_label, mode_label)
-        consent = self.external_consent.get()
+        consent = False  # Visible revision modes only edit or replace text on-device.
         self.pending_revision = None
         self.busy = True
         self.progress.start(12)

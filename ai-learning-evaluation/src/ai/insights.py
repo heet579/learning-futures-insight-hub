@@ -35,7 +35,7 @@ def insight_evidence(context: AnalysisContext) -> dict[str, str]:
 
 def local_insights(context: AnalysisContext) -> str:
     facts = insight_evidence(context)
-    lines = ["# Local insights", "Calculated locally; no external AI request."]
+    lines = ["# Survey overview", "Calculated from the selected survey responses."]
     lines.extend(["", "## Suggested next steps"])
     ratings = context.metrics["ratings"]
     lowest = context.metrics.get("lowest_area")
@@ -49,7 +49,7 @@ def local_insights(context: AnalysisContext) -> str:
     lines.extend(["", "## Evidence"])
     lines.extend(f"- {value}" for key, value in facts.items() if key not in {"limitations", "small_sample"})
     lines.extend(["", "## Limitations", facts["limitations"], facts.get("small_sample", ""),
-                  "", "Select Generate insights for interpretation and tailored suggestions."])
+                  "", "Select Get insights for interpretation and tailored suggestions."])
     return "\n".join(lines)
 
 

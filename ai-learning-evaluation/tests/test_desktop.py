@@ -29,6 +29,15 @@ def tk_runtime():
 
 @pytest.fixture
 def desktop(monkeypatch, tk_runtime):
+    from src.ai.local_provider import LocalAnalysisProvider
+    from src.ai.copilot import answer_question
+    monkeypatch.setenv('GEMINI_API_KEY', 'test-key')
+    monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.executive_summary',
+        lambda self, context, audience: LocalAnalysisProvider().executive_summary(context, audience))
+    monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.recommendations',
+        lambda self, context, audience: LocalAnalysisProvider().recommendations(context, audience))
+    monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.answer_question',
+        lambda self, context, question: {'answer': answer_question(question, context), 'evidence_ids': ['responses']})
     root = tk.Toplevel(tk_runtime)
     root.withdraw()
     app = DesktopApp(root)
@@ -106,6 +115,7 @@ def test_failed_load_preserves_current_workspace(desktop, tmp_path):
 def test_scope_reset_and_discard_protection(desktop):
     load_sample(desktop)
     desktop.generate()
+    wait_for_load(desktop)
     draft = desktop.report
     course = str(desktop.raw['CourseName'].iloc[0])
     desktop.load(desktop.raw, desktop.source, course)
@@ -122,6 +132,7 @@ def test_scope_reset_and_discard_protection(desktop):
 def test_report_preview_edit_and_review_export(desktop, monkeypatch, tmp_path):
     load_sample(desktop)
     desktop.generate()
+    wait_for_load(desktop)
     desktop.root.update()
     assert desktop.report_tabs.index('current') == 0
     assert str(desktop.editor.cget('state')) == 'normal'
@@ -152,6 +163,7 @@ def test_report_preview_edit_and_review_export(desktop, monkeypatch, tmp_path):
 def test_approval_refused_when_draft_has_fabricated_claim(desktop, monkeypatch, tmp_path):
     load_sample(desktop)
     desktop.generate()
+    wait_for_load(desktop)
     desktop.root.update()
     desktop.editor.insert('end', '\n99.9% of learners said this was flawless.')
     desktop.root.update()
@@ -167,6 +179,7 @@ def test_approval_refused_when_draft_has_fabricated_claim(desktop, monkeypatch, 
 def test_draft_save_cancel_and_write_failure(desktop, monkeypatch, tmp_path):
     load_sample(desktop)
     desktop.generate()
+    wait_for_load(desktop)
     monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kw: '')
     assert desktop.export(False) is False
     assert desktop.dirty
@@ -185,25 +198,23 @@ def test_theme_evidence_and_assistant(desktop):
     desktop.theme_table.selection_set('0')
     desktop.inspect_theme()
     assert desktop.context.themes[0].name in desktop.theme_detail.get('1.0', 'end')
-    desktop.question_provider.set('Local analysis')
     desktop.ask('How many responses participated?')
+    wait_for_load(desktop)
     assert '500' in desktop.answer.get('1.0', 'end')
     assert desktop.context.course_name in desktop.answer.get('1.0', 'end')
 
 
-def test_external_draft_provider_requires_consent(desktop, monkeypatch):
+def test_report_generation_needs_no_extra_approval(desktop, monkeypatch):
     load_sample(desktop)
-    desktop.draft_provider.set('Claude')
     desktop.generate()
-    assert desktop.report is None
+    wait_for_load(desktop)
+    assert desktop.report is not None
     assert not desktop.busy
 
 
 def test_external_draft_provider_failure_is_reported(desktop, monkeypatch, tmp_path):
     load_sample(desktop)
-    desktop.draft_provider.set('Claude')
-    desktop.draft_consent.set(True)
-    monkeypatch.delenv('ANTHROPIC_API_KEY', raising=False)
+    monkeypatch.delenv('GEMINI_API_KEY', raising=False)
     desktop.generate()
     wait_for_load(desktop)
     assert desktop.report is None
@@ -225,6 +236,7 @@ def test_only_selected_page_is_mapped(desktop):
 def test_feedback_preview_apply_undo_and_reset(desktop, monkeypatch):
     load_sample(desktop)
     desktop.generate()
+    wait_for_load(desktop)
     desktop.root.update()
     original = desktop.editor.get('1.0', 'end-1c')
     desktop.feedback.insert('1.0', 'Make it shorter')
@@ -253,6 +265,7 @@ def test_feedback_preview_apply_undo_and_reset(desktop, monkeypatch):
 def test_human_or_copilot_replacement_is_previewed_before_apply(desktop):
     load_sample(desktop)
     desktop.generate()
+    wait_for_load(desktop)
     original = desktop.editor.get('1.0', 'end-1c')
     desktop.revision_provider.set('Human / Copilot replacement')
     desktop.feedback.insert('1.0', 'Make the recommendation specific')
@@ -270,6 +283,7 @@ def test_human_or_copilot_replacement_is_previewed_before_apply(desktop):
 def test_copilot_workflow_opens_browser_and_copies_masked_prompt(desktop, monkeypatch):
     load_sample(desktop)
     desktop.generate()
+    wait_for_load(desktop)
     desktop.feedback.insert('1.0', 'Make this clearer for person@example.com')
     opened = []
     monkeypatch.setattr('webbrowser.open', lambda url, new=0: opened.append(url) or True)
@@ -284,6 +298,7 @@ def test_copilot_workflow_opens_browser_and_copies_masked_prompt(desktop, monkey
 def test_manual_edit_invalidates_feedback_preview(desktop):
     load_sample(desktop)
     desktop.generate()
+    wait_for_load(desktop)
     desktop.feedback.insert('1.0', 'Use bullet points')
     desktop.root.update()
     desktop.propose_feedback()
@@ -315,17 +330,14 @@ def test_configured_client_data_at_startup(desktop, monkeypatch, tmp_path):
     assert len(desktop.frame) == 30
 
 
-def test_gemini_insights_consent_cache_and_scope_reset(desktop, monkeypatch):
+def test_insights_generate_directly_cache_and_reset_on_scope_change(desktop, monkeypatch):
     from test_gemini import RESULT
     load_sample(desktop, 30)
-    assert 'Local insights' in desktop.insights_text.get('1.0', 'end')
+    assert 'Survey overview' in desktop.insights_text.get('1.0', 'end')
     calls = []
     monkeypatch.setenv('GEMINI_API_KEY', 'test')
     monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.insights',
                         lambda *a, **k: calls.append(True) or RESULT)
-    desktop.generate_insights()
-    assert not calls
-    desktop.insights_consent.set(True)
     desktop.generate_insights()
     wait_for_load(desktop)
     assert len(calls) == 1
@@ -335,7 +347,7 @@ def test_gemini_insights_consent_cache_and_scope_reset(desktop, monkeypatch):
     course = desktop.scope['values'][1]
     desktop.load(desktop.raw, desktop.source, course)
     wait_for_load(desktop)
-    assert 'Local insights' in desktop.insights_text.get('1.0', 'end')
+    assert 'Survey overview' in desktop.insights_text.get('1.0', 'end')
     desktop.generate_insights()
     wait_for_load(desktop)
     assert len(calls) == 2
@@ -347,10 +359,9 @@ def test_failed_gemini_request_keeps_local_analysis(desktop, monkeypatch):
     def fail(*a, **k):
         raise RuntimeError('quota reached')
     monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.insights', fail)
-    desktop.insights_consent.set(True)
     desktop.generate_insights()
     wait_for_load(desktop)
-    assert 'Local insights' in desktop.insights_text.get('1.0', 'end')
+    assert 'Survey overview' in desktop.insights_text.get('1.0', 'end')
     assert desktop.insights_button.instate(['!disabled'])
     assert not desktop.insights_cache
 
@@ -389,8 +400,6 @@ def test_gemini_report_provider_can_be_selected(desktop, monkeypatch):
     load_sample(desktop, 30)
     monkeypatch.setenv('GEMINI_API_KEY', 'test')
     monkeypatch.setattr('src.ai.gemini_provider.urlopen', lambda *a, **k: response())
-    desktop.draft_provider.set('Cloud analysis')
-    desktop.draft_consent.set(True)
     desktop.generate()
     wait_for_load(desktop)
     assert desktop.report.mode == 'Gemini'
@@ -404,7 +413,7 @@ def test_question_uses_gemini_caches_and_resets_on_scope_change(desktop, monkeyp
         calls.append((context.course_name, question))
         return {'answer': 'Review the supplied response count.', 'evidence_ids': ['responses']}
     monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.answer_question', answer)
-    assert desktop.question_provider.get() == 'Cloud analysis'
+    assert not hasattr(desktop, 'question_provider')
     desktop.ask('How many responses?')
     assert desktop.busy
     wait_for_load(desktop)
@@ -431,7 +440,7 @@ def test_question_failure_is_not_disguised_as_ai_answer(desktop, monkeypatch):
     wait_for_load(desktop)
     assert 'Could not answer' in desktop.answer.get('1.0', 'end')
     assert not desktop.question_cache
-    assert desktop.question_provider.instate(['readonly'])
+    assert desktop.question.instate(['!disabled'])
 
 
 def test_question_requires_configuration_without_network_call(desktop, monkeypatch):

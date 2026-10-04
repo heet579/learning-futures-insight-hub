@@ -14,7 +14,7 @@ def test_report_contains_required_sections_and_draft_status(golden_df):
     for heading in REQUIRED_HEADINGS:
         assert f"## {heading}" in report.content
     assert report.status == "DRAFT — REQUIRES HUMAN REVIEW"
-    assert "No data was sent to an external service" in report.content
+    assert "deterministic templates" in report.content
 
 def test_audience_reports_differ(golden_df):
     ctx = context(golden_df)

@@ -37,9 +37,9 @@ def generate_report(context: AnalysisContext, audience: str, provider: AIProvide
         "This client-facing view focuses on participant outcomes, relevance and value delivered; internal coaching detail is excluded."
     )
     disclosure = (
-        "Generated using **Local analysis** with calculated metrics, theme rules and statistical methods. No data was sent to an external service."
+        "Prepared from calculated metrics, theme rules and statistical methods using deterministic templates. Human verification remains mandatory."
         if provider.name == "Local Analysis" else
-        "Generated using **Cloud analysis** from minimised calculated metrics and theme metadata sent to an external service. Source comments are not included in that submission. Human verification remains mandatory."
+        "Prepared from calculated metrics and theme metadata using automated interpretation. Raw source comments are excluded from interpretation requests. Human verification remains mandatory."
     )
     content = f"""# {title}
 

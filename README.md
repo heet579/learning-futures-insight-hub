@@ -2,7 +2,9 @@
 
 A Python desktop application for analysing learner feedback, exploring survey insights, and generating human-reviewed evaluation reports.
 
-The application uses Tkinter and runs in its own desktop window. It includes synthetic demonstration data and works locally without API keys or external AI services.
+The application uses Tkinter and runs in its own desktop window. Imports, calculated metrics
+and the survey overview work without an API key. Generated insights, answers and report
+drafts use the configured Gemini service.
 
 The app opens with an empty workspace and **PENDING** metric cards. Use **Import CSV / Excel**
 to load survey data. A bold uppercase filename beside the import button shows the file
@@ -23,24 +25,25 @@ next steps immediately. To enable Gemini interpretation:
 2. For native Python, copy `ai-learning-evaluation/.env.example` to
    `ai-learning-evaluation/.env`; set `GEMINI_API_KEY`. For Docker, use the root `.env`.
 3. Keep `GEMINI_MODEL=gemini-2.5-flash-lite`, or set another supported model.
-4. Restart the app (Docker: `docker compose up -d --force-recreate`), tick the
-   external-processing checkbox and select **Generate insights**.
+4. Restart the app (Docker: `docker compose up -d --force-recreate`) and select **Get insights**.
 
-Gemini powers **Cloud analysis** in the Report studio mode selector. Insights include
+Gemini powers **Get insights**, **Ask** and **Get draft**, without mode selectors
+or repeated processing-approval prompts. Insights include
 findings, suggested actions, supporting calculated evidence and limitations. Requests
 run in the background; repeated insights reuse a session cache. Errors leave local
 analysis available. Evidence IDs are validated, but AI interpretations still require
-human review. In **Themes & evidence → Ask a question**, **Cloud analysis** is the default
-mode. Clicking Ask sends the question (with obvious contact details masked)
+human review. In **Themes & evidence → Ask a question**, clicking Ask sends the question (with obvious contact details masked)
 and the selected scope's calculated evidence to Gemini. Answers show their
 scope and supporting evidence. Each question is independent; no chat history is sent.
-Avoid personal details in questions. Choose **Local analysis** for offline answers.
+Avoid personal details in questions.
 Unavailable evidence is explained rather than guessed; errors are displayed without
 silently substituting a local answer. Revision workflows remain separate.
 
-Interface labels use product terms instead of provider/model branding. Cloud processing
-notices and consent controls remain visible; internal provider identifiers are retained.
-Report drafts include an **Analysis method** disclosure distinguishing local and cloud processing.
+Interface labels use product terms instead of provider/model branding. A separate
+**Data use** link explains external processing and submitted information without interrupting
+the workflow. Internal provider identifiers are retained. Reports retain an **Analysis method**
+section and require human review before approval. Feedback revisions offer basic edits and
+manual replacement; provider selections and the external-editor shortcut are removed.
 
 Gemini receives calculated rating summaries and fixed-vocabulary theme counts, without
 raw comments, learned keywords, learner IDs, course names or filenames. Source text is

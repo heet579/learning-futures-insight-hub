@@ -112,7 +112,7 @@ def test_human_copilot_revision_requires_review_and_preserves_metrics(report_con
     assert 'Add a practical exercise' in section_text(updated.content, 'Recommendations')
     assert updated.content.split('## Key Metrics')[1].split('## What Worked Well')[0] == report.content.split('## Key Metrics')[1].split('## What Worked Well')[0]
     assert updated.status == 'DRAFT — REQUIRES HUMAN REVIEW'
-    assert 'did not send data to Copilot' in updated.content
+    assert 'did not transmit that replacement for processing' in updated.content
     assert 'No data was sent to an external AI service' not in updated.content
 
 
