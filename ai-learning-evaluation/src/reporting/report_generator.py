@@ -18,6 +18,13 @@ def _metric_lines(context: AnalysisContext) -> list[str]:
         lines.append(f"- Would recommend: {rec:.1f}%")
     return lines
 
+def _not_in_source(context: AnalysisContext) -> str:
+    missing = context.metrics.get("fields_not_in_source") or []
+    if not missing:
+        return ""
+    return " Fields not collected by this survey and excluded from completeness: " + ", ".join(missing) + "."
+
+
 def generate_report(context: AnalysisContext, audience: str, provider: AIProvider) -> ReportDraft:
     if audience not in {"facilitator", "client"}:
         raise ValueError("Audience must be 'facilitator' or 'client'.")
@@ -57,7 +64,7 @@ def generate_report(context: AnalysisContext, audience: str, provider: AIProvide
 
 ## Participation Overview
 
-{context.metrics['response_count']} response(s) were analysed with {context.metrics['response_completeness']:.1f}% field completeness.
+{context.metrics['response_count']} response(s) were analysed with {context.metrics['response_completeness']:.1f}% field completeness.{_not_in_source(context)}
 
 ## Key Metrics
 
@@ -95,9 +102,17 @@ def generate_report(context: AnalysisContext, audience: str, provider: AIProvide
 
 **DRAFT — REQUIRES HUMAN REVIEW**. Recommendations are advisory. A staff member must verify, edit and approve this report before it is treated as final.
 """
-    return ReportDraft(audience=audience, content=content, mode=provider.name)
+    evidence = {}
+    if hasattr(provider, "recommendation_evidence"):
+        evidence = provider.recommendation_evidence(context, audience)
+    return ReportDraft(audience=audience, content=content, mode=provider.name, original=content, evidence=evidence, source_mode=provider.name)
 
 def approve_report(report: ReportDraft, content: str | None = None) -> ReportDraft:
     final = content if content is not None else report.content
+    final = final.replace(
+        "**DRAFT — REQUIRES HUMAN REVIEW**. Recommendations are advisory. A staff member must verify, edit and approve "
+        "this report before it is treated as final.",
+        "**HUMAN REVIEWED**. Recommendations are advisory. This report was verified and approved by the people named "
+        "in the Review record below.")
     final = final.replace("DRAFT — REQUIRES HUMAN REVIEW", "HUMAN REVIEWED")
-    return ReportDraft(report.audience, final, "HUMAN REVIEWED", report.mode)
+    return ReportDraft(report.audience, final, "HUMAN REVIEWED", report.mode, report.original, report.evidence, report.source_mode)

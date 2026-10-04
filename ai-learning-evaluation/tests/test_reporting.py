@@ -39,3 +39,15 @@ def test_exports_are_nonempty_and_docx_is_valid_zip(golden_df):
     assert exported.startswith(b"PK")
     assert len(exported) > 1000
 
+
+
+def test_docx_strips_markdown_from_bullets_and_keeps_sub_bullets():
+    from docx import Document
+    from io import BytesIO
+    from src.reporting.exporter import docx_bytes
+    data = docx_bytes("## Key Themes\n- **Pacing** — 9 comments\n  - Representative feedback: “Too fast”\n")
+    paragraphs = Document(BytesIO(data)).paragraphs
+    texts = [p.text for p in paragraphs]
+    assert "Pacing — 9 comments" in texts
+    sub = next(p for p in paragraphs if "Too fast" in p.text)
+    assert sub.style.name == "List Bullet 2" and not sub.text.startswith("-")

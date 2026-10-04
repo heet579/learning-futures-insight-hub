@@ -1,35 +1,46 @@
 # Architecture
 
-## Current prototype
+## Current application
+
+A Python desktop app (Tkinter). Docker can serve the same window in a browser through noVNC. Everything runs on the user's computer except requests to Gemini.
 
 ```mermaid
 flowchart TD
-  Q[Qualtrics-compatible survey export] --> V[Data validation layer]
-  V --> P[Privacy processing]
-  P --> QT[Quantitative analysis]
-  P --> QL[Qualitative analysis]
-  QT --> C[Grounded analysis context]
-  QL --> C
-  C --> A[Provider / prompt framework]
-  A --> F[Facilitator report]
-  A --> R[Commercial client report]
-  F --> H[Human review]
-  R --> H
-  H --> O[Approved export]
+  F[/Qualtrics CSV or Excel/] --> L[Import and map]
+  L --> V[Validate]
+  V --> M[Mask email, phone, URL]
+  M --> Q[Metrics]
+  M --> T[Themes]
+  Q --> C[(Analysis context)]
+  T --> G1[Gate 1: reviewer confirms or rejects themes]
+  G1 --> C
+  C --> FS[Fact sheet with IDs]
+  FS -->|facts only| AI[Gemini]
+  AI -->|summary, recommendations, cited IDs| D[Report template]
+  C --> D
+  D --> R[Revisions: Ask Gemini, offline edits, manual]
+  R --> G2[Gates 2-3: every claim and quote decided]
+  G2 --> G4[Gate 4: author submits, second person approves]
+  G4 --> X[/Word or Markdown with Review record/]
+  G2 -.-> A[(Gate 6: hash-chained audit log)]
+  G4 -.-> A
 ```
 
-The Streamlit app orchestrates pure Python modules. Validation never crashes on missing columns. Only masked text reaches analytics/reporting. Metrics and `Theme.evidence` form the analysis context; the deterministic provider converts only this context to prose. Raw personal data is not written to the audit log.
+- Numbers are calculated in Python; Gemini only interprets ID-tagged facts and must cite IDs that exist.
+- Gemini receives calculated facts, the user's question, and for "Ask Gemini" rewrites the masked text of the selected section. Raw comments, file names and course names are not sent.
+- Without a Gemini key, drafts use local fixed wording.
+- Gate 5 (review pace) is a warning shown in the panel and printed in the Review record.
 
-## Future Microsoft-aligned architecture
+See `code_map.md` for where each screen lives and `../README.md#human-review-workflow` for the gates.
+
+## Possible production direction
 
 ```mermaid
 flowchart LR
-  Q[Qualtrics] --> M[Approved Microsoft connector / API]
-  M --> PA[Power Automate validation and routing]
-  PA --> C[Copilot Studio agent and approved actions]
-  C --> BI[Power BI / SharePoint report]
-  BI --> T[Teams / SharePoint human approval]
+  Q[Qualtrics API] --> P[Scheduled import]
+  P --> API[Python service: same analytics and review modules]
+  API --> W[Web interface with Microsoft sign-in]
+  API --> S[(Database and append-only audit store)]
 ```
 
-This is a proposed migration, not implemented integration.
-
+This is a proposal, not implemented.

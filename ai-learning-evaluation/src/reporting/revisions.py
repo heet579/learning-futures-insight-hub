@@ -18,6 +18,8 @@ class RevisionProposal:
     section: str
     feedback: str
     provider: str
+    evidence: tuple = ()
+    note: str = ''
 
 
 def section_bounds(content, section):
@@ -56,16 +58,28 @@ def local_revision(text, feedback):
             items = sentences
         revised = '\n'.join('- ' + item for item in items)
     elif any(word in instruction for word in ('short', 'concise', 'brief')):
+        # Offline shortening can only drop whole lines or sentences; it cannot rewrite.
         items = [line for line in text.splitlines() if line.strip()]
-        revised = '\n'.join(items[:2]) if len(items) > 1 else ' '.join(sentences[:2])
+        if len(items) > 1:
+            revised = '\n'.join(items[:max(1, len(items) // 2)])
+        elif len(sentences) > 1:
+            revised = ' '.join(sentences[:max(1, len(sentences) // 2)])
+        else:
+            raise ValueError('Offline edits shorten a section by removing whole sentences, and this section '
+                             'is already a single sentence. Choose "Ask Gemini" to rewrite it more concisely, '
+                             'or edit the draft directly.')
     elif any(word in instruction for word in ('plain', 'simple', 'clear')):
         revised = text
         for old, new in [('This draft summarises', 'This report covers'), ('These findings are descriptive and require human interpretation before use.', 'A person must review these findings before use.'), ('proportionate change', 'suitable change'), ('quantitative', 'numerical'), ('qualitative', 'written'), ('Automated categories are indicators, not ground truth;', 'Automated categories may be imperfect;')]:
             revised = revised.replace(old, new)
     else:
-        raise ValueError('The local assistant supports: make it shorter, use bullet points, use plain language, Replace X with Y, or Add: your text. You can also edit the draft directly or paste a Copilot replacement.')
+        raise ValueError('Offline edits understand only: "make it shorter", "use bullet points", "use plain language", '
+                         '"Replace X with Y" or "Add: your text". For any other request choose "Ask Gemini", '
+                         'edit the draft directly, or paste your own wording.')
     if revised.strip() == text.strip():
-        raise ValueError('This offline edit would not change the section. Try another instruction or edit the draft directly.')
+        raise ValueError('That offline edit would leave the section unchanged (for example, it is already in bullet points '
+                         'or contains none of the wording the plain-language rule replaces). Choose "Ask Gemini" to '
+                         'rewrite it, or edit the draft directly.')
     return revised
 
 
@@ -77,8 +91,16 @@ def propose_revision(report, content, context, section, feedback, provider='Loca
     original_section = section_text(content, section)
     if not original_section:
         raise ValueError('The selected section is empty.')
+    evidence, note = (), ''
     if provider in ('Offline edits', 'Local assistant'):
         replacement = local_revision(original_section, feedback)
+    elif provider == 'Gemini':
+        from src.ai.gemini_provider import GeminiAIProvider
+        adapter = client if client is not None else GeminiAIProvider()
+        result = adapter.revise_section(context, section, original_section, feedback, report.audience)
+        replacement, evidence, note = result['revised_section'], tuple(result['evidence']), result['note']
+        if replacement.strip() == original_section.strip():
+            raise ValueError(note or 'Gemini kept the section unchanged. Try a more specific request.')
     elif provider in ('Human / Copilot text', 'Human / Copilot replacement'):
         if not replacement.strip():
             raise ValueError('Paste the replacement section returned by Copilot, or write your own replacement.')
@@ -128,17 +150,18 @@ def propose_revision(report, content, context, section, feedback, provider='Loca
     revised = revised.replace('HUMAN REVIEWED', DRAFT)
     if DRAFT not in revised:
         revised = f'**{DRAFT}**\n\n' + revised
-    return RevisionProposal(content, revised, section, feedback.strip(), provider)
+    return RevisionProposal(content, revised, section, feedback.strip(), provider, evidence, note)
 
 
 def apply_proposal(report, current_content, proposal):
     if current_content != proposal.original:
         raise ValueError('The draft changed after this preview. Propose a new revision before applying.')
+    cloud = ('Azure AI', 'Claude AI', 'Gemini')
     mode = (report.mode if proposal.provider in ('Offline edits', 'Local assistant')
-            else f'{proposal.provider} assisted revision' if proposal.provider in ('Azure AI', 'Claude AI')
+            else f'{proposal.provider} assisted revision' if proposal.provider in cloud
             else 'Human / Copilot supplied revision')
     content = proposal.revised
-    if proposal.provider in ('Azure AI', 'Claude AI', 'Human / Copilot text', 'Human / Copilot replacement'):
+    if proposal.provider in (*cloud, 'Human / Copilot text', 'Human / Copilot replacement'):
         heading = '## Analysis method'
         if heading not in content:
             heading = '## AI / Automated Analysis Disclosure'  # Existing saved drafts.
@@ -146,9 +169,17 @@ def apply_proposal(report, current_content, proposal):
         if start >= 0:
             end = content.find('\n## ', start + len(heading))
             end = len(content) if end < 0 else end
-            if proposal.provider in ('Azure AI', 'Claude AI'):
+            if proposal.provider == 'Gemini':
+                disclosure = ('Prepared from calculated metrics and theme metadata using automated interpretation. '
+                              'A section was then revised with the Gemini service at a reviewer\'s request, using the masked '
+                              'section text, the request and calculated facts only. Raw source comments were not sent. '
+                              'Human verification remains required.')
+            elif proposal.provider in ('Azure AI', 'Claude AI'):
                 disclosure = 'A section was revised using cloud processing with explicit approval to send the masked section, feedback and minimised evidence to an external service. Human verification remains required.'
             else:
                 disclosure = 'Replacement wording was supplied by a reviewer. The application did not transmit that replacement for processing. Human verification remains required.'
             content = content[:start] + heading + '\n\n' + disclosure + '\n' + content[end:]
-    return ReportDraft(report.audience, content, DRAFT, mode)
+    evidence = dict(report.evidence)
+    if proposal.evidence:
+        evidence[section_text(content, proposal.section)] = list(proposal.evidence)
+    return ReportDraft(report.audience, content, DRAFT, mode, report.original, evidence, report.source_mode)

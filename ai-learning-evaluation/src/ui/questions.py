@@ -25,7 +25,7 @@ class QuestionsUI:
         from src.ai.gemini_provider import GeminiAIProvider
         try:
             provider = GeminiAIProvider()
-        except ValueError as exc:
+        except ValueError:
             self.show(self.answer, 'Question answering is not configured. Contact your workspace administrator.')
             return
         facts = insight_evidence(context)

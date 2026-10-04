@@ -150,3 +150,25 @@ def test_missing_evidence_can_be_explained_without_fabricated_citations(monkeypa
     expected = {'answer': 'Enrolment counts are unavailable, so a response rate cannot be calculated.', 'evidence_ids': []}
     monkeypatch.setattr('src.ai.gemini_provider.urlopen', lambda *a, **k: response(expected))
     assert GeminiAIProvider().answer_question(context, 'What is the response rate?') == expected
+
+
+def test_section_revision_request_is_masked_and_validated(monkeypatch, context):
+    monkeypatch.setenv("GEMINI_API_KEY", "secret-key")
+    sent = []
+    reply = {"revised_section": "A shorter summary.", "evidence_ids": ["responses"], "note": ""}
+    def request(req, timeout):
+        sent.append(json.loads(req.data.decode()))
+        return response(reply)
+    monkeypatch.setattr("src.ai.gemini_provider.urlopen", request)
+    result = GeminiAIProvider().revise_section(context, "Executive Summary", "Summary text for x@example.com",
+                                               "Make it shorter for boss@example.com", "facilitator")
+    assert result["revised_section"] == "A shorter summary."
+    assert result["evidence"] == [insight_evidence(context)["responses"]]
+    body = json.dumps(sent[0])
+    assert "example.com" not in body and "[EMAIL REMOVED]" in body
+    for comment in ("Clear facilitator", "More practical exercises", "private-file.csv"):
+        assert comment not in body
+    bad = dict(reply, evidence_ids=["invented"])
+    monkeypatch.setattr("src.ai.gemini_provider.urlopen", lambda *a, **k: response(bad))
+    with pytest.raises(RuntimeError, match="unknown evidence"):
+        GeminiAIProvider().revise_section(context, "Executive Summary", "Text", "Shorter", "facilitator")

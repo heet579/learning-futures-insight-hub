@@ -1,11 +1,11 @@
 import json
 import os
 from anthropic import Anthropic
-from src.ai.base_provider import AIProvider, minimised_context
+from src.ai.base_provider import DraftTextProvider, DRAFT_SYSTEM_PROMPT, minimised_context
 from src.models import AnalysisContext
 
 
-class AnthropicAIProvider(AIProvider):
+class AnthropicAIProvider(DraftTextProvider):
     """Optional approved Claude adapter; never selected without explicit UI consent."""
     name = "Approved External Provider (Claude)"
 
@@ -17,15 +17,10 @@ class AnthropicAIProvider(AIProvider):
         self.client = Anthropic(api_key=api_key, timeout=45, max_retries=1)
 
     def _request(self, task: str, context: AnalysisContext, audience: str) -> str:
-        system = (
-            "You prepare evidence-grounded learner evaluation drafts. Use only supplied JSON; "
-            "do not invent facts or causes; do not expose personal information; state uncertainty "
-            "when evidence is insufficient; recommendations are advisory and require human review."
-        )
         response = self.client.messages.create(
             model=self.model,
             max_tokens=1024,
-            system=system,
+            system=DRAFT_SYSTEM_PROMPT,
             messages=[{
                 "role": "user",
                 "content": f"Task: {task}\nAudience: {audience}\nAnalysis:\n{json.dumps(minimised_context(context))}",
@@ -37,10 +32,3 @@ class AnthropicAIProvider(AIProvider):
         if not content:
             raise RuntimeError("The Claude provider returned an empty response.")
         return content.strip()
-
-    def executive_summary(self, context: AnalysisContext, audience: str) -> str:
-        return self._request("Write a concise executive summary with inline metric/theme evidence.", context, audience)
-
-    def recommendations(self, context: AnalysisContext, audience: str) -> list[str]:
-        text = self._request("Return up to four concise recommendations, one per line.", context, audience)
-        return [line.lstrip("-• 0123456789.\t") for line in text.splitlines() if line.strip()][:4]

@@ -30,6 +30,9 @@ def docx_bytes(content: str, logo_path: str | None = None) -> bytes:
     heading2.paragraph_format.space_before = Pt(8)
     heading2.paragraph_format.space_after = Pt(2)
 
+    for name in ("List Bullet", "List Bullet 2"):
+        doc.styles[name].font.size = Pt(9.5)
+        doc.styles[name].paragraph_format.space_after = Pt(2)
     bullet = doc.styles["List Bullet"]
     bullet.font.size = Pt(9.5)
     bullet.paragraph_format.space_after = Pt(2)
@@ -49,7 +52,10 @@ def docx_bytes(content: str, logo_path: str | None = None) -> bytes:
         elif line.startswith("## "):
             doc.add_heading(line[3:], level=2)
         elif line.startswith("- "):
-            doc.add_paragraph(line[2:], style="List Bullet")
+            doc.add_paragraph(line[2:].replace("**", ""), style="List Bullet")
+        elif line.lstrip().startswith("- "):
+            # Indented sub-bullet, e.g. a representative quote under its theme.
+            doc.add_paragraph(line.lstrip()[2:].replace("**", ""), style="List Bullet 2")
         elif line.strip():
             doc.add_paragraph(line.replace("**", ""))
     stream = BytesIO()

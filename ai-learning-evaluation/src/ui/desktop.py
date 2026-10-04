@@ -2,6 +2,7 @@
 import os
 import tkinter as tk
 from src.ui.revisions import RevisionUI
+from src.ui.review import ReviewUI
 from src.ui.insights import InsightsUI
 from src.ui.questions import QuestionsUI
 from src.ui.wording import service_message
@@ -44,7 +45,7 @@ def analyse(frame, name, scope):
     return masked, context, count, courses
 
 
-class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
+class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
     TITLES = [('Explore data', 'A clear view of learner experience, grounded in your survey data.'),
               ('Themes & evidence', 'Explore recurring feedback and the comments supporting it, or ask a question.'),
               ('Report studio', 'Turn evidence into a draft, refine it, then review and export.')]
@@ -53,6 +54,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         global FONT
         FONT = tkfont.nametofont('TkDefaultFont', root=root).actual('family')
         self.root = root
+        self.font_family = FONT
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.context = self.raw = self.report = self.frame = None
         self.source = ''
@@ -71,12 +73,14 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         root.geometry(f'{min(1360, root.winfo_screenwidth()-70)}x{min(900, root.winfo_screenheight()-80)}+25+25')
         root.minsize(min(1080, root.winfo_screenwidth()-70), min(740, root.winfo_screenheight()-80))
         root.configure(bg=BG)
+        self.init_review_state()
         self.styles()
         self.shell()
         self.build_data_page()
         self.build_themes_page()
         self.build_report()
         self.build_revision_ui()
+        self.build_claims_tab()
         self.navigate(0)
         self.sync_controls()
         root.protocol('WM_DELETE_WINDOW', self.close)
@@ -165,9 +169,12 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         bottom.pack(side='bottom', fill='x', padx=20, pady=24)
         label(bottom, '●  WORKSPACE', 9, '#5EEAD4', True).pack(anchor='w')
         self.action(bottom, 'Data use', lambda: messagebox.showinfo(
-            'Data use', 'Insights, answers and report drafts use an external processing service. '
-            'Only calculated metrics, fixed theme counts and your question are submitted; raw survey comments stay on this device. '
-            'Submitted summaries may be used by the service to improve its products. Avoid personal details in questions.',
+            'Data use', 'Insights, answers, report drafts and "Ask Gemini" revisions use an external processing service. '
+            'Only calculated metrics, fixed theme counts, your question or request and (for revisions) the masked text of the '
+            'selected report section are submitted; raw survey comments stay on this device. '
+            'Submitted summaries may be used by the service to improve its products. Avoid personal details in questions.\n\n'
+            'Review actions (theme and claim decisions, submissions, approvals, exports) are recorded in a tamper-evident '
+            'audit log on this computer: ' + str(self.audit.path),
             parent=self.root)).pack(anchor='w', pady=(8, 0))
         label(bottom, 'Explore feedback.\nTurn insights into action.\nReports require human review.', 9, '#B8AED9', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
         main = tk.Frame(self.root, bg=BG)
@@ -252,7 +259,7 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.dataset_label.grid(row=0, column=0, sticky='w', pady=(0, 12))
         cards = tk.Frame(p, bg=BG)
         cards.grid(row=1, column=0, sticky='ew', pady=(0, 16))
-        specs = [('TOTAL RESPONSES', 'Selected analysis scope'), ('SATISFACTION', 'Mean rating · out of 5'), ('WOULD RECOMMEND', 'Recognised answers'), ('COMPLETENESS', 'Required fields populated')]
+        specs = [('TOTAL RESPONSES', 'Selected analysis scope'), ('OVERALL RATING', 'Mean of valid answers · out of 5'), ('WOULD RECOMMEND', 'Recognised answers'), ('COMPLETENESS', 'Of fields the survey collected')]
         for i, (title, note) in enumerate(specs):
             cards.columnconfigure(i, weight=1, uniform='card')
             card = panel(cards, padx=14, pady=16)
@@ -317,22 +324,27 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.show(self.validation_text, 'Quality checks run automatically when a file is opened.')
 
     def build_themes(self, p):
-        label(p, 'Select a theme to inspect the supporting learner comments.', 10, MUTED).pack(anchor='w', pady=(0, 12))
+        label(p, 'Step 1 of human review: read each theme\'s comments, then confirm, re-categorise or reject it.', 10, MUTED).pack(anchor='w', pady=(0, 12))
         panes = tk.PanedWindow(p, orient='horizontal', bg=BG, bd=0, sashwidth=12)
         panes.pack(fill='both', expand=True)
         left, right = panel(panes), panel(panes, padx=16, pady=12)
-        panes.add(left, minsize=260, width=330)
+        panes.add(left, minsize=320, width=400)
         panes.add(right, minsize=300)
-        self.theme_table = ttk.Treeview(left, columns=('theme', 'count'), show='headings', selectmode='browse', height=5)
+        self.theme_table = ttk.Treeview(left, columns=('theme', 'count', 'decision'), show='headings', selectmode='browse', height=5)
         self.theme_table.heading('theme', text='RECURRING THEME')
         self.theme_table.heading('count', text='MENTIONS')
-        self.theme_table.column('theme', width=235)
-        self.theme_table.column('count', width=75, stretch=False, anchor='center')
+        self.theme_table.heading('decision', text='DECISION')
+        self.theme_table.column('theme', width=190)
+        self.theme_table.column('count', width=90, stretch=False, anchor='center')
+        self.theme_table.column('decision', width=120, stretch=False)
         scroll = ttk.Scrollbar(left, orient='vertical', command=self.theme_table.yview)
         scroll.pack(side='right', fill='y')
         self.theme_table.configure(yscrollcommand=scroll.set)
         self.theme_table.pack(fill='both', expand=True)
         self.theme_table.bind('<<TreeviewSelect>>', self.inspect_theme)
+        controls = tk.Frame(right, bg=WHITE)
+        controls.pack(side='bottom', fill='x')
+        self.build_theme_review_controls(controls)
         self.theme_detail = self.text(right)
         self.theme_detail.pack(fill='both', expand=True)
         self.show(self.theme_detail, 'Load a dataset to explore its themes.')
@@ -372,28 +384,9 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.report_tabs.bind('<<NotebookTabChanged>>', lambda e: self.refresh_preview())
         self.show(self.preview, 'Get a draft to see a formatted reading preview.')
         self.report_tabs.select(0)
-        review = panel(p, padx=16, pady=18)
+        review = panel(p, padx=10, pady=10)
         review.grid(row=0, column=1, sticky='nsew')
-        label(review, 'Human review', 14, INK, True).pack(anchor='w')
-        state = label(review, size=9, color=TEAL, bold=True, wraplength=205)
-        state.configure(textvariable=self.report_status)
-        state.pack(anchor='w', pady=(8, 20))
-        label(review, '1   Verify the evidence', 10, INK, True).pack(anchor='w')
-        label(review, 'Check ratings, themes and source\ncomments before approving.', 9, MUTED, justify='left').pack(anchor='w', pady=(6, 6))
-        evidence_label = label(review, size=9, color=INK, bold=True, wraplength=205, justify='left')
-        evidence_label.configure(textvariable=self.evidence_status)
-        evidence_label.pack(anchor='w', pady=(0, 16))
-        label(review, '2   Identify the reviewer', 10, INK, True).pack(anchor='w')
-        self.reviewer = ttk.Entry(review, width=22)
-        self.reviewer.pack(fill='x', pady=(8, 16))
-        label(review, '3   Confirm your review', 10, INK, True).pack(anchor='w')
-        self.review_check = ttk.Checkbutton(review, text='I checked the evidence,\nprivacy and final wording.', variable=self.confirmed, command=self.review_changed)
-        self.review_check.pack(anchor='w', pady=(8, 18))
-        self.export_button = self.action(review, 'Approve & export', self.export, True)
-        self.export_button.pack(fill='x', pady=(0, 8))
-        self.save_button = self.action(review, 'Save draft', lambda: self.export(False))
-        self.save_button.pack(fill='x')
-        label(review, 'Word (.docx) or Markdown (.md)\nDrafts remain marked for review.', 9, MUTED, justify='left').pack(anchor='w', pady=(12, 0))
+        self.build_review_panel(review)
 
     def build_assistant(self, p):
         self.question_cache = {}
@@ -454,12 +447,10 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.generate_button.configure(state='normal' if self.context and not self.busy else 'disabled')
         self.insights_button.configure(state='normal' if self.context and not self.busy else 'disabled')
         self.question.configure(state='disabled' if self.busy else 'normal')
-        for b in (self.export_button, self.save_button):
-            b.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.audience.configure(state='disabled' if self.busy else 'readonly')
         self.editor.configure(state='normal' if self.report and not self.busy else 'disabled')
-        self.review_check.configure(state='normal' if self.report and not self.busy else 'disabled')
         self.sync_revision_controls()
+        self.update_review_panel()
 
     def draw_chart(self):
         c = self.chart
@@ -486,24 +477,24 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
     def edited(self, event=None):
         if self.editor.edit_modified():
             self.invalidate_revision()
-            self.confirmed.set(False)
             self.dirty = self.report is not None
-            self.report_status.set('Draft • requires review' if self.report else 'No draft yet')
             self.editor.edit_modified(False)
-            self.update_evidence_check()
+            if self.report:
+                self.draft_changed()
 
     def review_changed(self):
-        self.report_status.set('Ready for named approval' if self.confirmed.get() else 'Draft • requires review')
+        if self.confirmed.get():
+            self.status.set('Checks confirmed. Approve & export records your name and role as the approver.')
 
     def update_evidence_check(self):
         if not self.report or not self.context:
             self.evidence_status.set('Evidence check: get a draft first.')
             return []
         from src.reporting.grounding import unsupported_claims
-        unsupported = unsupported_claims(self.editor.get('1.0', 'end-1c'), self.context)
+        unsupported = unsupported_claims(self.editor.get('1.0', 'end-1c'), self.review_context())
         if unsupported:
             kinds = ', '.join(sorted({c.kind for c in unsupported}))
-            self.evidence_status.set(f'Evidence check: {len(unsupported)} unsupported claim(s) ({kinds}). Cannot approve.')
+            self.evidence_status.set(f'Evidence check: {len(unsupported)} figure(s) or quote(s) not found in the data ({kinds}). Cannot submit.')
         else:
             self.evidence_status.set('Evidence check: all numbers and quotes match the data.')
         return unsupported
@@ -577,6 +568,8 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.editor.edit_modified(False)
         self.confirmed.set(False)
         self.report_status.set('No draft yet')
+        self.ledger.reset()
+        self.workflow = type(self.workflow)()
         self.preview_meta.configure(text='No report available yet')
         self.show(self.preview, 'Get a draft to see a formatted reading preview.')
         self.show(self.answer, 'Ask about this dataset or choose a suggestion above.')
@@ -599,7 +592,11 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.show(self.validation_text, 'SOURCE FILE QUALITY\n' + ('\n'.join(warnings) if warnings else 'No validation warnings.') + f'\n{count} patterns masked. Preview capped at 1,000 rows; all selected rows are analysed.')
         self.theme_table.delete(*self.theme_table.get_children())
         for i, theme in enumerate(self.context.themes):
-            self.theme_table.insert('', 'end', iid=str(i), values=(theme.name, theme.frequency))
+            self.theme_table.insert('', 'end', iid=str(i), values=(theme.name, theme.frequency, 'Pending'))
+        self.reset_theme_review()
+        self.refresh_claims()
+        self.record('Data imported', '', source=self.source, responses=m['response_count'], themes=len(self.context.themes))
+        self.update_audit_status()
         if self.context.themes:
             self.theme_table.selection_set('0')
             self.inspect_theme()
@@ -719,12 +716,11 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             )
 
     def inspect_theme(self, event=None):
-        selected = self.theme_table.selection()
-        if selected and self.context:
-            theme = self.context.themes[int(selected[0])]
-            text = f'# {theme.name}\n{theme.category}  •  {theme.frequency} related comment(s)\n\n## Keywords\n{", ".join(theme.keywords) or "Emerging topic"}\n\n## Supporting learner feedback\n'
-            text += '\n\n'.join(f'“{comment}”' for comment in theme.evidence) or 'No example comments available.'
-            self.render(self.theme_detail, text)
+        theme = self.selected_theme()
+        if theme:
+            decision = self.theme_review.decisions.get(theme.name)
+            self.theme_category.set(decision.category if decision else theme.category)
+            self.render(self.theme_detail, self.theme_detail_text(theme))
 
     def audience_changed(self, event=None):
         if self.report and self.audience.get() != self.report.audience:
@@ -732,17 +728,34 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
 
     def generate(self):
         from src.reporting.report_generator import generate_report
-        if not self.context or self.busy or (self.report and not self.may_replace()):
+        if not self.context or self.busy:
+            return
+        if not self.theme_review.complete:
+            tr = self.theme_review
+            messagebox.showinfo('Review themes first',
+                f'Confirm or reject every theme before drafting ({tr.reviewed} of {tr.total} done). '
+                'Only themes a person has confirmed are used in the report.', parent=self.root)
+            self.navigate(1)
+            return
+        if self.report and not self.may_replace():
             return
         self.busy = True
         self.status.set('Preparing report draft…')
         self.sync_controls()
-        context, audience = self.context, self.audience.get()
+        context, audience = self.review_context(), self.audience.get()
+
         def work():
             from src.ai.gemini_provider import GeminiAIProvider
-            provider = GeminiAIProvider()
-            return generate_report(context, audience, provider)
+            from src.ai.local_provider import LocalAnalysisProvider
+            try:
+                provider = GeminiAIProvider()
+            except ValueError:
+                # Gemini is not set up on this computer: draft locally and say so.
+                return generate_report(context, audience, LocalAnalysisProvider()), 'not configured'
+            return generate_report(context, audience, provider), None
+
         future = self.pool.submit(work)
+
         def finish():
             if not future.done():
                 self.generate_poll = self.root.after(80, finish)
@@ -750,13 +763,21 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
             self.generate_poll = None
             self.busy = False
             try:
-                report = future.result()
+                report, fallback = future.result()
             except Exception as exc:
-                self.status.set('Could not get a draft.')
+                self.status.set('Gemini could not prepare a draft.')
                 self.sync_controls()
-                messagebox.showerror('Draft unavailable', service_message(exc), parent=self.root)
+                if messagebox.askyesno('Gemini draft unavailable',
+                        f'{service_message(exc)}\n\nCreate a local draft from the calculated results instead? '
+                        'It uses fixed wording rather than AI interpretation.', parent=self.root):
+                    from src.ai.local_provider import LocalAnalysisProvider
+                    self._apply_generated_report(generate_report(context, audience, LocalAnalysisProvider()))
+                    self.status.set('Local draft ready (Gemini was unavailable). Review every claim before submitting.')
                 return
             self._apply_generated_report(report)
+            if fallback:
+                self.status.set('Gemini is not set up on this computer, so this draft uses local fixed wording. '
+                                'Review every claim before submitting.')
         self.generate_poll = self.root.after(80, finish)
 
     def _apply_generated_report(self, report):
@@ -769,28 +790,33 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.editor.edit_modified(False)
         self.dirty = True
         self.confirmed.set(False)
-        self.report_status.set(f'{self.report.audience.title()} draft • requires review')
+        self.ledger.reset()
+        self.workflow = type(self.workflow)()
+        self.themes_changed_since_draft = False
         self.update_evidence_check()
         self.refresh_preview()
+        self.refresh_claims()
+        self.record('Draft generated', self.author_entry.get().strip(), audience=report.audience, written_by=report.source_mode,
+                    claims=len(self.ledger.claims))
+        self.update_audit_status()
         self.report_tabs.select(0)
         self.editor.focus_set()
-        self.status.set('Draft ready • You can edit the text directly. Feedback assistance is available in the next tab.')
+        self.status.set(f'Draft ready ({report.source_mode}). Next: decide every claim in the Review claims tab, '
+                        'then submit for approval.')
         self.sync_controls()
 
     def export(self, reviewed=True):
         from pathlib import Path
-        from datetime import datetime
-        from tkinter import filedialog
         from src.reporting.exporter import docx_bytes, markdown_bytes
         from src.reporting.report_generator import approve_report
+        from src.review.record import build_review_record, content_hash
         if not self.report or self.busy:
             return False
-        if reviewed and (not self.reviewer.get().strip() or not self.confirmed.get()):
-            messagebox.showinfo('Review required', 'Enter the reviewer name and confirm the evidence, privacy and wording checks.', parent=self.root)
-            return False
-        if reviewed and self.update_evidence_check():
-            messagebox.showerror('Evidence check failed', 'This draft has numbers or quotes that do not match the analysed data. Fix or remove them before approving.', parent=self.root)
-            return False
+        if reviewed:
+            problems = self.approval_problems()
+            if problems:
+                messagebox.showinfo('Cannot approve yet', '\n'.join('• ' + p for p in problems), parent=self.root)
+                return False
         content = self.editor.get('1.0', 'end-1c').strip()
         if not content:
             messagebox.showerror('Empty report', 'Add report content before exporting.', parent=self.root)
@@ -803,23 +829,49 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         if Path(path).suffix.lower() not in ('.docx', '.md'):
             messagebox.showerror('Unsupported format', 'Choose a .docx or .md filename.', parent=self.root)
             return False
-        final = approve_report(self.report, content).content if reviewed else '**DRAFT — REQUIRES HUMAN REVIEW**\n\n' + content
         if reviewed:
-            final += f'\n\nReviewed by: {self.reviewer.get().strip()}\nReviewed at: {datetime.now().strftime("%d/%m/%Y %H:%M")}\n'
+            approver, role = self.approver_entry.get().strip(), self.approver_role.get()
+            approved_text = approve_report(self.report, content).content
+            # Approval must be on record before the file exists.
+            event = self.record('Approved', approver, role=role, audience=self.report.audience,
+                                author=self.workflow.reviewer, report_sha256=content_hash(approved_text))
+            if event is None:
+                messagebox.showerror('Audit log unavailable',
+                    f'The review audit log could not be written ({self.audit.path}). Approval is blocked so that '
+                    'every approval stays on record.', parent=self.root)
+                return False
+            self.workflow.approve(approver, role=role, audience=self.report.audience)
+            summary = self.review_summary()
+            chain = self.audit.verify()
+            final = approved_text + '\n\n' + build_review_record(
+                workflow=self.workflow, theme_counts=summary['themes'], claim_counts=summary['claims'],
+                pace=summary['pace'], ai_retained=summary['ai_retained'], source_mode=self.report.source_mode,
+                report_hash=content_hash(approved_text), approval_hash=event['hash'], audit_entries=chain['entries'])
+        else:
+            final = '**DRAFT — REQUIRES HUMAN REVIEW**\n\n' + content
+        data = docx_bytes(final, os.getenv('UNIVERSITY_LOGO_PATH')) if Path(path).suffix.lower() == '.docx' else markdown_bytes(final)
         try:
-            Path(path).write_bytes(docx_bytes(final, os.getenv('UNIVERSITY_LOGO_PATH')) if Path(path).suffix.lower() == '.docx' else markdown_bytes(final))
+            Path(path).write_bytes(data)
         except Exception as exc:
+            if reviewed:
+                self.workflow.status = 'AWAITING HUMAN REVIEW'
+                self.record('Export failed', self.approver_entry.get().strip(), error=type(exc).__name__)
+                self.update_review_panel()
             messagebox.showerror('Export failed', str(exc), parent=self.root)
             return False
+        import hashlib
+        self.record('Exported' if reviewed else 'Draft saved', self.approver_entry.get().strip() if reviewed else self.author_entry.get().strip(),
+                    file=Path(path).name, file_sha256=hashlib.sha256(data).hexdigest())
+        self.update_audit_status()
         self.dirty = False
-        self.report_status.set('Reviewed copy exported' if reviewed else 'Draft saved • requires review')
-        self.status.set(f'{"Reviewed report" if reviewed else "Draft"} saved • {path}')
+        self.update_review_panel()
+        self.status.set(f'{"Approved report" if reviewed else "Draft"} saved • {path}')
         return True
 
     def close(self):
         if not self.may_replace():
             return
-        for pending in (getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), getattr(self, 'generate_poll', None), self.insights_poll, self.question_poll, self.search_id, self.revision_poll):
+        for pending in (self.claims_refresh_id, getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), getattr(self, 'generate_poll', None), self.insights_poll, self.question_poll, self.search_id, self.revision_poll):
             if pending:
                 self.root.after_cancel(pending)
         self.pool.shutdown(wait=False, cancel_futures=True)

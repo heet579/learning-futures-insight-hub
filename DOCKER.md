@@ -31,20 +31,20 @@ On Linux the image runs as UID 1000. If your shared folder is not writable by th
 ## Feedback and revisions
 
 1. Generate a report and open **Feedback & revisions** in Report studio.
-2. Choose Executive Summary, Recommendations or Learner Feedback Summary.
-3. Enter feedback. **Offline edits** supports shortening, bullet formatting and plain-language substitutions. These are deterministic edits, not generative AI.
+2. Choose a section and a method: Ask Gemini, Edit from feedback, or Manual replacement.
+3. Enter your request. **Edit from feedback** supports shortening, bullet formatting and plain-language substitutions offline; **Ask Gemini** rewrites the section from any request.
 4. Click **Preview revision** and compare the original and proposed section.
 5. Click **Apply** to update the report. Review approval is cleared. **Undo revision** restores the previous draft after confirmation.
 
 The original draft is unchanged until Apply. Editing the draft or feedback invalidates an earlier preview. Changing the dataset or generating a new report clears the revision history.
 
-## Optional free-form AI revision
+## Gemini key
 
-For instructions beyond the offline options, use **Azure AI** with an approved Azure OpenAI deployment. Copy `.env.example` to `.env` in the repository root and supply the endpoint, key and deployment. Compose passes these at runtime; they are not copied into the image. Recreate the container with `docker compose up -d --force-recreate` after changing settings.
+Insights, questions, Gemini drafts and **Ask Gemini** revisions need a Gemini key. Copy `.env.example` to `.env` in the repository root and set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`). Compose passes these at runtime; they are not copied into the image. Recreate the container with `docker compose up -d --force-recreate` after changing settings. For native Python launches, put the settings in `ai-learning-evaluation/.env` instead.
 
-For native Python launches, put the settings in `ai-learning-evaluation/.env` instead.
+Gemini receives calculated facts and, for a section rewrite, the masked text of that section; it never receives raw learner comments. Without a key, drafts use local fixed wording and the rest of the app works.
 
-The UI requires explicit consent before sending the selected masked section, feedback and minimised metrics/theme metadata to Azure. It does not send source rows. Basic pattern masking is not complete anonymisation; inspect the section and feedback before approving external processing. Every returned revision remains a draft, and its accuracy requires human review. Revision exports disclose when Azure was used. Without credentials, the offline workflow still works.
+The review audit log is written inside the container under `/home/app/.learning_futures_insight_hub/`. Set `AUDIT_LOG_PATH=/workspace/review_audit_log.jsonl` to keep it in the shared folder.
 
 ## Stop, restart and troubleshoot
 

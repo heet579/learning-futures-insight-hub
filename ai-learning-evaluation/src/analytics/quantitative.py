@@ -25,13 +25,24 @@ def calculate_metrics(df: pd.DataFrame) -> dict[str, Any]:
     recognised = recommend.isin(["yes", "no", "true", "false", "1", "0"])
     positive = recommend.isin(["yes", "true", "1"])
     means = {k: v["mean"] for k, v in ratings.items() if v["mean"] is not None}
-    available = [c for c in REQUIRED_COLUMNS if c in df]
-    completeness = float(df[available].notna().mean().mean() * 100) if len(df) and available else 0
+    # Completeness only covers fields the source actually supplied. A field that is
+    # blank in every row (e.g. ClientType in real Qualtrics exports) was never collected,
+    # so counting it would understate how complete the real answers are.
+    present = [c for c in REQUIRED_COLUMNS if c in df and df[c].notna().any()]
+    not_in_source = [c for c in REQUIRED_COLUMNS if c not in present]
+    completeness = float(df[present].notna().mean().mean() * 100) if len(df) and present else 0
+    # Satisfaction uses the same denominator as the rating mean: valid 1-5 answers only.
+    overall = ratings["OverallSatisfaction"]
+    satisfied = overall["distribution"]["4"] + overall["distribution"]["5"]
     return {
         "response_count": len(df),
         "response_completeness": round(completeness, 1),
+        "fields_not_in_source": not_in_source,
         "ratings": ratings,
-        "satisfaction_percent": round(float((pd.to_numeric(df.get("OverallSatisfaction"), errors="coerce") >= 4).mean() * 100), 1) if len(df) and "OverallSatisfaction" in df else None,
+        "satisfaction_count": satisfied,
+        "satisfaction_percent": round(satisfied / overall["count"] * 100, 1) if overall["count"] else None,
+        "recommendation_count": int(positive[recognised].sum()),
+        "recommendation_total": int(recognised.sum()),
         "recommendation_percent": round(float(positive[recognised].mean() * 100), 1) if recognised.any() else None,
         "strongest_area": max(means, key=means.get) if means else None,
         "lowest_area": min(means, key=means.get) if means else None,

@@ -1,10 +1,10 @@
 import json
 import os
 from openai import AzureOpenAI
-from src.ai.base_provider import AIProvider, minimised_context
+from src.ai.base_provider import DraftTextProvider, DRAFT_SYSTEM_PROMPT, minimised_context
 from src.models import AnalysisContext
 
-class AzureAIProvider(AIProvider):
+class AzureAIProvider(DraftTextProvider):
     """Optional approved Azure OpenAI adapter; never selected without explicit UI consent."""
     name = "Approved External Provider"
 
@@ -22,32 +22,16 @@ class AzureAIProvider(AIProvider):
             api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21"),
         )
 
-    @staticmethod
-    def _minimised_context(context: AnalysisContext) -> dict:
-        return minimised_context(context)
-
     def _request(self, task: str, context: AnalysisContext, audience: str) -> str:
-        system = (
-            "You prepare evidence-grounded learner evaluation drafts. Use only supplied JSON; "
-            "do not invent facts or causes; do not expose personal information; state uncertainty "
-            "when evidence is insufficient; recommendations are advisory and require human review."
-        )
         response = self.client.chat.completions.create(
             model=self.deployment,
             temperature=0,
             messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": f"Task: {task}\nAudience: {audience}\nAnalysis:\n{json.dumps(self._minimised_context(context))}"},
+                {"role": "system", "content": DRAFT_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Task: {task}\nAudience: {audience}\nAnalysis:\n{json.dumps(minimised_context(context))}"},
             ],
         )
         content = response.choices[0].message.content
         if not content:
             raise RuntimeError("The approved provider returned an empty response.")
         return content.strip()
-
-    def executive_summary(self, context: AnalysisContext, audience: str) -> str:
-        return self._request("Write a concise executive summary with inline metric/theme evidence.", context, audience)
-
-    def recommendations(self, context: AnalysisContext, audience: str) -> list[str]:
-        text = self._request("Return up to four concise recommendations, one per line.", context, audience)
-        return [line.lstrip("-• 0123456789.\t") for line in text.splitlines() if line.strip()][:4]

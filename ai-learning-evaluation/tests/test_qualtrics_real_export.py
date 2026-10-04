@@ -110,3 +110,32 @@ def test_real_export_folder_combines_multiple_files(tmp_path):
 
     assert len(combined) == 4
     assert set(combined["CourseCode"]) == {"8325", "8500"}
+
+
+def test_course_names_keep_hyphenated_words():
+    from src.ingestion.qualtrics_loader import _course_from_filename
+    assert _course_from_filename("8423+-+Finance+for+Non-Financial+Managers+-+Nov+2024_September+21,+2026_13.26.csv") == \
+        ("8423", "Finance for Non-Financial Managers - Nov 2024")
+    assert _course_from_filename("Strategic+Thinking+-+8184+-+15+&+16+June+2023_September+21,+2026_13.29.csv") == \
+        ("8184", "Strategic Thinking - 15 & 16 June 2023")
+
+
+def test_two_free_text_questions_for_one_field_are_both_kept(tmp_path):
+    header = HEADER + ["Q9"]
+    text = QUESTION_TEXT + ["Overall, I would recommend:"]
+    text[24] = "Do you have any other feedback or suggestions for the presenters?"
+    row_a = dict(ROW_A, Q8="Presenter note", Q9="Recommend to colleagues")
+    rows = [dict(zip(header, text)), IMPORT_ID_ROW, row_a, ROW_B]
+    path = tmp_path / "8325+-+Fake+Course+-+August+2023_time.csv"
+    pd.DataFrame(rows, columns=header).to_csv(path, index=False)
+    df = load_qualtrics_export(path)
+    assert df["AdditionalComments"].iloc[0] == "Presenter note / Recommend to colleagues"
+
+
+def test_completeness_ignores_fields_the_survey_never_collected(tmp_path):
+    from src.analytics.quantitative import calculate_metrics
+    path = tmp_path / "8325+-+Fake+Course+-+August+2023_time.csv"
+    path.write_text(_fake_export_csv(), encoding="utf-8")
+    metrics = calculate_metrics(load_qualtrics_export(path))
+    assert set(metrics["fields_not_in_source"]) >= {"DeliveryMode", "ClientType", "FacilitatorCode"}
+    assert metrics["satisfaction_percent"] == 50.0  # 1 of 2 valid answers is 4 or 5

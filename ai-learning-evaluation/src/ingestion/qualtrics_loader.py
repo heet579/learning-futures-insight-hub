@@ -65,9 +65,12 @@ RATING_TEXT_MAP = [
     (("presenter", "effective"), "FacilitatorEffectiveness"),
     (("apply", "learnt", "course"), "CourseRelevance"),
 ]
+# Multiple-choice "Selected Choice" answers are deliberately NOT mapped: they are
+# lists of preset options, not learner comments, and would create fake themes.
+# The free-text "Other" box of the same question is a real comment and is kept.
 TEXT_QUESTION_MAP = [
     (("really", "enjoyed"), "MostValuableAspect"),
-    (("aspects", "enjoyed", "selected choice"), "MostValuableAspect"),
+    (("aspects", "enjoyed", "other", "text"), "MostValuableAspect"),
     (("could", "improved"), "WhatCouldImprove"),
     (("feedback", "suggestions", "presenters"), "AdditionalComments"),
     (("would", "recommend"), "AdditionalComments"),
@@ -77,10 +80,31 @@ NPS_KEYWORDS = ("likely", "recommend")
 
 def _match_question(text: str) -> str | None:
     lowered = text.lower()
+    if "selected choice" in lowered:
+        return None
     for keywords, field in (*RATING_TEXT_MAP, *TEXT_QUESTION_MAP):
         if all(k in lowered for k in keywords):
             return field
     return None
+
+
+def _merge_duplicate_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Two questions can map to the same field (e.g. two free-text questions both feeding
+    AdditionalComments). Text answers are joined so neither is lost; for any other field the
+    first column wins."""
+    from src.config import TEXT_COLUMNS
+    merged: dict[str, pd.Series] = {}
+    for position, column in enumerate(df.columns):
+        series = df.iloc[:, position]
+        if column not in merged:
+            merged[column] = series
+        elif column in TEXT_COLUMNS:
+            first = merged[column]
+            merged[column] = pd.Series([
+                " / ".join(str(v).strip() for v in pair if pd.notna(v) and str(v).strip()) or pd.NA
+                for pair in zip(first, series)
+            ], index=df.index)
+    return pd.DataFrame(merged, index=df.index)
 
 
 def _course_from_filename(filename: str) -> tuple[str | None, str | None]:
@@ -92,8 +116,10 @@ def _course_from_filename(filename: str) -> tuple[str | None, str | None]:
     name = stem
     if code:
         name = re.sub(rf"\b{code}\b", "", name)
-    name = re.sub(r"\s*-\s*", " - ", name)
-    name = re.sub(r"(?:\s*-\s*){2,}", " - ", name)
+    # Only a dash with spaces around it separates parts; "Non-Financial" stays intact.
+    name = re.sub(r"\s+-\s+", " - ", name)
+    name = re.sub(r"\s+-(?:\s+-)+\s+", " - ", name)
+    name = re.sub(r"^\s*-\s+|\s+-\s*$", "", name)
     name = re.sub(r"\s+", " ", name).strip(" -")
     return code, (name or None)
 
@@ -136,7 +162,7 @@ def _map_export(raw: pd.DataFrame, filename: str) -> pd.DataFrame:
         if field:
             rename[column] = field
     df = df.rename(columns=rename)
-    df = df.loc[:, ~df.columns.duplicated()]
+    df = _merge_duplicate_columns(df)
 
     for column in RATING_COLUMNS:
         if column in df:

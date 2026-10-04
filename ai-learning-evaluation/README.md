@@ -18,13 +18,33 @@ Windows setup launcher: `./run_app.ps1`. After dependencies are installed in you
 
 ## Application workflow
 
-1. Launch the app. Cards show PENDING until you choose **Import CSV / Excel**. Import your survey files or `data/synthetic_qualtrics_evaluation.csv` for a demo, then review the response count, satisfaction, recommendation and completeness cards and rating chart.
-2. Change the course scope and show how the dashboard updates.
-3. In **Explore data**, switch to the **Survey data** tab, search for a response or phrase, and select a row to inspect its full masked content.
-4. Open **Themes & evidence**, select a theme to show the supporting comments, or switch to **Ask a question** for a grounded local Q&A.
-5. Open **Report studio**, choose facilitator or client and a draft provider (Local Analysis, or Claude/Azure OpenAI if configured — external providers need consent ticked), and click **Get draft**. Switch between the reading preview and editable draft.
-6. Enter a reviewer name, confirm the checks, and use **Approve & export** to save Word or Markdown. **Save draft** works without approval and retains a draft label. The **Evidence check** line next to the review checklist blocks approval if the draft contains a number or quote that doesn't match the analysed data.
-7. In **Feedback & revisions**, request changes via the local assistant, Copilot hand-off, or the same Claude/Azure OpenAI providers.
+1. Launch the app. Cards show PENDING until you choose **Import CSV / Excel**. Import your survey files or `data/synthetic_qualtrics_evaluation.csv` for a demo, then review the response count, mean overall rating, recommendation and completeness cards and the rating chart.
+2. In **Explore data**, switch to the **Survey data** tab, search for a response or phrase, and select a row to inspect its full masked content.
+3. Open **Themes & evidence**. For each theme read the supporting comments (the matched keyword is shown under each one), then **Confirm**, change the category, or **Reject** it. Only confirmed themes go into the report. **Ask a question** answers from the calculated evidence.
+4. Open **Report studio**, choose facilitator or client and click **Get Gemini draft**. If Gemini is not set up, or the request fails and you agree, a local draft with fixed wording is created instead and the status line says so.
+5. In **Feedback & revisions**, pick a section and a method: **Ask Gemini** (rewrite from your request, e.g. "write a short summary"), **Edit from feedback** (offline rules) or **Manual replacement**. Preview, then Apply or Undo.
+6. In **Review claims**, accept or reject every sentence and bullet, and clear or remove every learner quote.
+7. In the **Human review** panel, the author enters their name and clicks **Submit for approval**. A different person enters their name and role, ticks the confirmation and clicks **Approve & export**, or **Return for changes** with notes. **Save draft** works at any time and keeps the draft label.
+
+## Human review workflow
+
+| Gate | What a person must do | What the app enforces |
+|---|---|---|
+| 1 Themes | Confirm, re-categorise or reject each theme after reading its comments. | **Get draft** is blocked until every theme is decided. Changing a theme after drafting blocks submission until a new draft is made. |
+| 2 Claims | Accept or reject every sentence and bullet. Each shows its source: Calculated, AI-written or Human-edited, plus the figures checked and the evidence Gemini cited. | A claim with a figure or quote that is not in the data cannot be accepted. Editing a claim's text makes it pending again. Rejecting removes it from the draft. |
+| 3 Quotes | Clear each learner quote for identifying detail, or remove it. Possible names are highlighted. | Quotes are separate items in the claim list and must be decided. |
+| 4 Two people | The author submits; a different person approves. Client reports need a "Learning Futures lead". Returning a report needs notes. | Same-name approval is refused. Any edit after submission or approval returns the report to Draft. |
+| 5 Pace | Take time to check evidence. | If five or more decisions are made with a median gap under 3 seconds, a "Fast review" warning is shown and printed in the Review record. |
+| 6 Record | — | Every import, theme and claim decision, revision, submission, return, approval and export is appended to a hash-chained audit log (default `~/.learning_futures_insight_hub/review_audit_log.jsonl`, or `AUDIT_LOG_PATH`). Each line holds the SHA-256 of the previous one, so edits to history are detected. The log holds names, decisions, counts and hashes, never learner comments. Approved exports end with a **Review record** page. Approval is refused if the log cannot be written. |
+
+Names are typed by the operator. This desktop prototype has no sign-in, so the record shows who each person said they were, not an authenticated identity.
+
+## Calculation notes
+
+- **Overall rating** (card) is the mean of valid 1–5 answers. **Satisfaction %** is answers of 4 or 5 divided by valid answers, the same denominator as the mean.
+- **Completeness** covers only fields the survey actually collected. Fields that are blank in every row (for real exports: DeliveryMode, ClientType, FacilitatorCode) are listed in the report as not collected.
+- Qualtrics **"Selected Choice"** answers (preset option lists) are not treated as comments. The free-text "Other" box is. When two free-text questions map to the same field, both answers are kept.
+- The **evidence check** accepts figures that round to a real value at the precision written ("97%" for 97.4%) and treats "5/5" as a point on the rating scale.
 
 The application starts empty, even when `data/client/` or `EVALUATION_DATA_PATH` is configured. **Import CSV / Excel** (Ctrl+O) accepts one or more compatible survey files and replaces the active dataset after validation. A bold uppercase filename beside the import button identifies the selected file during processing and after loading; multiple imports also show the additional file count. See [data requirements](data/README.md) and [column definitions](docs/data_dictionary.md). Synthetic records remain identified by the source filename when explicitly imported.
 
@@ -42,9 +62,9 @@ The preview displays at most 1,000 matching rows; analysis and search include ev
 
 ## Scope and limitations
 
-Initial reports default to local deterministic analysis; Claude or Azure OpenAI can be selected instead (or for feedback revisions) once configured, with explicit per-use consent. Feedback revisions can also use offline edits or human-supplied wording (e.g. via Copilot). Pattern masking needs human checking. Themes are indicators and recommendations need review. Workspace state is in memory, so save before closing. Review names are entered by the operator, not authenticated identities.
+Drafts use Gemini when `GEMINI_API_KEY` is set and fall back to local fixed wording otherwise. Section revisions can use Gemini, offline edits or human-supplied wording. Pattern masking and the name flags need human checking. Themes are indicators and recommendations need review. Workspace state is in memory, so save before closing; the review audit log is kept on disk.
 
-Older architecture documents and unused UI helpers describe the previous prototype; their Streamlit instructions no longer apply. The desktop implementation is `src/ui/desktop.py`; `app.py` and `launch_app.pyw` launch it. Existing ingestion, analytics, privacy and reporting modules are reused.
+The desktop implementation is `src/ui/desktop.py` with the review screens in `src/ui/review.py`; `app.py` and `launch_app.pyw` launch it. [docs/code_map.md](docs/code_map.md) lists where every screen and feature lives, and [docs/architecture.md](docs/architecture.md) shows the data flow.
 
 ### Known limitations
 
@@ -66,6 +86,6 @@ Run `python app.py --diagnose` to print the Python, Tcl/Tk and window-system ver
 
 ## Feedback and Docker distribution
 
-Use the **Feedback & revisions** tab after generating a report. Preview before applying; every applied revision clears approval and can be undone. Local feedback edits are deterministic. For Copilot, enter your requested changes and click **Open Copilot with prompt**. The app copies a privacy-minimised prompt and opens Microsoft Copilot; paste the Copilot answer into **Replacement section**, then preview and apply it before exporting. Choose Azure AI for free-form instructions only after configuring the optional provider and approving external processing.
+Use the **Feedback & revisions** tab after generating a report. Preview before applying; every applied revision clears approval and can be undone. **Ask Gemini** rewrites the selected section from your request; **Edit from feedback** applies offline rules; **Manual replacement** uses wording you paste or write (for example from Microsoft Copilot). Rewritten sentences appear in **Review claims** and must be accepted like any other claim.
 
 The [Docker guide](../DOCKER.md) explains how teammates can clone the repository and run the same Python desktop in a local browser using Docker Compose, without host Python/Tk setup.

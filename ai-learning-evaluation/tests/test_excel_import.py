@@ -55,7 +55,9 @@ def test_corrupt_excel_has_useful_error(tmp_path):
         load_survey(path)
 
 
-def test_numeric_qualtrics_ratings_and_new_enjoyed_question(tmp_path):
+def test_numeric_ratings_and_multiple_choice_answers_are_not_comments(tmp_path):
+    # "Selected Choice" answers are preset option lists, not learner comments, so they
+    # must not feed theme analysis (they created a fake "developing, capabilities" theme).
     raw = pd.read_csv(io.StringIO(_fake_export_csv()))
     raw.loc[0, 'Q7'] = 'The aspects about studying with PACE that I enjoyed the most were: - Selected Choice'
     raw.loc[2, 'Q2_1'] = '5'
@@ -63,7 +65,7 @@ def test_numeric_qualtrics_ratings_and_new_enjoyed_question(tmp_path):
     raw.to_csv(path, index=False)
     loaded = load_survey(path)
     assert loaded['OverallSatisfaction'].tolist() == [5, 2]
-    assert loaded['MostValuableAspect'].iloc[0] == 'Placeholder positive comment'
+    assert loaded['MostValuableAspect'].isna().all()
 
 
 def test_braces_in_real_comments_do_not_delete_responses(tmp_path, golden_df):

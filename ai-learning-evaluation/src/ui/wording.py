@@ -2,6 +2,7 @@
 import re
 
 REVISION_MODES = {
+    'Ask Gemini': 'Gemini',
     'Edit from feedback': 'Local assistant',
     'Manual replacement': 'Human / Copilot replacement',
 }
@@ -9,7 +10,7 @@ REVISION_MODES = {
 
 def service_message(error):
     """Keep actionable errors without exposing implementation names in dialogs."""
-    text = str(error)
+    text = str(error).replace('"Ask Gemini"', '\x00')
     text = re.sub(r'https://aistudio\.google\.com/apikey\.?', 'your service administrator', text)
     text = re.sub(r'gemini-[\w.-]+', 'the configured cloud model', text)
     text = text.replace('GEMINI_API_KEY', 'the service access key').replace('GEMINI_MODEL', 'the service configuration')
@@ -19,4 +20,4 @@ def service_message(error):
     text = text.replace('or use local insights', 'or try again later').replace('Use local insights or try again', 'Please try again')
     text = text.replace('Your local analysis is still available.', 'Your survey overview is still available.')
     text = text.replace('The local assistant supports:', 'Supported edits:').replace('Copilot replacement', 'replacement section')
-    return text
+    return text.replace('\x00', '"Ask Gemini"')

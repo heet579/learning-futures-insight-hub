@@ -3,16 +3,16 @@
 ## Windows: start here
 
 1. Install Python 3.13 with Tcl/Tk support if it is not already installed. The app was tested with Python 3.13.5 on Windows.
-2. Extract the entire ZIP into a normal folder, such as Documents. Do not run it inside the ZIP preview.
-3. Double-click START_DEMO.cmd. First launch creates a private .venv and downloads the dependencies, so allow a few minutes and keep an internet connection available.
-4. The app opens with synthetic demo data. No API keys, accounts or external AI service are needed.
-5. On subsequent runs, double-click START_DEMO.cmd again. Installed dependencies are reused.
+2. Clone the repository (or extract the ZIP) into a normal folder, such as Documents. Do not run it inside the ZIP preview.
+3. In PowerShell, inside `ai-learning-evaluation`, run `powershell -ExecutionPolicy Bypass -File run_app.ps1`. The first launch creates a private .venv and downloads the dependencies, so allow a few minutes and keep an internet connection available.
+4. The app opens empty. Click **Import CSV / Excel** and choose `data/synthetic_qualtrics_evaluation.csv`. Without a Gemini key the app still works: drafts use local fixed wording.
+5. Later launches: `.venv\Scripts\python.exe app.py`.
 
 If setup fails, capture the full error message. Do not change your computer's security settings; ask your IT team if Python or scripts are restricted.
 
 ## macOS / Linux
 
-The source is portable, but this release has only been checked on Windows. From a terminal in the extracted folder:
+The source is portable. Automated tests also run on Linux (Docker and CI). From a terminal in the extracted folder:
 
 ```sh
 python3 -m venv .venv
@@ -29,22 +29,26 @@ Record Pass or Fail for each check:
 
 | Check | Expected result |
 | --- | --- |
-| Launch | Demo loads, controls are visible, no error dialog |
-| Dashboard | Response count, ratings, recommendation and completeness are shown |
-| Course scope | Switching course changes the displayed population and metrics |
-| Open CSV | Included data/synthetic_qualtrics_evaluation.csv loads correctly |
+| Launch | App opens empty with PENDING cards and no error dialog |
+| Import | `data/synthetic_qualtrics_evaluation.csv` loads; cards and rating bars fill in |
 | Search | A known response ID returns the correct row; nonsense text returns no matches |
 | Response detail | Selecting a row shows complete masked content below the table |
-| Themes | Selecting a theme shows supporting comments and keywords |
-| Generate report | Both facilitator and client drafts generate and have a reading preview |
-| Edit report | Changes appear in the preview; editing clears review confirmation |
-| Save draft | Word/Markdown saves with a draft label |
-| Approval required | Reviewed export requires a reviewer name and checked confirmation |
-| Reviewed export | Saved document opens and contains the reviewer and edited wording |
-| Unsaved work | Changing datasets or closing warns about an unsaved draft; declining keeps it |
-| Invalid CSV | A CSV with wrong columns shows an error and preserves the previous dataset |
-| Data assistant | Suggested questions return answers for the selected scope |
-| Resize | Navigation and controls remain usable at your normal screen resolution and scaling |
+| Themes (Gate 1) | First decision asks for your name; every theme can be confirmed, re-categorised or rejected |
+| Draft blocked | Get Gemini draft refuses until every theme is decided |
+| Draft | Facilitator and client drafts generate (Gemini, or local wording if no key) |
+| Ask Gemini revision | A request such as "write a short summary" shows a before/after preview with cited evidence |
+| Review claims (Gate 2) | Every sentence is listed; rejecting removes it from the draft |
+| Fabricated figure | Typing "99.9% of learners..." in the draft cannot be accepted and blocks submission |
+| Quotes (Gate 3) | Each quote must be cleared or removed; possible names are flagged |
+| Submit (Gate 4) | Submit is refused while anything is pending; succeeds once all checks pass |
+| Same approver | Approving with the author's name is refused |
+| Return for changes | Requires notes; the report goes back to the author |
+| Edit after submit | Any edit sends the report back to Draft |
+| Approve & export | The Word file ends with a Review record naming author and approver |
+| Audit log | The panel shows "chain verified"; the log holds no learner comments |
+| Unsaved work | Importing new data or closing warns about an unsaved draft |
+| Invalid CSV | A CSV with wrong columns shows an error and keeps the previous dataset |
+| Resize | Navigation and the review panel stay usable at your screen size and scaling |
 
 Please use synthetic data for shared test reports. Each teammate runs an independent local copy; changes do not synchronise to other PCs. Save exported reports outside the application folder if you plan to replace it with a newer ZIP.
 
@@ -70,7 +74,7 @@ After setup on Windows:
 .venv\Scripts\python.exe -m pytest -q
 ```
 
-Current local verification: 30 tests passed on Windows. This is not a guarantee that every teammate's environment is identical.
+The suite has about 136 tests covering import, metrics, themes, Gemini requests (mocked), the review gates, the audit log and the desktop workflow. Desktop tests need a display. A passing suite does not guarantee every teammate's environment is identical.
 
 ## macOS blank or grey window
 
@@ -81,10 +85,12 @@ A partially blank window can be caused by an old or incompatible Tcl/Tk runtime.
 3. Run the following to create a fresh environment while keeping the previous one:
 
 ```sh
-PYTHON=python3.13 DEMO_ENV=.venv-mac bash run_demo.sh
+python3.13 -m venv .venv-mac
+.venv-mac/bin/python -m pip install -r requirements.txt
+.venv-mac/bin/python app.py
 ```
 
-Use the same command for later launches. If Python was installed somewhere else, set PYTHON to its full executable path. The setup checks the selected environment before installing application dependencies.
+Use the last line for later launches. If Python was installed somewhere else, use its full path in the first line.
 
 If the screen is still blank, send the output of:
 

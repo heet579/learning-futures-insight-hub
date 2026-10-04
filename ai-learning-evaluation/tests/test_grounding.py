@@ -31,3 +31,13 @@ def test_fabricated_comment_count_is_flagged():
     content = "42 matching comment(s) support this theme."
     bad = unsupported_claims(content, _context())
     assert any(c.kind == "count" for c in bad)
+
+
+def test_rounded_figures_and_scale_points_are_accepted():
+    content = "About 75% would recommend; satisfaction averaged 4.3/5 and many answers were 5/5."
+    assert unsupported_claims(content, _context()) == []
+
+
+def test_rounding_to_a_different_value_is_still_flagged():
+    bad = unsupported_claims("Satisfaction averaged 4.4/5 and 76% would recommend.", _context())
+    assert {c.text for c in bad} == {"4.4/5", "76%"}

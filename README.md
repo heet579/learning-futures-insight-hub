@@ -66,9 +66,11 @@ Install and start Docker Desktop, then run from your cloned repository root:
 docker compose up --build -d --wait
 ```
 
-Open [the local desktop demo](http://localhost:6080/vnc.html?autoconnect=true&resize=scale). Python and Tk run inside the container, so teammates do not need a host Python installation. See [DOCKER.md](DOCKER.md) for cloning, file exchange through `shared`, updates, optional Azure AI and troubleshooting.
+Open [the local desktop demo](http://localhost:6080/vnc.html?autoconnect=true&resize=scale). Python and Tk run inside the container, so teammates do not need a host Python installation. See [DOCKER.md](DOCKER.md) for cloning, file exchange through `shared`, updates, the Gemini key and troubleshooting.
 
-**New: Feedback & revisions** in Report studio lets you enter feedback, preview a section revision, apply it and undo it. Offline edits cover shortening, bullet formatting and plain-language substitutions. Free-form AI revisions require the optional Azure configuration and explicit external-processing consent.
+**Feedback & revisions** in Report studio lets you ask Gemini to rewrite a section ("write a three-sentence summary for a manager"), use offline edits (shorten, bullets, plain language) or paste your own wording. Every change is previewed before it is applied.
+
+**Human review** is enforced in four steps: confirm or reject each theme, accept or reject every claim in the draft (quotes must be cleared for identifying detail), the author submits, and a different named person approves. Every action is written to a tamper-evident audit log and the export ends with a Review record page. See the [application guide](ai-learning-evaluation/README.md#human-review-workflow).
 
 ## Get the project on your PC (native Python alternative)
 
@@ -77,22 +79,23 @@ Install Git and Python 3.13 with Tkinter support. Open Command Prompt in the fol
 ```cmd
 git clone https://github.com/heet579/learning-futures-insight-hub.git
 cd learning-futures-insight-hub\ai-learning-evaluation
-START_DEMO.cmd
+powershell -ExecutionPolicy Bypass -File run_app.ps1
 ```
 
 The first launch creates a local Python environment and installs dependencies; internet access is required for setup. Later launches reuse that environment. Import a survey file to populate the dashboard.
 
 Your folder path does not need to match Heet's PC. After cloning, all application files are inside `learning-futures-insight-hub/ai-learning-evaluation`.
 
-If you do not want to install Git, download and extract the repository ZIP from GitHub, open `ai-learning-evaluation`, and double-click `START_DEMO.cmd`.
+If you do not want to install Git, download and extract the repository ZIP from GitHub, open `ai-learning-evaluation` in PowerShell, and run `powershell -ExecutionPolicy Bypass -File run_app.ps1`.
 
 ## What to try
 
 - Review dashboard metrics and rating charts.
 - Inspect searchable, masked survey responses from the imported files.
 - Explore themes and their supporting comments.
-- Generate and edit a facilitator or client report.
-- Enter a reviewer name, confirm review, and export Word or Markdown.
+- Confirm or reject each theme, then get a facilitator or client draft.
+- Ask Gemini to rewrite a section, then accept or reject every claim in **Review claims**.
+- Submit as the author, approve as a different person, and export Word or Markdown with its Review record.
 - Ask questions about the imported survey data.
 
 See the [teammate testing checklist](ai-learning-evaluation/TEAM_TESTING.md) and [application guide](ai-learning-evaluation/README.md).
@@ -105,7 +108,7 @@ Close the app. From your cloned repository folder:
 git pull --ff-only
 cd ai-learning-evaluation
 .venv\Scripts\python.exe -m pip install -r requirements.txt
-START_DEMO.cmd
+.venv\Scripts\python.exe app.py
 ```
 
 If you have local code changes, commit them on your own branch before updating. Do not discard changes just to make a pull succeed.
@@ -147,7 +150,7 @@ learning-futures-insight-hub/
   .gitignore
   ai-learning-evaluation/
     app.py
-    START_DEMO.cmd
+    run_app.ps1
     requirements.txt
     src/
     tests/
@@ -159,14 +162,16 @@ learning-futures-insight-hub/
 
 Use the included synthetic data for shared testing. Do not commit real learner records, credentials, local environments or generated private reports. Local copies and exported reports do not synchronise automatically.
 
-The desktop has been tested on Windows with Python 3.13.5, including 30 automated tests. Other operating systems require their own verification; see the application guide for setup.
+The desktop has been tested on Windows with Python 3.13.5, including the automated test suite (`python -m pytest -q`). Other operating systems require their own verification; see the application guide for setup.
 
 ## macOS teammates
 
 After installing Python 3.13 from python.org, use a separate Mac environment from inside `ai-learning-evaluation`:
 
 ```sh
-PYTHON=python3.13 DEMO_ENV=.venv-mac bash run_demo.sh
+python3.13 -m venv .venv-mac
+.venv-mac/bin/python -m pip install -r requirements.txt
+.venv-mac/bin/python app.py
 ```
 
 For blank-screen troubleshooting and diagnostics, see [TEAM_TESTING.md](ai-learning-evaluation/TEAM_TESTING.md#macos-blank-or-grey-window). The app checks the environment actually used, including when an older virtual environment already exists.

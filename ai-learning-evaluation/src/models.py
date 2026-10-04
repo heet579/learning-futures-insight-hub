@@ -31,4 +31,11 @@ class ReportDraft:
     content: str
     status: str = "DRAFT — REQUIRES HUMAN REVIEW"
     mode: str = "Local Analysis"
+    # The text exactly as first generated; the claim ledger uses it to tell AI-written
+    # sentences from later human edits and to measure how much AI wording survived.
+    original: str = ""
+    # Recommendation text -> calculated facts the AI cited for it.
+    evidence: dict[str, list[str]] = field(default_factory=dict)
+    # Who wrote the first draft ("Gemini" or "Local Analysis"); unlike `mode` it never changes.
+    source_mode: str = ""
 

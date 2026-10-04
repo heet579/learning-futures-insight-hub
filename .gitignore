@@ -43,3 +43,13 @@ Thumbs.db
 # Real client data - never commit
 ai-learning-evaluation/data/client/
 Learning Futures Qualtrics Data Set/
+
+# Real Qualtrics exports go in ai-learning-evaluation/data/client/ (ignored above).
+# Only the synthetic demo files in data/ are tracked.
+ai-learning-evaluation/data/*.csv
+ai-learning-evaluation/data/*.xlsx
+!ai-learning-evaluation/data/synthetic_*.csv
+
+# Local assistant settings and generated hand-outs
+.claude/
+Claude outputs/
