@@ -351,8 +351,10 @@ class DesktopApp(RevisionUI, InsightsUI, QuestionsUI):
         self.audience.set('facilitator')
         self.audience.pack(side='left')
         self.audience.bind('<<ComboboxSelected>>', self.audience_changed)
-        self.generate_button = self.action(actions, 'Get draft', self.generate, True)
+        self.generate_button = self.action(actions, 'Get Gemini draft', self.generate, True)
         self.generate_button.pack(side='right')
+        label(workspace, 'Powered by Gemini · Drafts use your survey summaries and require human review.',
+              9, MUTED, wraplength=650).pack(anchor='w', pady=(0, 8))
         self.report_tabs = ttk.Notebook(workspace)
         self.report_tabs.pack(fill='both', expand=True)
         edit, preview = tk.Frame(self.report_tabs, bg=WHITE), tk.Frame(self.report_tabs, bg=WHITE)
