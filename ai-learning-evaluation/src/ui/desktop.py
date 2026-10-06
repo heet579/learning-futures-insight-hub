@@ -64,6 +64,8 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.nav_buttons = []
         self.metric_values = []
         self.search_id = None
+        self.sort_column = None
+        self.sort_reverse = False
         self.status = tk.StringVar(value='Awaiting import. Choose a CSV or Excel file to begin.')
         self.report_status = tk.StringVar(value='No draft yet')
         self.evidence_status = tk.StringVar(value='Evidence check: get a draft first.')
@@ -575,6 +577,8 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.show(self.answer, 'Ask about this dataset or choose a suggestion above.')
         self.question.configure(state='normal')
         self.question.delete(0, 'end')
+        self.sort_column = None
+        self.sort_reverse = False
         self.search.set('')
         self.filter_rows()
         m = self.context.metrics
@@ -609,6 +613,20 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             self.root.after_cancel(self.search_id)
         self.search_id = self.root.after(180, self.filter_rows)
 
+    def sort_rows(self, column):
+        """Sort the currently visible survey results by a table column."""
+        non_sortable = {'No.', 'MostValuableAspect', 'WhatCouldImprove', 'AdditionalComments'}
+        if column in non_sortable:
+            return
+
+        if self.sort_column == column:
+            self.sort_reverse = not self.sort_reverse
+        else:
+            self.sort_column = column
+            self.sort_reverse = False
+
+        self.filter_rows()
+
     def filter_rows(self):
         if self.search_id:
             self.root.after_cancel(self.search_id)
@@ -620,6 +638,35 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         query = self.search.get().strip().casefold()
         if query:
             frame = frame[frame.apply(lambda col: col.str.casefold().str.contains(query, regex=False)).any(axis=1)]
+
+        # Sort only the filtered display results. The source DataFrame is never changed.
+        if self.sort_column and self.sort_column in frame.columns:
+            import pandas as pd
+
+            numeric_columns = {
+                'OverallSatisfaction',
+                'ContentQuality',
+                'FacilitatorEffectiveness',
+                'CourseRelevance',
+            }
+
+            if self.sort_column in numeric_columns:
+                sort_key = pd.to_numeric(frame[self.sort_column], errors='coerce')
+            elif self.sort_column == 'RecordedDate':
+                sort_key = pd.to_datetime(frame[self.sort_column], errors='coerce')
+            else:
+                sort_key = frame[self.sort_column].astype(str).str.casefold()
+
+            frame = (
+                frame.assign(__sort_key=sort_key)
+                .sort_values(
+                    '__sort_key',
+                    ascending=not self.sort_reverse,
+                    na_position='last',
+                    kind='mergesort'
+                )
+                .drop(columns='__sort_key')
+            )
 
         # Keep the source data unchanged and only simplify values for table display.
         display_frame = frame.copy()
@@ -665,10 +712,26 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.table.delete(*self.table.get_children())
         self.table['columns'] = display_columns
 
+        non_sortable = {'No.', 'MostValuableAspect', 'WhatCouldImprove', 'AdditionalComments'}
+
         for col in display_columns:
             anchor = 'center' if col in centered_columns else 'w'
             width = column_widths.get(col, 140)
-            self.table.heading(col, text=col, anchor=anchor)
+
+            heading_text = col
+            if col == self.sort_column:
+                heading_text += ' ▼' if self.sort_reverse else ' ▲'
+
+            if col in non_sortable:
+                self.table.heading(col, text=heading_text, anchor=anchor)
+            else:
+                self.table.heading(
+                    col,
+                    text=heading_text,
+                    anchor=anchor,
+                    command=lambda c=col: self.sort_rows(c)
+                )
+
             self.table.column(
                 col,
                 width=width,
