@@ -300,13 +300,41 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
 
     def build_data(self, p):
         tools = tk.Frame(p, bg=BG)
-        tools.pack(fill='x', pady=(0, 12))
+        tools.pack(fill='x', pady=(0, 8))
         label(tools, 'SEARCH RESPONSES', 8, MUTED, True).pack(side='left', padx=(0, 12))
         ttk.Entry(tools, textvariable=self.search, width=26).pack(side='left')
         self.search.trace_add('write', self.queue_search)
         self.action(tools, 'Clear', lambda: self.search.set('')).pack(side='left', padx=8)
         self.row_label = label(tools, 'No responses loaded', 9, MUTED)
         self.row_label.pack(side='right')
+
+        filters = tk.Frame(p, bg=BG)
+        filters.pack(fill='x', pady=(0, 12))
+
+        label(filters, 'FILTER', 8, MUTED, True).pack(side='left', padx=(0, 10))
+
+        self.course_filter = ttk.Combobox(filters, state='readonly', width=24, values=['All courses'])
+        self.course_filter.set('All courses')
+        self.course_filter.pack(side='left', padx=(0, 8))
+        self.course_filter.bind('<<ComboboxSelected>>', lambda e: self.filter_rows())
+
+        self.month_filter = ttk.Combobox(filters, state='readonly', width=13, values=['All dates'])
+        self.month_filter.set('All dates')
+        self.month_filter.pack(side='left', padx=(0, 8))
+        self.month_filter.bind('<<ComboboxSelected>>', lambda e: self.filter_rows())
+
+        self.rating_filter = ttk.Combobox(filters, state='readonly', width=12, values=['All ratings'])
+        self.rating_filter.set('All ratings')
+        self.rating_filter.pack(side='left', padx=(0, 8))
+        self.rating_filter.bind('<<ComboboxSelected>>', lambda e: self.filter_rows())
+
+        self.recommend_filter = ttk.Combobox(filters, state='readonly', width=15, values=['All recommendations'])
+        self.recommend_filter.set('All recommendations')
+        self.recommend_filter.pack(side='left', padx=(0, 8))
+        self.recommend_filter.bind('<<ComboboxSelected>>', lambda e: self.filter_rows())
+
+        self.action(filters, 'Reset filters', self.reset_data_filters).pack(side='left')
+
         box = panel(p)
         box.pack(fill='both', expand=True)
         self.table = ttk.Treeview(box, show='headings', selectmode='browse', height=5)
@@ -580,6 +608,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.sort_column = None
         self.sort_reverse = False
         self.search.set('')
+        self.update_data_filters()
         self.filter_rows()
         m = self.context.metrics
         mean, rec = m['ratings']['OverallSatisfaction']['mean'], m['recommendation_percent']
@@ -607,6 +636,62 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         else:
             self.show(self.theme_detail, 'No recurring themes met the evidence threshold.')
         self.draw_chart()
+
+    def update_data_filters(self):
+        """Refresh Survey data filter choices from the loaded dataset."""
+        if self.frame is None:
+            return
+
+        frame = self.frame.fillna('').astype(str)
+
+        courses = ['All courses']
+        if 'CourseName' in frame.columns:
+            courses += sorted(
+                value for value in frame['CourseName'].str.strip().unique()
+                if value
+            )
+        self.course_filter.configure(values=courses)
+        self.course_filter.set('All courses')
+
+        months = ['All dates']
+        if 'RecordedDate' in frame.columns:
+            import pandas as pd
+            parsed = pd.to_datetime(frame['RecordedDate'], errors='coerce')
+            months += sorted(
+                value for value in parsed.dt.strftime('%Y-%m').dropna().unique()
+                if value
+            )
+        self.month_filter.configure(values=months)
+        self.month_filter.set('All dates')
+
+        ratings = ['All ratings']
+        if 'OverallSatisfaction' in frame.columns:
+            import pandas as pd
+            numeric = pd.to_numeric(frame['OverallSatisfaction'], errors='coerce').dropna()
+            ratings += [
+                f'{value:g}'
+                for value in sorted(numeric.unique(), reverse=True)
+            ]
+        self.rating_filter.configure(values=ratings)
+        self.rating_filter.set('All ratings')
+
+        recommendations = ['All recommendations']
+        if 'WouldRecommend' in frame.columns:
+            values = sorted(
+                value for value in frame['WouldRecommend'].str.strip().unique()
+                if value
+            )
+            recommendations += values
+        self.recommend_filter.configure(values=recommendations)
+        self.recommend_filter.set('All recommendations')
+
+    def reset_data_filters(self):
+        """Clear Survey data filters without changing the search text or sort order."""
+        self.course_filter.set('All courses')
+        self.month_filter.set('All dates')
+        self.rating_filter.set('All ratings')
+        self.recommend_filter.set('All recommendations')
+        self.filter_rows()
 
     def queue_search(self, *args):
         if self.search_id:
@@ -638,6 +723,29 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         query = self.search.get().strip().casefold()
         if query:
             frame = frame[frame.apply(lambda col: col.str.casefold().str.contains(query, regex=False)).any(axis=1)]
+
+        course = self.course_filter.get() if hasattr(self, 'course_filter') else 'All courses'
+        if course != 'All courses' and 'CourseName' in frame.columns:
+            frame = frame[frame['CourseName'].str.strip() == course]
+
+        month = self.month_filter.get() if hasattr(self, 'month_filter') else 'All dates'
+        if month != 'All dates' and 'RecordedDate' in frame.columns:
+            import pandas as pd
+            recorded_month = pd.to_datetime(frame['RecordedDate'], errors='coerce').dt.strftime('%Y-%m')
+            frame = frame[recorded_month == month]
+
+        rating = self.rating_filter.get() if hasattr(self, 'rating_filter') else 'All ratings'
+        if rating != 'All ratings' and 'OverallSatisfaction' in frame.columns:
+            import pandas as pd
+            numeric_rating = pd.to_numeric(frame['OverallSatisfaction'], errors='coerce')
+            frame = frame[numeric_rating == float(rating)]
+
+        recommendation = self.recommend_filter.get() if hasattr(self, 'recommend_filter') else 'All recommendations'
+        if recommendation != 'All recommendations' and 'WouldRecommend' in frame.columns:
+            frame = frame[
+                frame['WouldRecommend'].str.strip().str.casefold()
+                == recommendation.casefold()
+            ]
 
         # Sort only the filtered display results. The source DataFrame is never changed.
         if self.sort_column and self.sort_column in frame.columns:
