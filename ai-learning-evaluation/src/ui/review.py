@@ -33,19 +33,14 @@ class ReviewUI:
 
     # ------------------------------------------------------------------ Gate 1: themes
     def build_theme_review_controls(self, parent):
-        filter_bar = tk.Frame(parent, bg=WHITE)
-        filter_bar.pack(fill='x', pady=(8, 0))
-        self.show_pending_themes = tk.BooleanVar(master=self.root, value=False)
-        ttk.Checkbutton(
-            filter_bar,
-            text='Show pending only',
-            variable=self.show_pending_themes,
-            command=self.refresh_theme_rows
-        ).pack(side='left')
+        if not hasattr(self, 'show_pending_themes'):
+            self.show_pending_themes = tk.BooleanVar(master=self.root, value=False)
 
+        tk.Frame(parent, bg='#E9E2F2', height=1).pack(fill='x', pady=(0, 10))
         bar = tk.Frame(parent, bg=WHITE)
-        bar.pack(fill='x', pady=(10, 0))
-        tk.Label(bar, text='Category', bg=WHITE, fg=MUTED).pack(side='left')
+        bar.pack(fill='x')
+        tk.Label(bar, text='Category', bg=WHITE, fg=MUTED,
+                 font=(self.font_family, 9, 'bold')).pack(side='left')
         self.theme_category = ttk.Combobox(bar, values=list(CATEGORIES), state='readonly', width=12)
         self.theme_category.pack(side='left', padx=(6, 10))
         self.confirm_theme_button = self.action(bar, 'Confirm theme', self.confirm_theme, True)
@@ -54,7 +49,7 @@ class ReviewUI:
         self.reject_theme_button.pack(side='left', padx=6)
         self.theme_progress = tk.StringVar(value='Import data to review its themes.')
         tk.Label(parent, textvariable=self.theme_progress, bg=WHITE, fg=MUTED, anchor='w',
-                 justify='left', wraplength=520).pack(fill='x', pady=(8, 0))
+                 justify='left', wraplength=620, font=(self.font_family, 9)).pack(fill='x', pady=(10, 0))
 
     def reset_theme_review(self):
         self.theme_review = ThemeReview(self.context.themes if self.context else [])
@@ -184,8 +179,9 @@ class ReviewUI:
                  'Rejecting removes the text from the draft.', bg=WHITE, fg=MUTED, anchor='w', justify='left',
                  wraplength=760).pack(side='top', fill='x', pady=(0, 6))
 
-        filter_bar = tk.Frame(page, bg=WHITE)
-        filter_bar.pack(side='top', fill='x', pady=(0, 6))
+        filter_bar = tk.Frame(page, bg='#F7F4FB', padx=8, pady=5,
+                              highlightbackground='#E7E0F1', highlightthickness=1)
+        filter_bar.pack(side='top', fill='x', pady=(0, 8))
         self.show_undecided_only = tk.BooleanVar(master=self.root, value=False)
         ttk.Checkbutton(
             filter_bar,
@@ -382,12 +378,12 @@ class ReviewUI:
     # ------------------------------------------------------------------ Gate 4/5/6: panel
     def scrollable(self, parent):
         """A vertically scrollable frame, so the review steps stay reachable on short screens."""
-        canvas = tk.Canvas(parent, bg=WHITE, highlightthickness=0, width=230)
+        canvas = tk.Canvas(parent, bg=WHITE, highlightthickness=0, width=300)
         bar = ttk.Scrollbar(parent, orient='vertical', command=canvas.yview)
         canvas.configure(yscrollcommand=bar.set)
         bar.pack(side='right', fill='y')
         canvas.pack(side='left', fill='both', expand=True)
-        inner = tk.Frame(canvas, bg=WHITE)
+        inner = tk.Frame(canvas, bg=WHITE, padx=5, pady=4)
         window = canvas.create_window((0, 0), window=inner, anchor='nw')
         inner.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
         canvas.bind('<Configure>', lambda e: canvas.itemconfigure(window, width=e.width))
@@ -405,50 +401,124 @@ class ReviewUI:
 
     def build_review_panel(self, outer):
         review = self.scrollable(outer)
-        tk.Label(review, text='Human review', font=(self.font_family, 14, 'bold'), bg=WHITE, fg=INK).pack(anchor='w')
-        tk.Label(review, textvariable=self.report_status, font=(self.font_family, 9, 'bold'), bg=WHITE, fg=TEAL,
-                 wraplength=210, justify='left').pack(anchor='w', pady=(2, 6))
 
-        def step(title):
-            tk.Label(review, text=title, font=(self.font_family, 10, 'bold'), bg=WHITE, fg=INK).pack(anchor='w', pady=(8, 0))
+        tk.Label(
+            review, text='Human review',
+            font=(self.font_family, 15, 'bold'),
+            bg=WHITE, fg=INK
+        ).pack(anchor='w', padx=4, pady=(2, 0))
 
-        def note(var, color=MUTED):
-            label = tk.Label(review, textvariable=var, font=(self.font_family, 9), bg=WHITE, fg=color,
-                             wraplength=210, justify='left')
-            label.pack(anchor='w')
-            return label
+        tk.Label(
+            review, textvariable=self.report_status,
+            font=(self.font_family, 9, 'bold'),
+            bg=WHITE, fg=TEAL, wraplength=270, justify='left'
+        ).pack(anchor='w', padx=4, pady=(3, 9))
 
         self.themes_status = tk.StringVar(value='Themes: import data first.')
         self.claims_status = tk.StringVar(value='Claims: get a draft first.')
         self.pace_status = tk.StringVar(value='')
         self.audit_status = tk.StringVar(value='')
-        step('1  Validate themes')
-        self.themes_status_label = note(self.themes_status)
-        step('2  Decide every claim')
-        self.claims_status_label = note(self.claims_status)
-        note(self.evidence_status, INK)
-        note(self.pace_status, WARN)
-        step('3  Author submits')
-        self.author_entry = ttk.Entry(review, width=22)
-        self.author_entry.pack(fill='x', pady=(4, 4))
-        self.submit_button = self.action(review, 'Submit for approval', self.submit_for_approval)
+
+        def card(title, number):
+            box = tk.Frame(
+                review, bg='#FAF8FD', padx=11, pady=10,
+                highlightbackground='#E7E0F1', highlightthickness=1
+            )
+            box.pack(fill='x', padx=3, pady=(0, 8))
+
+            head = tk.Frame(box, bg='#FAF8FD')
+            head.pack(fill='x')
+
+            badge = tk.Label(
+                head, text=str(number), width=2,
+                font=(self.font_family, 9, 'bold'),
+                bg='#E9DDF9', fg=TEAL, padx=2, pady=2
+            )
+            badge.pack(side='left', padx=(0, 7))
+
+            tk.Label(
+                head, text=title,
+                font=(self.font_family, 10, 'bold'),
+                bg='#FAF8FD', fg=INK
+            ).pack(side='left')
+            return box
+
+        def note(parent, var, color=MUTED):
+            widget = tk.Label(
+                parent, textvariable=var,
+                font=(self.font_family, 9),
+                bg='#FAF8FD', fg=color,
+                wraplength=255, justify='left', anchor='w'
+            )
+            widget.pack(fill='x', pady=(7, 0))
+            return widget
+
+        # Step 1
+        step1 = card('Validate themes', 1)
+        self.themes_status_label = note(step1, self.themes_status)
+
+        # Step 2
+        step2 = card('Review report claims', 2)
+        self.claims_status_label = note(step2, self.claims_status)
+        note(step2, self.evidence_status, INK)
+        note(step2, self.pace_status, WARN)
+
+        # Step 3
+        step3 = card('Author submits', 3)
+        tk.Label(
+            step3, text='Author name', bg='#FAF8FD', fg=MUTED,
+            font=(self.font_family, 8, 'bold')
+        ).pack(anchor='w', pady=(7, 3))
+        self.author_entry = ttk.Entry(step3, width=24)
+        self.author_entry.pack(fill='x', pady=(0, 6))
+        self.submit_button = self.action(step3, 'Submit for approval', self.submit_for_approval)
         self.submit_button.pack(fill='x')
-        step('4  A second person approves')
-        self.approver_entry = ttk.Entry(review, width=22)
-        self.approver_entry.pack(fill='x', pady=(4, 4))
-        self.approver_role = ttk.Combobox(review, values=list(APPROVER_ROLES), state='readonly', width=22)
+
+        # Step 4
+        step4 = card('Second-person approval', 4)
+        tk.Label(
+            step4, text='Approver name', bg='#FAF8FD', fg=MUTED,
+            font=(self.font_family, 8, 'bold')
+        ).pack(anchor='w', pady=(7, 3))
+        self.approver_entry = ttk.Entry(step4, width=24)
+        self.approver_entry.pack(fill='x', pady=(0, 6))
+
+        tk.Label(
+            step4, text='Approver role', bg='#FAF8FD', fg=MUTED,
+            font=(self.font_family, 8, 'bold')
+        ).pack(anchor='w', pady=(2, 3))
+        self.approver_role = ttk.Combobox(
+            step4, values=list(APPROVER_ROLES),
+            state='readonly', width=24
+        )
         self.approver_role.set(APPROVER_ROLES[0])
         self.approver_role.pack(fill='x')
-        self.review_check = ttk.Checkbutton(review, text='I checked the evidence,\nprivacy and final wording.',
-                                            variable=self.confirmed, command=self.review_changed)
-        self.review_check.pack(anchor='w', pady=(6, 6))
-        self.export_button = self.action(review, 'Approve & export', self.export, True)
-        self.export_button.pack(fill='x', pady=(0, 4))
-        self.return_button = self.action(review, 'Return for changes', self.return_for_changes)
-        self.return_button.pack(fill='x', pady=(0, 4))
-        self.save_button = self.action(review, 'Save draft', lambda: self.export(False))
+
+        self.review_check = ttk.Checkbutton(
+            step4,
+            text='I checked the evidence, privacy\nand final wording.',
+            variable=self.confirmed,
+            command=self.review_changed
+        )
+        self.review_check.pack(anchor='w', pady=(8, 7))
+
+        self.export_button = self.action(step4, 'Approve & export', self.export, True)
+        self.export_button.pack(fill='x', pady=(0, 5))
+
+        secondary = tk.Frame(step4, bg='#FAF8FD')
+        secondary.pack(fill='x')
+        self.return_button = self.action(secondary, 'Return for changes', self.return_for_changes)
+        self.return_button.pack(fill='x', pady=(0, 5))
+        self.save_button = self.action(secondary, 'Save draft', lambda: self.export(False))
         self.save_button.pack(fill='x')
-        note(self.audit_status)
+
+        audit = tk.Label(
+            review, textvariable=self.audit_status,
+            font=(self.font_family, 8), bg=WHITE, fg=MUTED,
+            wraplength=270, justify='left', anchor='w'
+        )
+        audit.pack(fill='x', padx=5, pady=(1, 6))
+
         self.update_audit_status()
 
     def update_audit_status(self):
@@ -502,6 +572,8 @@ class ReviewUI:
             self.claims_status.set('Get a draft first.')
             self.pace_status.set('')
         self.sync_review_buttons()
+        if hasattr(self, 'update_review_drawer_badge'):
+            self.update_review_drawer_badge()
 
     def sync_review_buttons(self):
         if not hasattr(self, 'submit_button') or not hasattr(self, 'accept_claim_button'):
