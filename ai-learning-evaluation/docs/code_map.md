@@ -9,7 +9,7 @@ All paths are inside `ai-learning-evaluation/`. Search for the function name; li
 | Entry point | `app.py`, `launch_app.pyw` | call `src.ui.runtime.main()` |
 | Tk checks, `.env` loading, `--diagnose` | `src/ui/runtime.py` | `launch`, `check_tk_version`, `runtime_details` |
 | Sign-in screen and workspace access gate | `src/ui/login.py`, `src/ui/runtime.py` | `LoginScreen`, `open_workspace` |
-| Editable text accounts and administrator commands | `src/auth.py`, `config/users.txt` (local, ignored) | `authenticate`, `read_users`, `add_user`, `main` |
+| Editable text accounts and administrator commands | `src/auth.py`, `config/users.txt` (shared through Git) | `authenticate`, `read_users`, `add_user`, `main` |
 | Main window, sidebar, toolbar, page switching | `src/ui/desktop.py` | `DesktopApp.__init__`, `shell`, `styles`, `navigate`, `sync_controls` |
 | Colours | `src/ui/theme.py` | constants |
 | Product wording in error dialogs | `src/ui/wording.py` | `service_message`, `REVISION_MODES` |
