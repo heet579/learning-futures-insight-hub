@@ -104,9 +104,20 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         if paths:
             import pandas as pd
             from src.ingestion.qualtrics_loader import load_survey
-            self.load(lambda: pd.concat([load_survey(path) for path in paths], ignore_index=True),
-                      Path(paths[0]).name if len(paths) == 1 else f'{len(paths)} survey files',
-                      file_label=Path(paths[0]).name + (f' (+{len(paths)-1} MORE FILES)' if len(paths) > 1 else ''))
+
+            def load_selected_files():
+                frames = []
+                for path in paths:
+                    frame = load_survey(path).copy()
+                    frame['SourceFile'] = Path(path).name
+                    frames.append(frame)
+                return pd.concat(frames, ignore_index=True)
+
+            self.load(
+                load_selected_files,
+                Path(paths[0]).name if len(paths) == 1 else f'{len(paths)} survey files',
+                file_label=Path(paths[0]).name + (f' (+{len(paths)-1} MORE FILES)' if len(paths) > 1 else '')
+            )
 
     def load_startup_data(self):
         self.startup_id = None
@@ -313,27 +324,32 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
 
         label(filters, 'FILTER', 8, MUTED, True).pack(side='left', padx=(0, 10))
 
-        self.course_filter = ttk.Combobox(filters, state='readonly', width=24, values=['All courses'])
+        self.source_filter = ttk.Combobox(filters, state='readonly', width=18, values=['All files'])
+        self.source_filter.set('All files')
+        self.source_filter.pack(side='left', padx=(0, 8))
+        self.source_filter.bind('<<ComboboxSelected>>', lambda e: self.filter_rows())
+
+        self.course_filter = ttk.Combobox(filters, state='readonly', width=20, values=['All courses'])
         self.course_filter.set('All courses')
         self.course_filter.pack(side='left', padx=(0, 8))
         self.course_filter.bind('<<ComboboxSelected>>', lambda e: self.filter_rows())
 
-        self.month_filter = ttk.Combobox(filters, state='readonly', width=13, values=['All dates'])
+        self.month_filter = ttk.Combobox(filters, state='readonly', width=11, values=['All dates'])
         self.month_filter.set('All dates')
         self.month_filter.pack(side='left', padx=(0, 8))
         self.month_filter.bind('<<ComboboxSelected>>', lambda e: self.filter_rows())
 
-        self.rating_filter = ttk.Combobox(filters, state='readonly', width=12, values=['All ratings'])
+        self.rating_filter = ttk.Combobox(filters, state='readonly', width=10, values=['All ratings'])
         self.rating_filter.set('All ratings')
         self.rating_filter.pack(side='left', padx=(0, 8))
         self.rating_filter.bind('<<ComboboxSelected>>', lambda e: self.filter_rows())
 
-        self.recommend_filter = ttk.Combobox(filters, state='readonly', width=15, values=['All recommendations'])
+        self.recommend_filter = ttk.Combobox(filters, state='readonly', width=13, values=['All recommendations'])
         self.recommend_filter.set('All recommendations')
         self.recommend_filter.pack(side='left', padx=(0, 8))
         self.recommend_filter.bind('<<ComboboxSelected>>', lambda e: self.filter_rows())
 
-        self.action(filters, 'Reset filters', self.reset_data_filters).pack(side='left')
+        self.action(filters, 'Reset view', self.reset_data_view).pack(side='left')
 
         box = panel(p)
         box.pack(fill='both', expand=True)
@@ -644,6 +660,15 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
 
         frame = self.frame.fillna('').astype(str)
 
+        sources = ['All files']
+        if 'SourceFile' in frame.columns:
+            sources += sorted(
+                value for value in frame['SourceFile'].str.strip().unique()
+                if value
+            )
+        self.source_filter.configure(values=sources)
+        self.source_filter.set('All files')
+
         courses = ['All courses']
         if 'CourseName' in frame.columns:
             courses += sorted(
@@ -685,12 +710,16 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.recommend_filter.configure(values=recommendations)
         self.recommend_filter.set('All recommendations')
 
-    def reset_data_filters(self):
-        """Clear Survey data filters without changing the search text or sort order."""
+    def reset_data_view(self):
+        """Restore Survey data to its default search, filter and sort state."""
+        self.search.set('')
+        self.source_filter.set('All files')
         self.course_filter.set('All courses')
         self.month_filter.set('All dates')
         self.rating_filter.set('All ratings')
         self.recommend_filter.set('All recommendations')
+        self.sort_column = None
+        self.sort_reverse = False
         self.filter_rows()
 
     def queue_search(self, *args):
@@ -723,6 +752,10 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         query = self.search.get().strip().casefold()
         if query:
             frame = frame[frame.apply(lambda col: col.str.casefold().str.contains(query, regex=False)).any(axis=1)]
+
+        source_file = self.source_filter.get() if hasattr(self, 'source_filter') else 'All files'
+        if source_file != 'All files' and 'SourceFile' in frame.columns:
+            frame = frame[frame['SourceFile'].str.strip() == source_file]
 
         course = self.course_filter.get() if hasattr(self, 'course_filter') else 'All courses'
         if course != 'All courses' and 'CourseName' in frame.columns:
@@ -781,7 +814,12 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         if 'RecordedDate' in display_frame.columns:
             display_frame['RecordedDate'] = display_frame['RecordedDate'].str.slice(0, 10)
 
-        display_columns = ['No.'] + list(display_frame.columns)
+        data_columns = list(display_frame.columns)
+        if 'SourceFile' in data_columns:
+            data_columns.remove('SourceFile')
+            display_columns = ['No.', 'SourceFile'] + data_columns
+        else:
+            display_columns = ['No.'] + data_columns
 
         centered_columns = {
             'No.',
@@ -800,6 +838,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
 
         column_widths = {
             'No.': 55,
+            'SourceFile': 220,
             'ResponseID': 95,
             'RecordedDate': 120,
             'CourseCode': 90,
@@ -848,14 +887,15 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
                 anchor=anchor
             )
 
-        for i, row in enumerate(
-            display_frame.head(1000).itertuples(index=False, name=None),
+        for i, (_, row) in enumerate(
+            display_frame.head(1000).iterrows(),
             start=1
         ):
+            values = tuple(row[col] for col in display_columns if col != 'No.')
             self.table.insert(
                 '',
                 'end',
-                values=(i,) + row,
+                values=(i,) + values,
                 tags=('alternate',) if i % 2 == 0 else ()
             )
 
