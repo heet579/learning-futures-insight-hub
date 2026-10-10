@@ -83,6 +83,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.build_report()
         self.build_revision_ui()
         self.build_claims_tab()
+        self.refresh_report_tab_bar()
         self.navigate(0)
         self.sync_controls()
         root.protocol('WM_DELETE_WINDOW', self.close)
@@ -113,10 +114,20 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
                     frames.append(frame)
                 return pd.concat(frames, ignore_index=True)
 
+            raw_display = Path(paths[0]).stem.replace('+', ' ').replace('_', ' ')
+            first_display = ' '.join(raw_display.split())
+            if len(first_display) > 64:
+                first_display = first_display[:61].rstrip() + '…'
+            display_label = (
+                first_display
+                if len(paths) == 1
+                else f'{len(paths)} survey files loaded  ·  {first_display}  +{len(paths)-1} more'
+            )
+
             self.load(
                 load_selected_files,
                 Path(paths[0]).name if len(paths) == 1 else f'{len(paths)} survey files',
-                file_label=Path(paths[0]).name + (f' (+{len(paths)-1} MORE FILES)' if len(paths) > 1 else '')
+                file_label=display_label
             )
 
     def load_startup_data(self):
@@ -143,21 +154,39 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         s.map('Nav.TButton', background=[('active', '#4A3574')], foreground=[('active', WHITE)])
         s.configure('Selected.Nav.TButton', background='#4A3574', foreground=WHITE)
         s.map('Selected.Nav.TButton', background=[('active', '#4A3574')], foreground=[('active', WHITE)])
-        s.configure('TButton', background=WHITE, foreground=INK, bordercolor=BORDER, padding=(14, 9), relief='flat')
-        s.map('TButton', background=[('active', '#F1ECFB')], foreground=[('disabled', '#A79BC4')])
-        s.configure('Primary.TButton', background=TEAL, foreground=WHITE, bordercolor=TEAL)
-        s.map('Primary.TButton', background=[('disabled', '#DCCFF7'), ('active', '#6B2FD4')], foreground=[('disabled', '#8E7FB0')])
+        s.configure('TButton', background=WHITE, foreground=INK, bordercolor='#E4DDF0',
+                    padding=(14, 9), relief='flat')
+        s.map('TButton', background=[('active', '#F6F2FB')], foreground=[('disabled', '#A79BC4')])
+        s.configure('Primary.TButton', background=TEAL, foreground=WHITE, bordercolor=TEAL,
+                    padding=(15, 9))
+        s.map('Primary.TButton', background=[('disabled', '#DCCFF7'), ('active', '#6B2FD4')],
+              foreground=[('disabled', '#8E7FB0')])
         s.configure('TCombobox', padding=7, fieldbackground=WHITE, foreground=INK, bordercolor=BORDER)
         s.map('TCombobox', fieldbackground=[('readonly', WHITE)], selectbackground=[('readonly', WHITE)], selectforeground=[('readonly', INK)])
         s.configure('TEntry', padding=8, fieldbackground=WHITE, bordercolor=BORDER)
         s.configure('TCheckbutton', background=WHITE, foreground=INK, padding=5)
         s.map('TCheckbutton', background=[('active', WHITE)])
-        s.configure('Treeview', background=WHITE, fieldbackground=WHITE, foreground=INK, rowheight=34, borderwidth=0)
-        s.configure('Treeview.Heading', background='#F0EBFA', foreground=MUTED, font=(FONT, 9, 'bold'), padding=10, relief='flat')
-        s.map('Treeview', background=[('selected', '#E6DBFB')], foreground=[('selected', INK)])
-        s.configure('TNotebook', background=WHITE, borderwidth=0)
-        s.configure('TNotebook.Tab', padding=(18, 10), background='#F1ECFB')
-        s.map('TNotebook.Tab', background=[('selected', WHITE)], foreground=[('selected', TEAL)])
+        s.configure('Treeview', background=WHITE, fieldbackground=WHITE, foreground=INK,
+                    rowheight=36, borderwidth=0)
+        s.configure('Treeview.Heading', background='#F4F0FA', foreground=MUTED,
+                    font=(FONT, 9, 'bold'), padding=(10, 11), relief='flat')
+        s.map('Treeview', background=[('selected', '#EDE4FB')], foreground=[('selected', INK)])
+        s.configure('TNotebook', background=BG, borderwidth=0, tabmargins=(0, 0, 0, 0))
+        s.configure('TNotebook.Tab', padding=(18, 11), background='#F2EDF8',
+                    foreground=MUTED, borderwidth=0)
+        s.map('TNotebook.Tab',
+              background=[('selected', WHITE), ('active', '#F8F5FC')],
+              foreground=[('selected', TEAL), ('active', INK)])
+
+        # Explore data uses a custom flat tab bar. Hide only that notebook's
+        # native tabs so the active item never appears recessed/pressed.
+        try:
+            s.layout('Explore.TNotebook.Tab', [])
+            s.layout('Flat.TNotebook.Tab', [])
+        except tk.TclError:
+            pass
+        s.configure('Explore.TNotebook', background=BG, borderwidth=0, tabmargins=(0, 0, 0, 0))
+        s.configure('Flat.TNotebook', background=BG, borderwidth=0, tabmargins=(0, 0, 0, 0))
         s.configure('Horizontal.TProgressbar', background=TEAL, troughcolor=BG, borderwidth=0, thickness=3)
 
     def action(self, parent, text, command, primary=False):
@@ -200,16 +229,19 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.page_subtitle = label(head, '', 10, MUTED)
         self.page_subtitle.pack(anchor='w', pady=(4, 0))
         toolbar = panel(main, padx=12, pady=12)
+        self.toolbar = toolbar
         toolbar.pack(fill='x', padx=24, pady=(0, 18))
         toolbar.columnconfigure(1, weight=1)
         self.action(toolbar, '+ Import CSV / Excel', self.open_file, True).grid(row=0, column=0, padx=(0, 12), sticky='w')
-        file_badge = tk.Frame(toolbar, bg='#EFE9FA', padx=12, pady=8)
+        file_badge = tk.Frame(toolbar, bg='#F4EFFA', padx=14, pady=9,
+                              highlightbackground='#E6DFF1', highlightthickness=1)
         file_badge.grid(row=0, column=1, sticky='nsew')
         self.file_state = label(file_badge, 'AWAITING IMPORT', 8, MUTED, True)
         self.file_state.pack(anchor='w')
-        self.file_name = label(file_badge, 'NO FILE SELECTED', 11, TEAL, True, width=1, wraplength=420, justify='left')
+        self.file_name = label(file_badge, 'No file selected', 10, INK, True,
+                               width=1, wraplength=620, justify='left')
         self.file_name.pack(fill='x', pady=(3, 0))
-        file_badge.bind('<Configure>', lambda event: self.file_name.configure(wraplength=max(120, event.width-24)))
+        file_badge.bind('<Configure>', lambda event: self.file_name.configure(wraplength=max(160, event.width-28)))
         footer = tk.Frame(main, bg=BG)
         footer.pack(side='bottom', fill='x', padx=24, pady=10)
         status = label(footer, size=9, color=MUTED, wraplength=800)
@@ -230,8 +262,10 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
     def text(self, parent, height=10, editable=False):
         from tkinter.scrolledtext import ScrolledText
         w = ScrolledText(parent, wrap='word', font=(FONT, 11), bg=WHITE, fg=INK, relief='flat', bd=0,
-                         padx=10, pady=10, spacing1=3, spacing3=7, insertbackground=TEAL,
-                         selectbackground='#E6DBFB', height=height, width=20, undo=editable)
+                         padx=12, pady=12, spacing1=3, spacing3=7, insertbackground=TEAL,
+                         selectbackground='#E6DBFB', height=height, width=20, undo=editable,
+                         highlightthickness=1, highlightbackground='#E4DDF0',
+                         highlightcolor='#B89BE8')
         w.tag_configure('title', font=(FONT, 19, 'bold'), foreground=INK, spacing1=12, spacing3=12)
         w.tag_configure('heading', font=(FONT, 12, 'bold'), foreground=TEAL, spacing1=12)
         w.configure(state='normal' if editable else 'disabled')
@@ -239,37 +273,168 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
 
     def build_data_page(self):
         container = self.pages[0]
-        notebook = ttk.Notebook(container)
+
+        # Flat custom tab bar: active tab is indicated by colour + underline,
+        # not by a recessed ttk tab.
+        tabbar = tk.Frame(container, bg=BG)
+        tabbar.pack(fill='x', pady=(0, 0))
+
+        self.explore_tab_buttons = []
+        tab_specs = ['Overview', 'Survey data', 'Insights & suggestions']
+
+        for index, caption in enumerate(tab_specs):
+            holder = tk.Frame(tabbar, bg=BG)
+            holder.pack(side='left', padx=(0, 4))
+
+            button = tk.Button(
+                holder,
+                text=caption,
+                command=lambda i=index: self.select_explore_tab(i),
+                font=(FONT, 10, 'normal'),
+                fg=MUTED,
+                bg='#F5F1FA',
+                activeforeground=TEAL,
+                activebackground='#F5F1FA',
+                relief='flat',
+                bd=0,
+                highlightthickness=0,
+                padx=18,
+                pady=10,
+                cursor='hand2'
+            )
+            button.pack(fill='x')
+
+            underline = tk.Frame(holder, bg='#F5F1FA', height=3)
+            underline.pack(fill='x')
+
+            self.explore_tab_buttons.append((button, underline))
+
+        notebook = ttk.Notebook(container, style='Explore.TNotebook')
         notebook.pack(fill='both', expand=True)
-        overview_tab, data_tab = tk.Frame(notebook, bg=BG), tk.Frame(notebook, bg=BG)
+
+        overview_tab = tk.Frame(notebook, bg=BG)
+        data_tab = tk.Frame(notebook, bg=BG)
+        insights_tab = tk.Frame(notebook, bg=BG)
+
         notebook.add(overview_tab, text='Overview')
         notebook.add(data_tab, text='Survey data')
-        insights_tab = tk.Frame(notebook, bg=BG)
         notebook.add(insights_tab, text='Insights & suggestions')
-        self.build_insights(insights_tab)
+
         self.explore_notebook = notebook
+        self.explore_notebook.bind('<<NotebookTabChanged>>', lambda e: self.sync_explore_tabs())
+
         self.build_overview(overview_tab)
         self.build_data(data_tab)
+        self.build_insights(insights_tab)
+
+        self.select_explore_tab(0)
+
+    def select_explore_tab(self, index):
+        self.explore_notebook.select(index)
+        self.sync_explore_tabs()
+
+    def sync_explore_tabs(self):
+        if not hasattr(self, 'explore_tab_buttons'):
+            return
+        try:
+            selected = self.explore_notebook.index(self.explore_notebook.select())
+        except tk.TclError:
+            return
+
+        for index, (button, underline) in enumerate(self.explore_tab_buttons):
+            active = index == selected
+            button.configure(
+                bg=WHITE if active else '#F5F1FA',
+                activebackground=WHITE if active else '#F5F1FA',
+                fg=TEAL if active else MUTED,
+                font=(FONT, 10, 'bold' if active else 'normal')
+            )
+            underline.configure(bg=TEAL if active else '#F5F1FA')
 
     def show_survey_data(self):
         self.navigate(0)
-        self.explore_notebook.select(1)
+        self.select_explore_tab(1)
 
     def build_themes_page(self):
         container = self.pages[1]
-        notebook = ttk.Notebook(container)
+
+        tabbar = tk.Frame(container, bg=BG)
+        tabbar.pack(fill='x')
+
+        self.themes_tab_buttons = []
+        tab_specs = ['Themes & evidence', 'Ask a question']
+
+        for index, caption in enumerate(tab_specs):
+            holder = tk.Frame(tabbar, bg=BG)
+            holder.pack(side='left', padx=(0, 4))
+
+            button = tk.Button(
+                holder,
+                text=caption,
+                command=lambda i=index: self.select_themes_tab(i),
+                font=(FONT, 10, 'normal'),
+                fg=MUTED,
+                bg='#F5F1FA',
+                activeforeground=TEAL,
+                activebackground='#F5F1FA',
+                relief='flat',
+                bd=0,
+                highlightthickness=0,
+                padx=18,
+                pady=10,
+                cursor='hand2'
+            )
+            button.pack(fill='x')
+
+            underline = tk.Frame(holder, bg='#F5F1FA', height=3)
+            underline.pack(fill='x')
+            self.themes_tab_buttons.append((button, underline))
+
+        notebook = ttk.Notebook(container, style='Flat.TNotebook')
         notebook.pack(fill='both', expand=True)
-        themes_tab, assistant_tab = tk.Frame(notebook, bg=BG), tk.Frame(notebook, bg=BG)
+
+        themes_tab = tk.Frame(notebook, bg=BG)
+        assistant_tab = tk.Frame(notebook, bg=BG)
         notebook.add(themes_tab, text='Themes & evidence')
         notebook.add(assistant_tab, text='Ask a question')
+
+        self.themes_notebook = notebook
+        self.themes_notebook.bind(
+            '<<NotebookTabChanged>>',
+            lambda e: self.sync_themes_tabs()
+        )
+
         self.build_themes(themes_tab)
         self.build_assistant(assistant_tab)
+        self.select_themes_tab(0)
+
+    def select_themes_tab(self, index):
+        self.themes_notebook.select(index)
+        self.sync_themes_tabs()
+
+    def sync_themes_tabs(self):
+        if not hasattr(self, 'themes_tab_buttons'):
+            return
+        try:
+            selected = self.themes_notebook.index(self.themes_notebook.select())
+        except tk.TclError:
+            return
+
+        for index, (button, underline) in enumerate(self.themes_tab_buttons):
+            active = index == selected
+            button.configure(
+                bg=WHITE if active else '#F5F1FA',
+                activebackground=WHITE if active else '#F5F1FA',
+                fg=TEAL if active else MUTED,
+                font=(FONT, 10, 'bold' if active else 'normal')
+            )
+            underline.configure(bg=TEAL if active else '#F5F1FA')
 
     def build_overview(self, p):
         p.columnconfigure(0, weight=1)
         p.rowconfigure(2, weight=1)
-        self.dataset_label = label(p, 'Open a dataset to begin.', 10, MUTED)
-        self.dataset_label.grid(row=0, column=0, sticky='w', pady=(0, 12))
+        self.dataset_label = label(p, 'Open a dataset to begin.', 9, MUTED)
+        self.dataset_label.grid(row=0, column=0, sticky='w', pady=(2, 14))
         cards = tk.Frame(p, bg=BG)
         cards.grid(row=1, column=0, sticky='ew', pady=(0, 16))
         specs = [('TOTAL RESPONSES', 'Selected analysis scope'), ('OVERALL RATING', 'Mean of valid answers · out of 5'), ('WOULD RECOMMEND', 'Recognised answers'), ('COMPLETENESS', 'Of fields the survey collected')]
@@ -287,14 +452,14 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         body.columnconfigure(0, weight=3)
         body.columnconfigure(1, weight=2)
         body.rowconfigure(0, weight=1)
-        chart = panel(body, padx=18, pady=16)
+        chart = panel(body, padx=20, pady=18)
         chart.grid(row=0, column=0, sticky='nsew', padx=(0, 14))
         label(chart, 'Learning experience', 14, INK, True).pack(anchor='w')
         label(chart, 'Average ratings on a 1–5 scale', 9, MUTED).pack(anchor='w', pady=(4, 8))
         self.chart = tk.Canvas(chart, bg=WHITE, highlightthickness=0, height=225, width=360)
         self.chart.pack(fill='both', expand=True)
         self.chart.bind('<Configure>', lambda e: self.draw_chart())
-        side = panel(body, padx=18, pady=16)
+        side = panel(body, padx=20, pady=18)
         side.grid(row=0, column=1, sticky='nsew')
         label(side, 'At a glance', 14, INK, True).pack(anchor='w')
         self.highlights = self.text(side, height=8)
@@ -362,77 +527,403 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.table.pack(fill='both', expand=True)
         self.table.tag_configure('alternate', background='#FAF8FD')
         self.table.bind('<<TreeviewSelect>>', self.inspect_row)
-        self.row_detail = self.text(p, height=4)
-        self.row_detail.pack(fill='x', pady=(12, 0))
+
+        # Keep detail and data-quality information visible without stacking
+        # two large text areas vertically.
+        details = tk.Frame(p, bg=BG, height=142)
+        details.pack(fill='x', pady=(10, 0))
+        details.pack_propagate(False)
+        details.columnconfigure(0, weight=3)
+        details.columnconfigure(1, weight=2)
+        details.rowconfigure(0, weight=1)
+
+        response_card = panel(details, padx=12, pady=10)
+        response_card.grid(row=0, column=0, sticky='nsew', padx=(0, 7))
+        label(response_card, 'SELECTED RESPONSE', 8, MUTED, True).pack(anchor='w', pady=(0, 6))
+        self.row_detail = self.text(response_card, height=4)
+        self.row_detail.pack(fill='both', expand=True)
         self.show(self.row_detail, 'Select a response to inspect its full masked contents.')
-        self.validation_text = self.text(p, height=2)
-        self.validation_text.pack(fill='x', pady=(8, 0))
+
+        quality_card = panel(details, padx=12, pady=10)
+        quality_card.grid(row=0, column=1, sticky='nsew', padx=(7, 0))
+        label(quality_card, 'SOURCE FILE QUALITY', 8, MUTED, True).pack(anchor='w', pady=(0, 6))
+        self.validation_text = self.text(quality_card, height=4)
+        self.validation_text.pack(fill='both', expand=True)
         self.show(self.validation_text, 'Quality checks run automatically when a file is opened.')
 
     def build_themes(self, p):
-        label(p, 'Step 1 of human review: read each theme\'s comments, then confirm, re-categorise or reject it.', 10, MUTED).pack(anchor='w', pady=(0, 12))
-        panes = tk.PanedWindow(p, orient='horizontal', bg=BG, bd=0, sashwidth=12)
+        intro = tk.Frame(p, bg='#F6F2FB', padx=12, pady=9,
+                         highlightbackground='#E5DEEF', highlightthickness=1)
+        intro.pack(fill='x', pady=(0, 12))
+        label(intro, 'STEP 1 · HUMAN REVIEW', 8, TEAL, True).pack(anchor='w')
+        label(intro, 'Read the supporting comments, then confirm, re-categorise or reject each recurring theme.',
+              9, MUTED, wraplength=900).pack(anchor='w', pady=(2, 0))
+
+        panes = tk.PanedWindow(p, orient='horizontal', bg=BG, bd=0, sashwidth=8,
+                              sashrelief='flat', showhandle=False)
         panes.pack(fill='both', expand=True)
-        left, right = panel(panes), panel(panes, padx=16, pady=12)
-        panes.add(left, minsize=320, width=400)
-        panes.add(right, minsize=300)
-        self.theme_table = ttk.Treeview(left, columns=('theme', 'count', 'decision'), show='headings', selectmode='browse', height=5)
+        left = panel(panes, padx=0, pady=0)
+        right = panel(panes, padx=18, pady=14)
+        panes.add(left, minsize=330, width=370)
+        panes.add(right, minsize=480)
+
+        left_head = tk.Frame(left, bg=WHITE, padx=14, pady=11)
+        left_head.pack(fill='x')
+        label(left_head, 'Theme review', 12, INK, True).pack(side='left')
+        self.show_pending_themes = tk.BooleanVar(master=self.root, value=False)
+        ttk.Checkbutton(
+            left_head,
+            text='Pending only',
+            variable=self.show_pending_themes,
+            command=self.refresh_theme_rows
+        ).pack(side='right')
+
+        tk.Frame(left, bg='#E7E0F1', height=1).pack(fill='x')
+
+        self.theme_table = ttk.Treeview(
+            left,
+            columns=('theme', 'count', 'decision'),
+            show='headings',
+            selectmode='browse',
+            height=5
+        )
         self.theme_table.heading('theme', text='RECURRING THEME')
         self.theme_table.heading('count', text='MENTIONS')
         self.theme_table.heading('decision', text='DECISION')
-        self.theme_table.column('theme', width=190)
-        self.theme_table.column('count', width=90, stretch=False, anchor='center')
-        self.theme_table.column('decision', width=120, stretch=False)
+        self.theme_table.column('theme', width=195)
+        self.theme_table.column('count', width=82, stretch=False, anchor='center')
+        self.theme_table.column('decision', width=105, stretch=False, anchor='center')
         scroll = ttk.Scrollbar(left, orient='vertical', command=self.theme_table.yview)
         scroll.pack(side='right', fill='y')
         self.theme_table.configure(yscrollcommand=scroll.set)
         self.theme_table.pack(fill='both', expand=True)
         self.theme_table.bind('<<TreeviewSelect>>', self.inspect_theme)
+
+        label(right, 'Selected theme', 8, MUTED, True).pack(anchor='w', pady=(0, 6))
         controls = tk.Frame(right, bg=WHITE)
-        controls.pack(side='bottom', fill='x')
+        controls.pack(side='bottom', fill='x', pady=(10, 0))
         self.build_theme_review_controls(controls)
+
         self.theme_detail = self.text(right)
         self.theme_detail.pack(fill='both', expand=True)
         self.show(self.theme_detail, 'Load a dataset to explore its themes.')
-        label(p, 'Categories are indicators. Mentions may overlap across themes; inspect evidence before acting.', 9, MUTED, wraplength=800).pack(anchor='w', pady=(12, 0))
+
+        label(p, 'Categories are indicators. Mentions may overlap across themes; inspect evidence before acting.',
+              9, MUTED, wraplength=900).pack(anchor='w', pady=(10, 0))
 
     def build_report(self):
         p = self.pages[2]
         p.columnconfigure(0, weight=1)
-        p.columnconfigure(1, minsize=242)
         p.rowconfigure(0, weight=1)
-        workspace = panel(p, padx=14, pady=12)
-        workspace.grid(row=0, column=0, sticky='nsew', padx=(0, 14))
+
+        workspace = panel(p, padx=18, pady=14)
+        workspace.grid(row=0, column=0, sticky='nsew')
+
         actions = tk.Frame(workspace, bg=WHITE)
-        actions.pack(fill='x', pady=(0, 10))
-        self.audience = ttk.Combobox(actions, values=['facilitator', 'client'], state='readonly', width=13)
+        actions.pack(fill='x', pady=(0, 8))
+
+        audience_box = tk.Frame(actions, bg=WHITE)
+        audience_box.pack(side='left')
+        label(audience_box, 'REPORT TYPE', 8, MUTED, True).pack(anchor='w', pady=(0, 4))
+        self.audience = ttk.Combobox(audience_box, values=['facilitator', 'client'],
+                                     state='readonly', width=16)
         self.audience.set('facilitator')
-        self.audience.pack(side='left')
+        self.audience.pack(anchor='w')
         self.audience.bind('<<ComboboxSelected>>', self.audience_changed)
+
+        # Human review becomes a contextual drawer instead of a permanently
+        # visible right rail. Hover previews it; click pins it open.
+        self.review_drawer_pinned = False
+        self.review_drawer_visible = False
+        self.review_drawer_width = 360
+        self.review_drawer_x = self.review_drawer_width
+        self.review_drawer_anim = None
+        self.review_drawer_open_job = None
+        self.review_drawer_close_job = None
+
+        self.review_drawer_text = tk.StringVar(value='Human review · Start')
+        self.review_drawer_button = tk.Button(
+            actions,
+            textvariable=self.review_drawer_text,
+            command=self.toggle_review_drawer_pin,
+            font=(FONT, 9, 'bold'),
+            fg=TEAL,
+            bg='#F3ECFB',
+            activeforeground=TEAL,
+            activebackground='#EADDF8',
+            relief='flat',
+            bd=0,
+            highlightthickness=1,
+            highlightbackground='#D8C8ED',
+            padx=14,
+            pady=9,
+            cursor='hand2'
+        )
+        self.review_drawer_button.pack(side='right', anchor='s', pady=(18, 0))
+        self.review_drawer_button.bind('<Enter>', self.schedule_review_drawer_open)
+        self.review_drawer_button.bind('<Leave>', self.schedule_review_drawer_close)
+
         self.generate_button = self.action(actions, 'Get Gemini draft', self.generate, True)
-        self.generate_button.pack(side='right')
-        label(workspace, 'Powered by Gemini · Drafts use your survey summaries and require human review.',
-              9, MUTED, wraplength=650).pack(anchor='w', pady=(0, 8))
-        self.report_tabs = ttk.Notebook(workspace)
+        self.generate_button.pack(side='right', anchor='s', padx=(0, 8), pady=(18, 0))
+
+        label(workspace, 'Drafts are grounded in the selected survey summaries and must pass human review before export.',
+              9, MUTED, wraplength=820).pack(anchor='w', pady=(0, 10))
+
+        self.report_tabbar = tk.Frame(workspace, bg=WHITE)
+        self.report_tabbar.pack(fill='x')
+        self.report_tab_buttons = []
+
+        self.report_tabs = ttk.Notebook(workspace, style='Flat.TNotebook')
         self.report_tabs.pack(fill='both', expand=True)
         edit, preview = tk.Frame(self.report_tabs, bg=WHITE), tk.Frame(self.report_tabs, bg=WHITE)
         self.report_tabs.add(edit, text='Edit draft')
         self.report_tabs.add(preview, text='Reading preview')
+
         self.editor = self.text(edit, editable=True)
-        self.editor.pack(fill='both', expand=True)
+        self.editor.pack(fill='both', expand=True, padx=1, pady=1)
         self.editor.bind('<<Modified>>', self.edited)
 
         self.preview_meta = label(preview, 'No report available yet', 9, MUTED)
-        self.preview_meta.pack(fill='x', padx=10, pady=(10, 4))
+        self.preview_meta.pack(fill='x', padx=12, pady=(10, 4))
 
         self.preview = self.text(preview)
-        self.preview.pack(fill='both', expand=True)
-        self.report_tabs.bind('<<NotebookTabChanged>>', lambda e: self.refresh_preview())
+        self.preview.pack(fill='both', expand=True, padx=1, pady=(0, 1))
+        self.report_tabs.bind('<<NotebookTabChanged>>', self.on_report_tab_changed)
         self.show(self.preview, 'Get a draft to see a formatted reading preview.')
         self.report_tabs.select(0)
-        review = panel(p, padx=10, pady=10)
-        review.grid(row=0, column=1, sticky='nsew')
-        self.build_review_panel(review)
+
+        # Overlay drawer. It is placed over the report instead of resizing it.
+        self.review_drawer = tk.Frame(
+            p,
+            bg=WHITE,
+            highlightbackground='#D8C8ED',
+            highlightthickness=1
+        )
+        self.review_drawer.bind('<Enter>', self.cancel_review_drawer_close)
+        self.review_drawer.bind('<Leave>', self.schedule_review_drawer_close)
+
+        review_inner = tk.Frame(self.review_drawer, bg=WHITE, padx=8, pady=8)
+        review_inner.pack(fill='both', expand=True)
+        self.build_review_panel(review_inner)
+
+        close_button = tk.Button(
+            self.review_drawer,
+            text='×',
+            command=self.close_review_drawer,
+            font=(FONT, 15, 'normal'),
+            fg=MUTED,
+            bg=WHITE,
+            activeforeground=INK,
+            activebackground=WHITE,
+            relief='flat',
+            bd=0,
+            highlightthickness=0,
+            cursor='hand2'
+        )
+        close_button.place(relx=1.0, x=-8, y=7, anchor='ne')
+
+        self.update_review_drawer_badge()
+
+    def _cancel_review_job(self, attr):
+        job = getattr(self, attr, None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except tk.TclError:
+                pass
+            setattr(self, attr, None)
+
+    def _pointer_inside(self, widget):
+        if not widget or not widget.winfo_exists() or not widget.winfo_ismapped():
+            return False
+        x, y = self.root.winfo_pointerxy()
+        left = widget.winfo_rootx()
+        top = widget.winfo_rooty()
+        return left <= x <= left + widget.winfo_width() and top <= y <= top + widget.winfo_height()
+
+    def schedule_review_drawer_open(self, event=None):
+        self._cancel_review_job('review_drawer_close_job')
+        if self.review_drawer_visible:
+            return
+        self._cancel_review_job('review_drawer_open_job')
+        self.review_drawer_open_job = self.root.after(350, self.open_review_drawer)
+
+    def cancel_review_drawer_close(self, event=None):
+        self._cancel_review_job('review_drawer_close_job')
+
+    def schedule_review_drawer_close(self, event=None):
+        self._cancel_review_job('review_drawer_open_job')
+        if self.review_drawer_pinned:
+            return
+        self._cancel_review_job('review_drawer_close_job')
+        self.review_drawer_close_job = self.root.after(450, self._close_review_drawer_if_outside)
+
+    def _close_review_drawer_if_outside(self):
+        self.review_drawer_close_job = None
+        if self.review_drawer_pinned:
+            return
+        if self._pointer_inside(self.review_drawer_button) or self._pointer_inside(self.review_drawer):
+            return
+        self.hide_review_drawer()
+
+    def toggle_review_drawer_pin(self):
+        self._cancel_review_job('review_drawer_open_job')
+        self._cancel_review_job('review_drawer_close_job')
+        if self.review_drawer_visible and self.review_drawer_pinned:
+            self.review_drawer_pinned = False
+            self.hide_review_drawer()
+        else:
+            self.review_drawer_pinned = True
+            self.open_review_drawer()
+
+    def close_review_drawer(self):
+        self.review_drawer_pinned = False
+        self._cancel_review_job('review_drawer_open_job')
+        self._cancel_review_job('review_drawer_close_job')
+        self.hide_review_drawer()
+
+    def open_review_drawer(self):
+        self.review_drawer_open_job = None
+        if self.review_drawer_visible:
+            self.review_drawer.lift()
+            return
+        self.review_drawer_visible = True
+        self.review_drawer_x = self.review_drawer_width
+        self.review_drawer.place(
+            relx=1.0,
+            x=self.review_drawer_x,
+            y=0,
+            anchor='ne',
+            relheight=1.0,
+            width=self.review_drawer_width
+        )
+        self.review_drawer.lift()
+        self._animate_review_drawer(opening=True)
+
+    def hide_review_drawer(self):
+        if not self.review_drawer_visible:
+            return
+        self._animate_review_drawer(opening=False)
+
+    def _animate_review_drawer(self, opening):
+        if self.review_drawer_anim:
+            try:
+                self.root.after_cancel(self.review_drawer_anim)
+            except tk.TclError:
+                pass
+            self.review_drawer_anim = None
+
+        target = 0 if opening else self.review_drawer_width
+        step = max(28, self.review_drawer_width // 9)
+
+        if opening:
+            self.review_drawer_x = max(target, self.review_drawer_x - step)
+        else:
+            self.review_drawer_x = min(target, self.review_drawer_x + step)
+
+        self.review_drawer.place_configure(x=self.review_drawer_x)
+        self.review_drawer.lift()
+
+        if self.review_drawer_x == target:
+            self.review_drawer_anim = None
+            if not opening:
+                self.review_drawer.place_forget()
+                self.review_drawer_visible = False
+            return
+
+        self.review_drawer_anim = self.root.after(
+            16,
+            lambda: self._animate_review_drawer(opening)
+        )
+
+    def update_review_drawer_badge(self):
+        if not hasattr(self, 'review_drawer_text'):
+            return
+
+        if not self.context:
+            text = 'Human review · Start'
+        elif not self.theme_review.complete:
+            text = f'Human review · Themes {self.theme_review.reviewed}/{self.theme_review.total}'
+        elif not self.report:
+            text = 'Human review · Themes ready ✓'
+        elif self.workflow.status == 'AWAITING HUMAN REVIEW':
+            text = 'Human review · Awaiting approval'
+        elif self.workflow.status == 'CHANGES REQUESTED':
+            text = 'Human review · Changes requested'
+        elif self.workflow.status == 'HUMAN REVIEWED':
+            text = 'Human review · Ready ✓'
+        else:
+            counts = self.ledger.counts()
+            text = f'Human review · {counts["decided"]}/{counts["total"]} claims'
+
+        self.review_drawer_text.set(text)
+
+    def refresh_report_tab_bar(self):
+        """Rebuild the flat Report Studio tab bar from the notebook tabs."""
+        if not hasattr(self, 'report_tabbar') or not hasattr(self, 'report_tabs'):
+            return
+
+        for child in self.report_tabbar.winfo_children():
+            child.destroy()
+
+        self.report_tab_buttons = []
+
+        for index, tab_id in enumerate(self.report_tabs.tabs()):
+            caption = self.report_tabs.tab(tab_id, 'text')
+
+            holder = tk.Frame(self.report_tabbar, bg=WHITE)
+            holder.pack(side='left', padx=(0, 3))
+
+            button = tk.Button(
+                holder,
+                text=caption,
+                command=lambda i=index: self.select_report_tab(i),
+                font=(FONT, 9, 'normal'),
+                fg=MUTED,
+                bg='#F5F1FA',
+                activeforeground=TEAL,
+                activebackground='#F5F1FA',
+                relief='flat',
+                bd=0,
+                highlightthickness=0,
+                padx=14,
+                pady=9,
+                cursor='hand2'
+            )
+            button.pack(fill='x')
+
+            underline = tk.Frame(holder, bg='#F5F1FA', height=3)
+            underline.pack(fill='x')
+
+            self.report_tab_buttons.append((button, underline))
+
+        self.sync_report_tabs()
+
+    def select_report_tab(self, index):
+        self.report_tabs.select(index)
+        self.sync_report_tabs()
+
+    def sync_report_tabs(self):
+        if not hasattr(self, 'report_tab_buttons') or not self.report_tab_buttons:
+            return
+        try:
+            selected = self.report_tabs.index(self.report_tabs.select())
+        except tk.TclError:
+            return
+
+        for index, (button, underline) in enumerate(self.report_tab_buttons):
+            active = index == selected
+            button.configure(
+                bg=WHITE if active else '#F5F1FA',
+                activebackground=WHITE if active else '#F5F1FA',
+                fg=TEAL if active else MUTED,
+                font=(FONT, 9, 'bold' if active else 'normal')
+            )
+            underline.configure(bg=TEAL if active else '#F5F1FA')
+
+    def on_report_tab_changed(self, event=None):
+        self.sync_report_tabs()
+        self.refresh_preview()
 
     def build_assistant(self, p):
         self.question_cache = {}
@@ -460,11 +951,36 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             page.grid_remove()
         self.pages[index].grid()
         self.pages[index].tkraise()
+
         title, subtitle = self.TITLES[index]
         self.page_title.configure(text=title)
         self.page_subtitle.configure(text=subtitle)
+
+        # Importing/replacing survey files belongs to Explore data.
+        # Hide the repeated import/file banner on later workflow pages
+        # to reduce duplication and give review/report content more room.
+        if index == 0:
+            if not self.toolbar.winfo_manager():
+                self.toolbar.pack(
+                    fill='x',
+                    padx=24,
+                    pady=(0, 18),
+                    before=self.content_frame
+                )
+        else:
+            self.toolbar.pack_forget()
+
         for i, b in enumerate(self.nav_buttons):
             b.configure(style='Selected.Nav.TButton' if i == index else 'Nav.TButton')
+
+        if hasattr(self, 'review_drawer'):
+            if index != 2:
+                self.review_drawer_pinned = False
+                if self.review_drawer_visible:
+                    self.hide_review_drawer()
+            else:
+                self.update_review_drawer_badge()
+
         if index == 0:
             self.root.after_idle(self.draw_chart)
 
@@ -567,7 +1083,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.busy = True
         pending_label = file_label or (self.loaded_file_label if source is self.raw else name) or name
         self.file_state.configure(text='PROCESSING FILE', fg=TEAL)
-        self.file_name.configure(text=pending_label.upper())
+        self.file_name.configure(text=pending_label)
         self.status.set('Reading, validating and analysing data…')
         self.sync_controls()
         def work():
@@ -589,7 +1105,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
                 raw, result = future.result()
             except Exception as exc:
                 self.file_state.configure(text='LOADED FILE' if self.context else 'AWAITING IMPORT', fg=MUTED)
-                self.file_name.configure(text=self.loaded_file_label.upper() if self.context else 'NO FILE SELECTED')
+                self.file_name.configure(text=self.loaded_file_label if self.context else 'No file selected')
                 self.status.set('Could not load this file. Your previous workspace is unchanged.')
                 self.sync_controls()
                 messagebox.showerror('Cannot analyse file', str(exc), parent=self.root)
@@ -597,7 +1113,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             self.raw, self.source = raw, name
             self.loaded_file_label = pending_label
             self.file_state.configure(text='LOADED FILE', fg=TEAL)
-            self.file_name.configure(text=pending_label.upper())
+            self.file_name.configure(text=pending_label)
             self.apply_analysis(result)
             self.status.set(f'Ready • {len(self.frame):,} responses analysed')
             self.sync_controls()
@@ -638,7 +1154,11 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         warnings = self.context.warnings
         summary = f'{len(warnings)} quality warning(s)' if warnings else 'Required columns validated'
         self.quality_label.configure(text=f'{summary}  •  {count} patterns masked in source file\nBasic masking still requires human inspection.', fg='#92600D' if warnings else TEAL)
-        self.show(self.validation_text, 'SOURCE FILE QUALITY\n' + ('\n'.join(warnings) if warnings else 'No validation warnings.') + f'\n{count} patterns masked. Preview capped at 1,000 rows; all selected rows are analysed.')
+        self.show(
+            self.validation_text,
+            ('\n'.join(warnings) if warnings else 'No validation warnings.')
+            + f'\n\n{count} patterns masked. Preview capped at 1,000 rows; all selected rows are analysed.'
+        )
         self.theme_table.delete(*self.theme_table.get_children())
         for i, theme in enumerate(self.context.themes):
             self.theme_table.insert('', 'end', iid=str(i), values=(theme.name, theme.frequency, 'Pending'))
