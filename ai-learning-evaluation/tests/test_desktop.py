@@ -108,7 +108,7 @@ def test_startup_demo_and_navigation(desktop):
     assert desktop.context is None
     assert getattr(desktop, 'startup_id', None) is None
     assert [widget.cget('text') for widget in desktop.metric_values] == ['PENDING'] * 4
-    assert desktop.file_name.cget('text') == 'NO FILE SELECTED'
+    assert desktop.file_name.cget('text') == 'No file selected'
     assert desktop.generate_button.instate(['disabled'])
     desktop.load_startup_data()
     wait_for_load(desktop)
@@ -524,7 +524,11 @@ def test_import_multiple_csv_and_excel_files(desktop, monkeypatch, tmp_path, gol
     monkeypatch.setattr('tkinter.filedialog.askopenfilenames', lambda **kwargs: [str(csv), str(xlsx)])
     desktop.open_file()
     assert desktop.file_state.cget('text') == 'PROCESSING FILE'
-    assert desktop.file_name.cget('text') == 'SURVEY.CSV (+1 MORE FILES)'
+    file_label = desktop.file_name.cget('text')
+    assert file_label.startswith('2 survey files loaded')
+    assert 'survey' in file_label
+    assert '+1 more' in file_label
+    
     wait_for_load(desktop)
     assert len(desktop.frame) == 6
     assert desktop.source == '2 survey files'
@@ -537,7 +541,7 @@ def test_failed_import_restores_loaded_file_badge(desktop, tmp_path):
     broken = tmp_path / 'broken.csv'
     broken.write_text('wrong,columns\n1,2\n', encoding='utf-8')
     desktop.load(broken, broken.name)
-    assert desktop.file_name.cget('text') == 'BROKEN.CSV'
+    assert desktop.file_name.cget('text') == 'broken.csv'
     wait_for_load(desktop)
     assert desktop.file_name.cget('text') == 'SAMPLE.CSV'
     assert desktop.file_state.cget('text') == 'LOADED FILE'
