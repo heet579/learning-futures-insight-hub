@@ -33,6 +33,16 @@ class ReviewUI:
 
     # ------------------------------------------------------------------ Gate 1: themes
     def build_theme_review_controls(self, parent):
+        filter_bar = tk.Frame(parent, bg=WHITE)
+        filter_bar.pack(fill='x', pady=(8, 0))
+        self.show_pending_themes = tk.BooleanVar(master=self.root, value=False)
+        ttk.Checkbutton(
+            filter_bar,
+            text='Show pending only',
+            variable=self.show_pending_themes,
+            command=self.refresh_theme_rows
+        ).pack(side='left')
+
         bar = tk.Frame(parent, bg=WHITE)
         bar.pack(fill='x', pady=(10, 0))
         tk.Label(bar, text='Category', bg=WHITE, fg=MUTED).pack(side='left')
@@ -52,20 +62,54 @@ class ReviewUI:
         self.refresh_theme_rows()
 
     def refresh_theme_rows(self):
+        selected = self.theme_table.selection()
+        selected_iid = selected[0] if selected else None
+        pending_only = (
+            hasattr(self, 'show_pending_themes')
+            and self.show_pending_themes.get()
+        )
+
+        self.theme_table.delete(*self.theme_table.get_children())
+
         for i, theme in enumerate(self.theme_review.themes):
-            iid = str(i)
-            if self.theme_table.exists(iid):
-                self.theme_table.set(iid, 'decision', self.theme_review.status_of(theme.name))
+            decision = self.theme_review.status_of(theme.name)
+            if pending_only and str(decision).casefold() != 'pending':
+                continue
+            self.theme_table.insert(
+                '',
+                'end',
+                iid=str(i),
+                values=(theme.name, theme.frequency, decision)
+            )
+
+        if selected_iid and self.theme_table.exists(selected_iid):
+            self.theme_table.selection_set(selected_iid)
+            self.theme_table.see(selected_iid)
+        elif self.theme_table.get_children():
+            first = self.theme_table.get_children()[0]
+            self.theme_table.selection_set(first)
+            self.theme_table.see(first)
+
         done, total = self.theme_review.reviewed, self.theme_review.total
+        pending = max(0, total - done)
+        filter_note = f' Showing {pending} pending.' if pending_only and total else ''
+
         if not total:
             text = 'No recurring themes to review.' if self.context else 'Import data to review its themes.'
         elif done < total:
             text = (f'{done} of {total} themes reviewed. Read the comments, then confirm or reject each theme. '
-                    'Only confirmed themes go into the report.')
+                    f'Only confirmed themes go into the report.{filter_note}')
         else:
             c = self.theme_review.counts()
-            text = f'All {total} themes reviewed: {c["confirmed"]} confirmed, {c["rejected"]} rejected. You can get a draft.'
+            text = (f'All {total} themes reviewed: {c["confirmed"]} confirmed, {c["rejected"]} rejected. '
+                    f'You can get a draft.{filter_note}')
         self.theme_progress.set(text)
+
+        if self.theme_table.selection():
+            self.inspect_theme()
+        elif pending_only and total:
+            self.show(self.theme_detail, 'No pending themes remain. Turn off “Show pending only” to review completed decisions.')
+
         self.update_review_panel()
 
     def selected_theme(self):
@@ -139,6 +183,17 @@ class ReviewUI:
         tk.Label(page, text='Accept or reject every sentence and bullet; clear or remove every learner quote. '
                  'Rejecting removes the text from the draft.', bg=WHITE, fg=MUTED, anchor='w', justify='left',
                  wraplength=760).pack(side='top', fill='x', pady=(0, 6))
+
+        filter_bar = tk.Frame(page, bg=WHITE)
+        filter_bar.pack(side='top', fill='x', pady=(0, 6))
+        self.show_undecided_only = tk.BooleanVar(master=self.root, value=False)
+        ttk.Checkbutton(
+            filter_bar,
+            text='Show undecided only',
+            variable=self.show_undecided_only,
+            command=self.refresh_claims
+        ).pack(side='left')
+
         # Bottom area first, so the table (not the buttons) shrinks on short screens.
         self.claim_detail = self.text(page, height=3)
         self.claim_detail.pack(side='bottom', fill='x')
@@ -186,8 +241,17 @@ class ReviewUI:
         content = self.editor.get('1.0', 'end-1c')
         self.ledger.sync(extract_claims(content, self.report, self.review_context()))
         self.claims_table.delete(*self.claims_table.get_children())
+        undecided_only = (
+            hasattr(self, 'show_undecided_only')
+            and self.show_undecided_only.get()
+        )
+
         for claim in self.ledger.claims:
             decision = self.ledger.status_of(claim.key)
+
+            if undecided_only and decision != 'pending':
+                continue
+
             check = ('Fix needed' if any(p.startswith(('Unsupported', 'Quote does not')) for p in claim.problems)
                      else 'Possible name' if claim.possible_names
                      else 'Check wording' if claim.problems
@@ -199,8 +263,10 @@ class ReviewUI:
         if selected and self.claims_table.exists(selected[0]):
             self.claims_table.selection_set(selected[0])
         c = self.ledger.counts()
+        filter_note = f'  •  showing {len(self.ledger.pending)} undecided' if undecided_only else ''
         self.claims_progress.set(f'{c["decided"]} of {c["total"]} claims decided  •  {c["ai_written"]} AI-written  •  '
-                                 f'{c["human_edited"]} edited by a person  •  {c["attention"]} need attention')
+                                 f'{c["human_edited"]} edited by a person  •  {c["attention"]} need attention'
+                                 f'{filter_note}')
         self.inspect_claim()
         self.update_review_panel()
 
