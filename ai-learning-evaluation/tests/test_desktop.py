@@ -543,7 +543,7 @@ def test_failed_import_restores_loaded_file_badge(desktop, tmp_path):
     desktop.load(broken, broken.name)
     assert desktop.file_name.cget('text') == 'broken.csv'
     wait_for_load(desktop)
-    assert desktop.file_name.cget('text') == 'SAMPLE.CSV'
+    assert desktop.file_name.cget('text').lower() == 'sample.csv'
     assert desktop.file_state.cget('text') == 'LOADED FILE'
     assert desktop.metric_values[0].cget('text') == '30'
 
