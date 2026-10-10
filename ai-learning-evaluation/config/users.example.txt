@@ -1,0 +1,9 @@
+# Copy this file to users.txt and add accounts directly, or use python -m src.auth add USERNAME.
+# One account per line: username followed by ONE tab/space and a plain-text password.
+# Example (commented out):
+# alex ExamplePassword123
+# Passwords must be nonempty and up to 1024 characters, with no tabs or line breaks.
+# Spaces inside passwords are allowed and are preserved.
+# Blank lines and lines starting with # are ignored.
+# To disable an account, put # at the beginning of its line or remove the line.
+# There are no default accounts or passwords.

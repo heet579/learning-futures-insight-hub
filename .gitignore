@@ -12,6 +12,8 @@ htmlcov/
 .env
 .env.*
 !.env.example
+# Local sign-in accounts (editable text, includes plain-text passwords)
+ai-learning-evaluation/config/users.txt
 
 # Local runtime output
 *.log

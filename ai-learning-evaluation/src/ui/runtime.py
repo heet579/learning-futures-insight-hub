@@ -69,8 +69,16 @@ def launch(diagnose=False):
         root.report_callback_exception = callback_error
         from dotenv import load_dotenv
         load_dotenv(Path(__file__).resolve().parents[2] / '.env', override=False)
-        from src.ui.desktop import DesktopApp
-        app = DesktopApp(root)
+        from src.ui.login import LoginScreen
+
+        def open_workspace(username):
+            nonlocal app
+            from src.ui.desktop import DesktopApp
+            app = DesktopApp(root)
+            app.username = username
+            root.title(f'Learning Futures | Insight Hub — {username}')
+
+        LoginScreen(root, open_workspace)
         root.update_idletasks()
         root.deiconify()
         root.mainloop()

@@ -4,6 +4,8 @@
 
 A Python desktop app (Tkinter). Docker can serve the same window in a browser through noVNC. Everything runs on the user's computer except requests to Gemini.
 
+Startup shows a sign-in screen before building the workspace. Local accounts are read from an editable UTF-8 `config/users.txt` file with readable plain-text passwords; the account file is reloaded on each login attempt. Accounts are maintained by an administrator, with no signup flow. Review names are still entered separately from the signed-in account.
+
 ```mermaid
 flowchart TD
   F[/Qualtrics CSV or Excel/] --> L[Import and map]

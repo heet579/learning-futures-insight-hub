@@ -16,9 +16,25 @@ python app.py
 
 Windows setup launcher: `./run_app.ps1`. After dependencies are installed in your default Python, double-click `launch_app.pyw` to open without a console. macOS/Linux: run `python app.py` after installing requirements (Linux may require `python3-tk`).
 
+## Sign in and manage accounts
+
+The app opens on a sign-in screen. There is no signup, and the workspace is built only after a valid username and password. Create the first account from the application folder:
+
+```powershell
+python -m src.auth add admin
+```
+
+Enter and confirm a nonempty password when prompted. There are no built-in credentials. Accounts live in **`config/users.txt`**, an editable UTF-8 plain text file excluded from Git. Each active line contains a username, one tab or space, and the readable password (up to 1024 characters). Usernames are case-insensitive; passwords are case-sensitive. Spaces inside passwords are preserved; tabs and line breaks are not allowed.
+
+To add a user, open `config/users.txt` and add a line such as `alex ExamplePassword123`. Change their password by editing the second value directly. Alternatively, `python -m src.auth add USERNAME` appends an account for you, `python -m src.auth entry USERNAME` prints a line to paste, and `python -m src.auth add USERNAME --replace` resets a password. Remove a line or put `#` at its beginning to disable an account. Changes take effect at the next login attempt; an already-open workspace stays open until closed. Close and reopen the app to switch users.
+
+Passwords are stored as plain text for the current prototype. Blank lines and `#` comments are allowed; malformed or duplicate active accounts block login and identify the line to fix. See [the file template](config/users.example.txt). `LOGIN_USERS_FILE` can point to another text file; relative paths resolve from the application folder. Anyone who can read the file can see the passwords, and anyone with write access can manage users. Existing password hashes must be replaced with readable passwords.
+
+For Docker Compose, accounts persist in the host's `shared/users.txt`. After starting the container, run `docker compose exec insight-hub python -m src.auth add admin` to create the first account. You can then edit `shared/users.txt` directly. Other Docker launch methods must set `LOGIN_USERS_FILE` to a writable, persistent account-file location.
+
 ## Application workflow
 
-1. Launch the app. Cards show PENDING until you choose **Import CSV / Excel**. Import your survey files or `data/synthetic_qualtrics_evaluation.csv` for a demo, then review the response count, mean overall rating, recommendation and completeness cards and the rating chart.
+1. Launch the app and sign in. Cards show PENDING until you choose **Import CSV / Excel**. Import your survey files or `data/synthetic_qualtrics_evaluation.csv` for a demo, then review the response count, mean overall rating, recommendation and completeness cards and the rating chart.
 2. In **Explore data**, switch to the **Survey data** tab, search for a response or phrase, and select a row to inspect its full masked content.
 3. Open **Themes & evidence**. For each theme read the supporting comments (the matched keyword is shown under each one), then **Confirm**, change the category, or **Reject** it. Only confirmed themes go into the report. **Ask a question** answers from the calculated evidence.
 4. Open **Report studio**, choose facilitator or client and click **Get Gemini draft**. If Gemini is not set up, or the request fails and you agree, a local draft with fixed wording is created instead and the status line says so.
@@ -37,7 +53,7 @@ Windows setup launcher: `./run_app.ps1`. After dependencies are installed in you
 | 5 Pace | Take time to check evidence. | If five or more decisions are made with a median gap under 3 seconds, a "Fast review" warning is shown and printed in the Review record. |
 | 6 Record | — | Every import, theme and claim decision, revision, submission, return, approval and export is appended to a hash-chained audit log (default `~/.learning_futures_insight_hub/review_audit_log.jsonl`, or `AUDIT_LOG_PATH`). Each line holds the SHA-256 of the previous one, so edits to history are detected. The log holds names, decisions, counts and hashes, never learner comments. Approved exports end with a **Review record** page. Approval is refused if the log cannot be written. |
 
-Names are typed by the operator. This desktop prototype has no sign-in, so the record shows who each person said they were, not an authenticated identity.
+The workspace requires sign-in. Review names are still typed by the operator and are not bound to the signed-in account, so the review record shows the supplied reviewer names.
 
 ## Calculation notes
 
