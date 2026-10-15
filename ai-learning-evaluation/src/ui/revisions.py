@@ -458,7 +458,7 @@ class RevisionUI:
         # Bind wheel scrolling after the complete page has been constructed,
         # then calculate the initial scrollable extent.
         _bind_revision_mousewheel(page)
-        self.root.after_idle(_sync_revision_scroll_region)
+        self.schedule_idle(_sync_revision_scroll_region)
 
         self.update_revision_mode_ui()
         self.sync_revision_controls()
@@ -473,7 +473,7 @@ class RevisionUI:
             self.revision_evidence_toggle.configure(text='Evidence & notes ▸')
 
         if hasattr(self, 'revision_scroll_canvas'):
-            self.root.after_idle(
+            self.schedule_idle(
                 lambda: self.revision_scroll_canvas.configure(
                     scrollregion=self.revision_scroll_canvas.bbox('all')
                 )
@@ -883,7 +883,7 @@ class RevisionUI:
 
         def finish():
             if not future.done():
-                self.revision_poll = self.root.after(80, finish)
+                self.revision_poll = self.schedule(80, finish)
                 return
             self.revision_poll = None
             self.busy = False
@@ -907,7 +907,7 @@ class RevisionUI:
             self.status.set('Revision preview ready. Compare each section, then apply the revisions if appropriate.')
             self.sync_controls()
 
-        self.revision_poll = self.root.after(80, finish)
+        self.revision_poll = self.schedule(80, finish)
 
     def apply_current_revision_section(self):
         if not self.pending_revision or self.busy:
@@ -941,7 +941,7 @@ class RevisionUI:
 
         self.record(
             'Revision applied',
-            self.author_entry.get().strip(),
+            self.author_identity(),
             section=section,
             sections=[section],
             method=updated.mode,
@@ -1020,7 +1020,7 @@ class RevisionUI:
         self.revision_section_decisions[section] = 'kept'
         self.record(
             event_name,
-            self.author_entry.get().strip(),
+            self.author_identity(),
             section=section,
             method=self.pending_revision.provider,
         )
@@ -1081,7 +1081,7 @@ class RevisionUI:
 
         self.record(
             'Revision reverted',
-            self.author_entry.get().strip(),
+            self.author_identity(),
             section=section,
             method=self.pending_revision.provider,
         )
@@ -1124,6 +1124,6 @@ class RevisionUI:
         self.revision_section_decisions = {}
         self.revision_section_snapshots = {}
         self.replace_revision_text(content)
-        self.record('Revision undone', self.author_entry.get().strip())
+        self.record('Revision undone', self.author_identity())
         self.show(self.revision_preview, 'Previous draft restored. All approval checks must be repeated.')
         self.clear_revision_preview('Previous draft restored · preview another revision when ready')

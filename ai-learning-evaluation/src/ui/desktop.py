@@ -1,6 +1,7 @@
 """Presentation interface for the native desktop workflow."""
 import os
 import tkinter as tk
+from src.ui.account import AccountUI
 from src.ui.revisions import RevisionUI
 from src.ui.review import ReviewUI
 from src.ui.insights import InsightsUI
@@ -45,15 +46,19 @@ def analyse(frame, name, scope):
     return masked, context, count, courses
 
 
-class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
+class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
     TITLES = [('Explore data', 'A clear view of learner experience, grounded in your survey data.'),
               ('Themes & evidence', 'Explore recurring feedback and the comments supporting it, or ask a question.'),
               ('Report studio', 'Turn evidence into a draft, refine it, then review and export.')]
 
-    def __init__(self, root, auto_load=False):
+    def __init__(self, root, auto_load=False, *, username="", on_logout=None):
         global FONT
         FONT = tkfont.nametofont('TkDefaultFont', root=root).actual('family')
         self.root = root
+        self.username = username
+        self.on_logout = on_logout
+        self.disposed = False
+        self.session_jobs = set()
         self.font_family = FONT
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.context = self.raw = self.report = self.frame = None
@@ -89,7 +94,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.bind('<Control-o>', lambda e: self.open_file() if not self.busy else None)
         if auto_load:
-            self.startup_id = root.after(150, self.load_startup_data)
+            self.startup_id = self.schedule(150, self.load_startup_data)
 
     @staticmethod
     def show(widget, content):
@@ -223,6 +228,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         main.pack(side='left', fill='both', expand=True)
         head = tk.Frame(main, bg=BG)
         head.pack(fill='x', padx=24, pady=(24, 16))
+        self.build_account_menu(head)
         label(head, 'EVALUATION WORKSPACE', 9, TEAL, True).pack(anchor='w', pady=(0, 8))
         self.page_title = label(head, '', 25, INK, True)
         self.page_title.pack(anchor='w')
@@ -746,7 +752,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         if self.review_drawer_visible:
             return
         self._cancel_review_job('review_drawer_open_job')
-        self.review_drawer_open_job = self.root.after(350, self.open_review_drawer)
+        self.review_drawer_open_job = self.schedule(350, self.open_review_drawer)
 
     def cancel_review_drawer_close(self, event=None):
         self._cancel_review_job('review_drawer_close_job')
@@ -756,7 +762,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         if self.review_drawer_pinned:
             return
         self._cancel_review_job('review_drawer_close_job')
-        self.review_drawer_close_job = self.root.after(450, self._close_review_drawer_if_outside)
+        self.review_drawer_close_job = self.schedule(450, self._close_review_drawer_if_outside)
 
     def _close_review_drawer_if_outside(self):
         self.review_drawer_close_job = None
@@ -831,7 +837,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
                 self.review_drawer_visible = False
             return
 
-        self.review_drawer_anim = self.root.after(
+        self.review_drawer_anim = self.schedule(
             16,
             lambda: self._animate_review_drawer(opening)
         )
@@ -982,7 +988,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
                 self.update_review_drawer_badge()
 
         if index == 0:
-            self.root.after_idle(self.draw_chart)
+            self.schedule_idle(self.draw_chart)
 
     def render(self, widget, content):
         widget.configure(state='normal')
@@ -996,6 +1002,8 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         widget.configure(state='disabled')
 
     def sync_controls(self):
+        for button in self.account_actions:
+            button.configure(state='disabled' if self.busy or self.on_logout is None else 'normal')
         if self.busy:
             if not self.progress.winfo_manager():
                 self.progress.pack(side='bottom', fill='x', padx=24, before=self.content_frame)
@@ -1097,7 +1105,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         future = self.pool.submit(work)
         def finish():
             if not future.done():
-                self.load_poll = self.root.after(80, finish)
+                self.load_poll = self.schedule(80, finish)
                 return
             self.load_poll = None
             self.busy = False
@@ -1117,7 +1125,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             self.apply_analysis(result)
             self.status.set(f'Ready • {len(self.frame):,} responses analysed')
             self.sync_controls()
-        self.load_poll = self.root.after(80, finish)
+        self.load_poll = self.schedule(80, finish)
 
     def apply_analysis(self, result):
         self.frame, self.context, count, courses = result
@@ -1164,7 +1172,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             self.theme_table.insert('', 'end', iid=str(i), values=(theme.name, theme.frequency, 'Pending'))
         self.reset_theme_review()
         self.refresh_claims()
-        self.record('Data imported', '', source=self.source, responses=m['response_count'], themes=len(self.context.themes))
+        self.record('Data imported', self.author_identity(), source=self.source, responses=m['response_count'], themes=len(self.context.themes))
         self.update_audit_status()
         if self.context.themes:
             self.theme_table.selection_set('0')
@@ -1245,7 +1253,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
     def queue_search(self, *args):
         if self.search_id:
             self.root.after_cancel(self.search_id)
-        self.search_id = self.root.after(180, self.filter_rows)
+        self.search_id = self.schedule(180, self.filter_rows)
 
     def sort_rows(self, column):
         """Sort the currently visible survey results by a table column."""
@@ -1489,7 +1497,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
 
         def finish():
             if not future.done():
-                self.generate_poll = self.root.after(80, finish)
+                self.generate_poll = self.schedule(80, finish)
                 return
             self.generate_poll = None
             self.busy = False
@@ -1509,7 +1517,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             if fallback:
                 self.status.set('Gemini is not set up on this computer, so this draft uses local fixed wording. '
                                 'Review every claim before submitting.')
-        self.generate_poll = self.root.after(80, finish)
+        self.generate_poll = self.schedule(80, finish)
 
     def _apply_generated_report(self, report):
         self.report = report
@@ -1527,7 +1535,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.update_evidence_check()
         self.refresh_preview()
         self.refresh_claims()
-        self.record('Draft generated', self.author_entry.get().strip(), audience=report.audience, written_by=report.source_mode,
+        self.record('Draft generated', self.author_identity(), audience=report.audience, written_by=report.source_mode,
                     claims=len(self.ledger.claims))
         self.update_audit_status()
         self.report_tabs.select(0)
@@ -1591,7 +1599,7 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             messagebox.showerror('Export failed', str(exc), parent=self.root)
             return False
         import hashlib
-        self.record('Exported' if reviewed else 'Draft saved', self.approver_entry.get().strip() if reviewed else self.author_entry.get().strip(),
+        self.record('Exported' if reviewed else 'Draft saved', self.approver_entry.get().strip() if reviewed else self.author_identity(),
                     file=Path(path).name, file_sha256=hashlib.sha256(data).hexdigest())
         self.update_audit_status()
         self.dirty = False
@@ -1600,12 +1608,14 @@ class DesktopApp(ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         return True
 
     def close(self):
+        if self.disposed:
+            return
+        if self.busy:
+            messagebox.showinfo('Work in progress', 'Wait for the current operation to finish before closing.', parent=self.root)
+            return
         if not self.may_replace():
             return
-        for pending in (self.claims_refresh_id, getattr(self, 'load_poll', None), getattr(self, 'startup_id', None), getattr(self, 'generate_poll', None), self.insights_poll, self.question_poll, self.search_id, self.revision_poll):
-            if pending:
-                self.root.after_cancel(pending)
-        self.pool.shutdown(wait=False, cancel_futures=True)
+        self.dispose_workspace()
         self.root.destroy()
 
 

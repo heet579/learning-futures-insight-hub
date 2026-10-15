@@ -46,7 +46,7 @@ class InsightsUI:
 
         def finish():
             if not future.done():
-                self.insights_poll = self.root.after(80, finish)
+                self.insights_poll = self.schedule(80, finish)
                 return
             self.insights_poll = None
             self.busy = False
@@ -62,4 +62,4 @@ class InsightsUI:
                 self.status.set('Insights ready. Review interpretations against the supporting evidence.')
             self.sync_controls()
 
-        self.insights_poll = self.root.after(80, finish)
+        self.insights_poll = self.schedule(80, finish)

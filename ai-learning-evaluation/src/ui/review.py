@@ -47,6 +47,9 @@ class ReviewUI:
         self.confirm_theme_button.pack(side='left')
         self.reject_theme_button = self.action(bar, 'Reject theme', self.reject_theme)
         self.reject_theme_button.pack(side='left', padx=6)
+        if self.username:
+            tk.Label(parent, text=f'Reviewing as: {self.username}', bg=WHITE, fg=MUTED,
+                     font=(self.font_family, 9)).pack(anchor='w', pady=(8, 0))
         self.theme_progress = tk.StringVar(value='Import data to review its themes.')
         tk.Label(parent, textvariable=self.theme_progress, bg=WHITE, fg=MUTED, anchor='w',
                  justify='left', wraplength=620, font=(self.font_family, 9)).pack(fill='x', pady=(10, 0))
@@ -126,10 +129,14 @@ class ReviewUI:
                  'if the sentiment is wrong. Reject it if the keyword matched by accident.')
         return text
 
+    def author_identity(self):
+        # Production sessions always use the authenticated account. The fallback
+        # supports direct, unsigned DesktopApp construction in legacy tests.
+        return self.username or self.author_entry.get().strip()
+
     def reviewer_name(self):
-        """Every theme and claim decision is recorded under a named person. Ask once, then reuse
-        the name (it also pre-fills the author box in the Human review panel)."""
-        name = self.author_entry.get().strip()
+        """Use the signed-in account; prompt only in legacy unsigned workspaces."""
+        name = self.author_identity()
         if name:
             return name
         name = simpledialog.askstring('Who is reviewing?', 'Enter your name. Your theme and claim decisions are '
@@ -223,7 +230,7 @@ class ReviewUI:
     def queue_claims_refresh(self):
         if self.claims_refresh_id:
             self.root.after_cancel(self.claims_refresh_id)
-        self.claims_refresh_id = self.root.after(250, self.refresh_claims)
+        self.claims_refresh_id = self.schedule(250, self.refresh_claims)
 
     def refresh_claims(self):
         self.claims_refresh_id = None
@@ -369,7 +376,7 @@ class ReviewUI:
         """Any change to the draft text: approval checks must be redone."""
         self.confirmed.set(False)
         if self.workflow.reopen('Draft edited after submission.'):
-            self.record('Reopened after edit', self.author_entry.get().strip())
+            self.record('Reopened after edit', self.author_identity())
             self.status.set('The draft changed after submission, so it is back in Draft. Submit it again when ready.')
         self.update_evidence_check()
         self.refresh_preview()
@@ -466,11 +473,14 @@ class ReviewUI:
         # Step 3
         step3 = card('Author submits', 3)
         tk.Label(
-            step3, text='Author name', bg='#FAF8FD', fg=MUTED,
+            step3, text='Author account' if self.username else 'Author name', bg='#FAF8FD', fg=MUTED,
             font=(self.font_family, 8, 'bold')
         ).pack(anchor='w', pady=(7, 3))
         self.author_entry = ttk.Entry(step3, width=24)
         self.author_entry.pack(fill='x', pady=(0, 6))
+        if self.username:
+            self.author_entry.insert(0, self.username)
+            self.author_entry.configure(state='readonly')
         self.submit_button = self.action(step3, 'Submit for approval', self.submit_for_approval)
         self.submit_button.pack(fill='x')
 
@@ -595,7 +605,7 @@ class ReviewUI:
         if not self.report or self.busy:
             return False
         blockers = self.review_blockers()
-        author = self.author_entry.get().strip()
+        author = self.author_identity()
         if not author:
             blockers.append('Enter your name as the author.')
         if blockers:

@@ -51,7 +51,7 @@ class QuestionsUI:
 
         def finish():
             if not future.done():
-                self.question_poll = self.root.after(80, finish)
+                self.question_poll = self.schedule(80, finish)
                 return
             self.question_poll = None
             self.busy = False
@@ -66,4 +66,4 @@ class QuestionsUI:
                 self.status.set('Answer ready, based on the selected survey evidence.')
             self.sync_controls()
 
-        self.question_poll = self.root.after(80, finish)
+        self.question_poll = self.schedule(80, finish)

@@ -74,11 +74,15 @@ def launch(diagnose=False):
         def open_workspace(username):
             nonlocal app
             from src.ui.desktop import DesktopApp
-            app = DesktopApp(root)
-            app.username = username
+            app = DesktopApp(root, username=username, on_logout=show_login)
             root.title(f'Learning Futures | Insight Hub — {username}')
 
-        LoginScreen(root, open_workspace)
+        def show_login():
+            nonlocal app
+            app = None
+            LoginScreen(root, open_workspace)
+
+        show_login()
         root.update_idletasks()
         root.deiconify()
         root.mainloop()
