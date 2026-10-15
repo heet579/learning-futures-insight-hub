@@ -4,8 +4,8 @@ DRAFT -> (author submits) -> AWAITING HUMAN REVIEW -> (a different person approv
                                        |-> (approver returns with notes) -> CHANGES REQUESTED -> edits -> DRAFT
 Any edit after submission or approval sends the report back to DRAFT.
 
-Names are typed by the operator; this desktop prototype has no sign-in, so the record shows
-who each person said they were, not an authenticated identity.
+The signed-in desktop workspace supplies the author account. The approver name and role
+are still entered manually; second-account approval awaits the persistent report library.
 """
 from __future__ import annotations
 
