@@ -44,6 +44,6 @@ def build_review_record(*, workflow, theme_counts: dict, claim_counts: dict, pac
         f"- Report text SHA-256: {report_hash}",
         f"- Approval audit entry: {approval_hash} ({audit_entries} entries in a verified hash chain)",
         "",
-        "Names are entered by the operator and are not authenticated identities.",
+        "In signed-in workspaces, author actions use the signed-in account. The approver name and role are entered manually and are not authenticated.",
     ]
     return "\n".join(lines)
