@@ -30,7 +30,8 @@ def screen(tk_runtime, tmp_path):
     path = tmp_path / 'users.txt'
     add_user('admin', 'test password', path)
     root = tk.Toplevel(tk_runtime)
-    root.withdraw()
+    if sys.platform != "darwin":
+        root.withdraw()
     unlocked = []
     screen = LoginScreen(root, unlocked.append, path)
     screen.unlocked = unlocked
@@ -112,7 +113,9 @@ def test_runtime_requires_login_before_constructing_workspace(monkeypatch, tk_ru
         return screen
 
     class Workspace:
-        def __init__(self, root):
+        def __init__(self, root, *, username, on_logout):
+            self.username = username
+            self.on_logout = on_logout
             opened.append(self)
 
     def interaction():

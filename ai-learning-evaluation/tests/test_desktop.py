@@ -43,7 +43,9 @@ def desktop(monkeypatch, tk_runtime, tmp_path):
     monkeypatch.setattr('src.ai.gemini_provider.GeminiAIProvider.answer_question',
         lambda self, context, question: {'answer': answer_question(question, context), 'evidence_ids': ['responses']})
     root = tk.Toplevel(tk_runtime)
-    root.withdraw()
+    # Tk/Aqua can stall update() when all application windows are withdrawn.
+    if sys.platform != "darwin":
+        root.withdraw()
     app = DesktopApp(root)
     errors = []
     monkeypatch.setattr(tk_runtime, 'report_callback_exception', lambda *args: errors.append(args))
