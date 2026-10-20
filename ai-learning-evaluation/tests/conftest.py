@@ -9,3 +9,7 @@ def golden_df():
         {"ResponseID":"3","RecordedDate":"2026-01-03","CourseCode":"C1","CourseName":"Course","DeliveryMode":"Online","ClientType":"Corporate","FacilitatorCode":"F1","OverallSatisfaction":4,"ContentQuality":5,"FacilitatorEffectiveness":5,"CourseRelevance":5,"WouldRecommend":"Yes","MostValuableAspect":"Relevant to work","WhatCouldImprove":"","AdditionalComments":None},
     ])
 
+
+@pytest.fixture(autouse=True)
+def isolated_report_library(monkeypatch, tmp_path):
+    monkeypatch.setenv('REPORT_LIBRARY_PATH', str(tmp_path / 'reports.sqlite3'))
