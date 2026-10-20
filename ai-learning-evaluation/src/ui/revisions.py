@@ -542,7 +542,7 @@ class RevisionUI:
         return
 
     def sync_revision_controls(self):
-        ready = bool(self.report) and not self.busy
+        ready = bool(self.report) and not self.busy and self.can_edit_workspace()
         has_selection = bool(self.selected_revision_sections()) if hasattr(self, 'revision_section_vars') else False
         self.propose_button.configure(state='normal' if ready and has_selection else 'disabled')
         self.undo_button.configure(state='normal' if ready and self.revision_history else 'disabled')
@@ -829,7 +829,7 @@ class RevisionUI:
         self.sync_revision_controls()
 
     def propose_feedback(self):
-        if not self.report or self.busy:
+        if not self.report or self.busy or not self.can_edit_workspace():
             return
 
         content = self.editor.get('1.0', 'end-1c')
@@ -911,7 +911,7 @@ class RevisionUI:
         self.revision_poll = self.schedule(80, finish)
 
     def apply_current_revision_section(self):
-        if not self.pending_revision or self.busy:
+        if not self.pending_revision or self.busy or not self.can_edit_workspace():
             return
 
         section = self.revision_preview_section
@@ -975,7 +975,7 @@ class RevisionUI:
         self.sync_controls()
 
     def keep_current_revision_section(self):
-        if not self.pending_revision or self.busy:
+        if not self.pending_revision or self.busy or not self.can_edit_workspace():
             return
 
         section = self.revision_preview_section
@@ -1046,7 +1046,7 @@ class RevisionUI:
         self.sync_revision_controls()
 
     def revert_current_revision_section(self):
-        if not self.pending_revision or self.busy:
+        if not self.pending_revision or self.busy or not self.can_edit_workspace():
             return
 
         section = self.revision_preview_section
@@ -1100,6 +1100,8 @@ class RevisionUI:
 
 
     def replace_revision_text(self, content):
+        if not self.can_edit_workspace():
+            return
         self.editor.configure(state='normal')
         self.editor.delete('1.0', 'end')
         self.editor.insert('1.0', content)
@@ -1110,7 +1112,7 @@ class RevisionUI:
         self.sync_controls()
 
     def undo_revision(self):
-        if not self.revision_history or self.busy:
+        if not self.revision_history or self.busy or not self.can_edit_workspace():
             return
         if not messagebox.askyesno(
             'Restore previous draft?',

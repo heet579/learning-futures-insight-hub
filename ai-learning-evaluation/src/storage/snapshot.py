@@ -63,6 +63,8 @@ def unpack(snapshot):
         raise ValueError('The saved review state is invalid.')
     if (state['report'] is not None and not isinstance(state['report'], ReportDraft)) or not isinstance(state['context'], AnalysisContext):
         raise ValueError('Invalid report snapshot.')
-    if state['workflow'].status not in ('DRAFT', 'CHANGES REQUESTED'):
-        raise ValueError('This report is not an editable draft.')
+    if state['workflow'].status not in ('DRAFT', 'CHANGES REQUESTED', 'AWAITING HUMAN REVIEW', 'HUMAN REVIEWED'):
+        raise ValueError('Unknown report workflow status.')
+    if state['workflow'].status in ('AWAITING HUMAN REVIEW', 'HUMAN REVIEWED') and state['report'] is None:
+        raise ValueError('A submitted report must contain a draft.')
     return state

@@ -148,7 +148,7 @@ class ReviewUI:
 
     def _decide_theme(self, status):
         theme = self.selected_theme()
-        if not theme or self.busy:
+        if not theme or self.busy or not self.can_edit_workspace():
             return
         actor = self.reviewer_name()
         if not actor:
@@ -318,7 +318,7 @@ class ReviewUI:
 
     def accept_claim(self):
         claim = self.selected_claim()
-        if not claim or self.busy:
+        if not claim or self.busy or not self.can_edit_workspace():
             return
         actor = self.reviewer_name()
         if not actor:
@@ -333,7 +333,7 @@ class ReviewUI:
 
     def reject_claim(self):
         claim = self.selected_claim()
-        if not claim or self.busy:
+        if not claim or self.busy or not self.can_edit_workspace():
             return
         actor = self.reviewer_name()
         if not actor:
@@ -365,6 +365,8 @@ class ReviewUI:
 
     def set_editor_text(self, content):
         """Programmatic draft change: keeps review state consistent with a manual edit."""
+        if not self.can_edit_workspace():
+            return
         self.editor.configure(state='normal')
         self.editor.delete('1.0', 'end')
         self.editor.insert('1.0', content)
@@ -421,6 +423,9 @@ class ReviewUI:
             bg=WHITE, fg=TEAL, wraplength=270, justify='left'
         ).pack(anchor='w', padx=4, pady=(3, 9))
 
+        self.return_notes = tk.StringVar(value='')
+        tk.Label(review, textvariable=self.return_notes, bg=WHITE, fg=WARN, wraplength=270,
+                 justify='left').pack(fill='x', padx=4, pady=(0, 8))
         self.themes_status = tk.StringVar(value='Themes: import data first.')
         self.claims_status = tk.StringVar(value='Claims: get a draft first.')
         self.pace_status = tk.StringVar(value='')
@@ -487,7 +492,7 @@ class ReviewUI:
         # Step 4
         step4 = card('Second-person approval', 4)
         tk.Label(
-            step4, text='Approver name', bg='#FAF8FD', fg=MUTED,
+            step4, text='Approver account' if self.username else 'Approver name', bg='#FAF8FD', fg=MUTED,
             font=(self.font_family, 8, 'bold')
         ).pack(anchor='w', pady=(7, 3))
         self.approver_entry = ttk.Entry(step4, width=24)
@@ -557,6 +562,8 @@ class ReviewUI:
     def update_review_panel(self):
         if not hasattr(self, 'themes_status'):
             return
+        returned = next((e for e in reversed(self.workflow.events) if e.action == 'Returned for changes'), None)
+        self.return_notes.set(f'Changes requested by {returned.actor}:\n{returned.notes}' if returned and self.workflow.status == 'CHANGES REQUESTED' else '')
         tr = self.theme_review
         if not self.context:
             self.themes_status.set('Import data first.')
@@ -575,7 +582,7 @@ class ReviewUI:
             elif state == 'CHANGES REQUESTED':
                 self.report_status.set('Returned for changes • edit, then submit again')
             elif state == 'HUMAN REVIEWED':
-                self.report_status.set(f'Approved by {self.workflow.approver} • exported')
+                self.report_status.set(f'Approved by {self.workflow.approver} • ready to export')
             else:
                 self.report_status.set(f'{self.report.audience.title()} draft • requires review')
         else:
@@ -585,6 +592,7 @@ class ReviewUI:
         if hasattr(self, 'update_review_drawer_badge'):
             self.update_review_drawer_badge()
         self.update_journey()
+        self.sync_handoff_controls()
 
     def sync_review_buttons(self):
         if not hasattr(self, 'submit_button') or not hasattr(self, 'accept_claim_button'):
@@ -603,6 +611,8 @@ class ReviewUI:
             widget.configure(state='normal' if self.context and self.theme_review.total and not self.busy else 'disabled')
 
     def submit_for_approval(self):
+        if self.username:
+            return self.submit_persistent()
         if not self.report or self.busy:
             return False
         blockers = self.review_blockers()
@@ -624,6 +634,8 @@ class ReviewUI:
         return True
 
     def return_for_changes(self):
+        if self.username:
+            return self.return_persistent()
         if self.workflow.status != 'AWAITING HUMAN REVIEW' or self.busy:
             return False
         approver = self.approver_entry.get().strip()

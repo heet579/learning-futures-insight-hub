@@ -18,7 +18,7 @@ def _local(iso: str) -> str:
 
 def build_review_record(*, workflow, theme_counts: dict, claim_counts: dict, pace: dict,
                         ai_retained: float | None, source_mode: str, report_hash: str,
-                        approval_hash: str, audit_entries: int) -> str:
+                        approval_hash: str, audit_entries: int, authenticated: bool = False) -> str:
     submitted = next((e for e in reversed(workflow.events) if e.action == "Submitted for review"), None)
     approved = next((e for e in reversed(workflow.events) if e.action == "Approved"), None)
     lines = [
@@ -44,6 +44,7 @@ def build_review_record(*, workflow, theme_counts: dict, claim_counts: dict, pac
         f"- Report text SHA-256: {report_hash}",
         f"- Approval audit entry: {approval_hash} ({audit_entries} entries in a verified hash chain)",
         "",
-        "In signed-in workspaces, author actions use the signed-in account. The approver name and role are entered manually and are not authenticated.",
+        ("The author and approver are different signed-in accounts. The approver role is self-selected in this demo."
+         if authenticated else "In signed-in workspaces, author actions use the signed-in account. The approver name and role are entered manually and are not authenticated."),
     ]
     return "\n".join(lines)

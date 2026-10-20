@@ -4,8 +4,8 @@ DRAFT -> (author submits) -> AWAITING HUMAN REVIEW -> (a different person approv
                                        |-> (approver returns with notes) -> CHANGES REQUESTED -> edits -> DRAFT
 Any edit after submission or approval sends the report back to DRAFT.
 
-The signed-in desktop workspace supplies the author account. The approver name and role
-are still entered manually; second-account approval awaits the persistent report library.
+Signed-in desktop workspaces use authenticated accounts for both reviewers.
+The local repository persists transitions and locks submitted/approved reports.
 """
 from __future__ import annotations
 
@@ -51,6 +51,8 @@ class ReviewWorkflow:
     def return_for_changes(self, actor: str, notes: str) -> None:
         if self.status != "AWAITING HUMAN REVIEW":
             raise ValueError("Only a submitted report can be returned.")
+        if not actor.strip() or actor.strip().casefold() == self.reviewer.casefold():
+            raise ValueError("A different reviewer account must return the report.")
         if not notes.strip():
             raise ValueError("Change notes are required.")
         self.status = "CHANGES REQUESTED"

@@ -2,6 +2,7 @@
 import os
 import tkinter as tk
 from src.ui.library import LibraryUI
+from src.ui.handoff import HandoffUI
 from src.ui.account import AccountUI
 from src.ui.revisions import RevisionUI
 from src.ui.review import ReviewUI
@@ -47,7 +48,7 @@ def analyse(frame, name, scope):
     return masked, context, count, courses
 
 
-class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
+class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
     TITLES = [('Explore data', 'A clear view of learner experience, grounded in your survey data.'),
               ('Themes & evidence', 'Explore recurring feedback and the comments supporting it, or ask a question.'),
               ('Report studio', 'Turn evidence into a draft, refine it, then review and export.'),
@@ -1101,7 +1102,8 @@ class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, Questio
 
     def review_changed(self):
         if self.confirmed.get():
-            self.status.set('Checks confirmed. Approve & export records your name and role as the approver.')
+            self.status.set('Checks confirmed. Approve report saves your account as the second reviewer.' if self.username
+                            else 'Checks confirmed. Approve & export records your name and role as the approver.')
 
     def update_evidence_check(self):
         if not self.report or not self.context:
@@ -1178,6 +1180,8 @@ class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, Questio
     def apply_analysis(self, result):
         self.library_id = self.library_version = self.saved_snapshot = None
         self.library_title = ''
+        self.library_owner = ''
+        self.approved_export = ''
         self.frame, self.context, count, courses = result
         self.masked_count = count
         self.show_local_insights()
@@ -1520,7 +1524,7 @@ class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, Questio
 
     def generate(self):
         from src.reporting.report_generator import generate_report
-        if not self.context or self.busy:
+        if not self.context or self.busy or not self.can_edit_workspace():
             return
         if not self.theme_review.complete:
             tr = self.theme_review
@@ -1585,7 +1589,8 @@ class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, Questio
         self.dirty = True
         self.confirmed.set(False)
         self.ledger.reset()
-        self.workflow = type(self.workflow)()
+        if not self.username or not self.library_id:
+            self.workflow = type(self.workflow)()
         self.themes_changed_since_draft = False
         self.update_evidence_check()
         self.refresh_preview()
@@ -1599,6 +1604,8 @@ class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, Questio
         self.sync_controls()
 
     def export(self, reviewed=True):
+        if self.username and reviewed:
+            return self.export_approved() if self.workflow.status == 'HUMAN REVIEWED' else self.approve_persistent()
         from pathlib import Path
         from src.reporting.exporter import docx_bytes, markdown_bytes
         from src.reporting.report_generator import approve_report

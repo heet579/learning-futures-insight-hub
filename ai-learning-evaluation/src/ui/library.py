@@ -11,6 +11,9 @@ class LibraryUI:
         self.repository = ReportRepository()
         self.library_id = self.library_version = self.saved_snapshot = None
         self.library_title = ''
+        self.library_owner = ''
+        self.approved_export = ''
+        self.library_view = 'mine'
         self.library_action_buttons = []
         self.library_cards = {}
         self.library_open_actions = None
@@ -20,12 +23,12 @@ class LibraryUI:
         page = self.pages[3]
         heading = tk.Frame(page, bg=BG)
         heading.pack(fill='x', pady=(0, 6))
-        tk.Label(heading, text='Your reports', bg=BG, fg=INK,
+        tk.Label(heading, text='Reports & reviews', bg=BG, fg=INK,
                  font=(self.font_family, 16, 'bold')).pack(side='left')
         self.library_count = tk.Label(heading, text='', bg=BG, fg=MUTED,
                                       font=(self.font_family, 10))
         self.library_count.pack(side='left', padx=12)
-        tk.Label(page, text='Pick up where you left off, or start a new report.',
+        tk.Label(page, text='Continue your work, review a colleague’s submission, or export an approved report.',
                  bg=BG, fg=MUTED, anchor='w').pack(fill='x', pady=(0, 16))
         bar = tk.Frame(page, bg=BG)
         bar.pack(fill='x', pady=(0, 16))
@@ -33,14 +36,26 @@ class LibraryUI:
         self.create_report_button.configure(style='Library.Primary.TButton')
         self.create_report_button.pack(side='left', padx=(0, 10))
         ttk.Button(bar, text='Refresh', style='Library.TButton', command=self.refresh_library).pack(side='left')
-        tk.Label(bar, text='Your drafts · saved on this computer', bg=BG, fg=MUTED,
+        tk.Label(bar, text='Shared review library · this computer', bg=BG, fg=MUTED,
                  font=(self.font_family, 9)).pack(side='right')
+        views = tk.Frame(page, bg=BG)
+        views.pack(fill='x', pady=(0, 12))
+        self.library_view_buttons = {}
+        for key, caption in [('mine', 'My reports'), ('pending', 'Pending review'), ('approved', 'Approved')]:
+            button = ttk.Button(views, text=caption, style='Library.TButton',
+                                command=lambda view=key: self.select_library_view(view))
+            button.pack(side='left', padx=(0, 8))
+            self.library_view_buttons[key] = button
         self.library_rows = tk.Frame(page, bg=BG)
         self.library_rows.pack(fill='both', expand=True)
         self.library_bindings = {
             '<Button-1>': self.root.bind('<Button-1>', self.dismiss_library_actions, add='+'),
             '<Escape>': self.root.bind('<Escape>', lambda e: self.close_library_actions(restore_focus=True), add='+'),
         }
+
+    def select_library_view(self, view):
+        self.library_view = view
+        self.refresh_library()
 
     def close_library_actions(self, restore_focus=False):
         item = self.library_open_actions
@@ -55,6 +70,8 @@ class LibraryUI:
         if self.busy:
             return
         item = self.library_cards[report_id]
+        if not item['editable']:
+            return
         already_open = self.library_open_actions is item
         self.close_library_actions()
         if not already_open:
@@ -85,7 +102,15 @@ class LibraryUI:
             widget.destroy()
         self.library_count.configure(text='')
         try:
-            rows = self.repository.list_owned(self.username) if self.username else []
+            groups = {
+                'mine': self.repository.list_owned(self.username) if self.username else [],
+                'pending': self.repository.list_pending(self.username) if self.username else [],
+                'approved': self.repository.list_approved(self.username) if self.username else [],
+            }
+            for key, caption in [('mine', 'My reports'), ('pending', 'Pending review'), ('approved', 'Approved')]:
+                self.library_view_buttons[key].configure(text=f'{caption} ({len(groups[key])})',
+                    style='Library.Primary.TButton' if key == self.library_view else 'Library.TButton')
+            rows = groups[self.library_view]
         except Exception as exc:
             tk.Label(self.library_rows, text=f'Could not open report library: {exc}', bg=BG, wraplength=700).pack(pady=20)
             return
@@ -94,9 +119,11 @@ class LibraryUI:
             empty = tk.Frame(self.library_rows, bg=WHITE, highlightbackground=BORDER, highlightthickness=1,
                              padx=24, pady=32)
             empty.pack(fill='x')
-            tk.Label(empty, text='Your next report starts here', bg=WHITE, fg=INK,
+            tk.Label(empty, text={'mine': 'Your next report starts here', 'pending': 'No reports waiting for your review', 'approved': 'No approved reports yet'}[self.library_view], bg=WHITE, fg=INK,
                      font=(self.font_family, 14, 'bold')).pack(anchor='w')
-            tk.Label(empty, text='Choose Create report to import your survey files.\nYou will name your report when you first save a draft.',
+            tk.Label(empty, text={'mine': 'Create a report to begin. Reports you save stay here; submit them when ready for a second reviewer.',
+                           'pending': 'A different account must choose Submit for review first. Saving a personal draft does not submit it.',
+                           'approved': 'Reports approved by you, or approved reports you created, will appear here for export.'}[self.library_view],
                      bg=WHITE, fg=MUTED, justify='left', wraplength=700).pack(anchor='w', pady=(10, 0))
             return
         canvas = tk.Canvas(self.library_rows, bg=BG, highlightthickness=0)
@@ -128,7 +155,7 @@ class LibraryUI:
         info = tk.Frame(card, bg=WHITE)
         info.grid(row=0, column=0, sticky='nsew', padx=(18, 20))
         tk.Frame(card, bg=TEAL, width=3).place(x=0, y=0, relheight=1)
-        state_text = {'DRAFT': 'Draft', 'CHANGES REQUESTED': 'Changes requested'}.get(row['status'], row['status'])
+        state_text = {'DRAFT': 'Draft', 'CHANGES REQUESTED': 'Changes requested', 'AWAITING HUMAN REVIEW': 'Awaiting second reviewer', 'HUMAN REVIEWED': 'Approved'}.get(row['status'], row['status'])
         tk.Label(info, text=state_text, bg='#F0E9FC', fg='#6530B3', padx=9, pady=3,
                  font=(self.font_family, 9, 'bold')).pack(anchor='w', pady=(0, 9))
         title = tk.Label(info, text=row['title'], bg=WHITE, fg=INK, anchor='w', justify='left',
@@ -140,7 +167,7 @@ class LibraryUI:
         scope.pack(fill='x', pady=(5, 14))
         scope.bind('<Configure>', lambda e: scope.configure(wraplength=max(100, e.width)))
         updated = datetime.fromisoformat(row['updated']).astimezone().strftime('%d %b %Y · %H:%M')
-        details = tk.Label(info, text=f"First reviewer: {row['owner']}\nLast saved: {updated}",
+        details = tk.Label(info, text=f"First reviewer: {row['owner']}\nSecond reviewer: {row.get('reviewer') or 'Not yet reviewed'}\nLast saved: {updated}",
                            bg=WHITE, fg=MUTED, anchor='w', justify='left', width=1, wraplength=420,
                            font=(self.font_family, 9))
         details.pack(fill='x')
@@ -148,12 +175,15 @@ class LibraryUI:
         actions = tk.Frame(card, bg=WHITE)
         actions.grid(row=0, column=1, sticky='ne')
         state = 'disabled' if self.busy else 'normal'
-        resume = ttk.Button(actions, text='Continue editing →', style='Library.TButton', state=state,
+        editable = row['owner'] == self.username and row['status'] in ('DRAFT', 'CHANGES REQUESTED')
+        caption = 'Continue editing →' if editable else ('Review report →' if row['status'] == 'AWAITING HUMAN REVIEW' and row['owner'] != self.username else 'View report →')
+        resume = ttk.Button(actions, text=caption, style='Library.TButton', state=state,
                             command=lambda: self.open_library_report(row['id']))
         resume.pack(side='left', padx=(0, 8))
         trigger = ttk.Button(actions, text='More ▾', style='More.Library.TButton', state=state,
                              command=lambda: self.toggle_library_actions(row['id']))
-        trigger.pack(side='left')
+        if editable:
+            trigger.pack(side='left')
         panel = tk.Frame(card, bg='#FAF8FD', padx=12, pady=10,
                          highlightbackground=BORDER, highlightthickness=1)
         panel.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(14, 0))
@@ -168,7 +198,7 @@ class LibraryUI:
         panel.grid_remove()
         self.library_action_buttons.extend((resume, trigger, rename, delete))
         self.library_cards[row['id']] = dict(panel=panel, trigger=trigger, rename=rename,
-                                             delete=delete, resume=resume, card=card, details=details)
+                                             delete=delete, resume=resume, card=card, details=details, editable=editable)
 
     def create_report(self):
         if self.busy or not self.may_replace():
@@ -245,6 +275,13 @@ class LibraryUI:
     def continue_report(self):
         if self.busy:
             return
+        if self.current_page == 2 and self.username and not self.can_edit_workspace():
+            if self.workflow.status == 'HUMAN REVIEWED':
+                self.export_approved()
+            else:
+                self.review_drawer_pinned = True
+                self.open_review_drawer()
+            return
         if self.current_page == 0 and self.context:
             self.navigate(1)
         elif self.current_page == 1 and self.context and self.theme_review.complete:
@@ -303,10 +340,19 @@ class LibraryUI:
                     text = 'Review details →'
                 else:
                     hint = 'Checks complete. Open approval controls for submission and export.'
+        if page == 2 and self.username and not self.can_edit_workspace():
+            if self.workflow.status == 'HUMAN REVIEWED':
+                hint, text = f'Approved by {self.workflow.approver}. This saved version is ready to export.', 'Export approved →'
+            elif self.can_review_workspace():
+                hint, text = f'Submitted by {self.library_owner}. Read the report and evidence, then approve or return it.', 'Review decision →'
+            else:
+                hint, text = 'Submitted and saved. Switch accounts to review this report in Pending review.', 'Submission details →'
+        elif page == 2 and self.workflow.status == 'CHANGES REQUESTED':
+            hint = 'Changes requested. Read the second reviewer’s notes in Human review, edit and submit again.'
         self.journey_hint.configure(text=hint)
         self.next_button.configure(text=text, state='normal' if enabled and not self.busy else 'disabled')
         if hasattr(self, 'generate_button'):
-            self.generate_button.configure(state='normal' if self.context and self.theme_review.complete and not self.busy else 'disabled',
+            self.generate_button.configure(state='normal' if self.context and self.theme_review.complete and not self.busy and self.can_edit_workspace() else 'disabled',
                                            text='Regenerate draft' if self.report else 'Generate draft',
                                            style='TButton' if self.report else 'Primary.TButton')
 
@@ -322,22 +368,24 @@ class LibraryUI:
                      revision_method=self.revision_provider.get(),
                      replacement_input=self.replacement.get('1.0', 'end-1c'),
                      revision_selection=self.selected_revision_sections(),
-                     audience=self.audience.get())
+                     audience=self.audience.get(), approved_export=self.approved_export)
         return pack(state)
 
     def library_unsaved(self):
+        if self.username and not self.can_edit_workspace():
+            return False
         if self.context is None or not self.username:
             return self.dirty
         return self.saved_snapshot != self.workspace_snapshot()
 
     def save_library_draft(self):
-        if self.busy or self.context is None:
+        if self.busy or self.context is None or not self.can_edit_workspace():
             return False
         if not self.username:
             messagebox.showinfo('Sign in required', 'Sign in before saving to the library.', parent=self.root)
             return False
         if self.workflow.status not in ('DRAFT', 'CHANGES REQUESTED'):
-            messagebox.showinfo('Editable drafts only', 'This release saves editable drafts. Submitted or approved reports can still be exported.', parent=self.root)
+            messagebox.showinfo('Editable drafts only', 'Submitted and approved reports are locked. Use their review or export actions.', parent=self.root)
             return False
         title = self.library_title
         if not title:
@@ -354,6 +402,7 @@ class LibraryUI:
             messagebox.showerror('Could not save draft', str(exc), parent=self.root)
             return False
         self.library_id, self.library_version = rid, version
+        self.library_owner = self.username
         self.library_title, self.saved_snapshot = title.strip(), snapshot
         self.dirty = False
         self.update_journey()
@@ -375,6 +424,8 @@ class LibraryUI:
         # The entire snapshot is decoded before replacing the current workspace.
         self.raw, self.source, self.loaded_file_label = state['raw'], state['source'], state['loaded_file_label']
         self.apply_analysis((state['frame'], state['context'], state['masked_count'], []))
+        self.library_owner = row['owner']
+        self.approved_export = state.get('approved_export', '')
         for name in ('report', 'workflow', 'themes_changed_since_draft'):
             setattr(self, name, state[name])
         self.theme_review.decisions = state['theme_decisions']
@@ -420,5 +471,5 @@ class LibraryUI:
         self.report_tabs.select(1)
         self.navigate(2 if self.report or self.theme_review.complete else 1)
         self.record('Library draft opened', self.username, report_id=row['id'], version=row['version'])
-        self.status.set(f'Opened · {row["title"]} · saved review progress restored')
+        self.status.set(f'Opened · {row["title"]} · {self.workflow.status}')
         return True
