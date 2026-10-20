@@ -43,9 +43,12 @@ def test_signed_in_account_owns_theme_and_submission(session, monkeypatch):
     session.author_entry.delete(0, 'end')
     session.author_entry.insert(0, 'another-person')
     assert session.reviewer_name() == 'alex'
-    session.report = SimpleNamespace(audience='facilitator')
-    monkeypatch.setattr(session, 'review_blockers', lambda: [])
-    monkeypatch.setattr(session, 'update_review_panel', lambda: None)
+    from src.ai.local_provider import LocalAnalysisProvider
+    from src.reporting.report_generator import generate_report
+    from test_desktop import decide_all_claims
+    session._apply_generated_report(generate_report(session.review_context(), 'facilitator', LocalAnalysisProvider()))
+    decide_all_claims(session)
+    session.library_title = 'Identity test'
     assert session.submit_for_approval()
     assert session.workflow.reviewer == 'alex'
     assert json.loads(session.audit.path.read_text().splitlines()[-1])['actor'] == 'alex'
