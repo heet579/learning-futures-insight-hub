@@ -377,8 +377,10 @@ def test_library_actions_busy_guard_and_small_window(session, monkeypatch):
     session.root.geometry('1080x740')
     session.navigate(3)
     session.root.update_idletasks()
-    assert len(session.library_action_buttons) == 3
-    for button in session.library_action_buttons:
+    assert len(session.library_action_buttons) == 4
+    item = session.library_cards[row['id']]
+    assert not item['panel'].winfo_ismapped()
+    for button in (item['resume'], item['trigger']):
         assert button.winfo_ismapped()
         assert button.winfo_rootx() + button.winfo_width() <= session.root.winfo_rootx() + session.root.winfo_width()
     session.busy = True
@@ -391,3 +393,60 @@ def test_library_actions_busy_guard_and_small_window(session, monkeypatch):
     session.busy = False
     session.sync_controls()
     assert all(button.instate(['!disabled']) for button in session.library_action_buttons)
+
+
+def test_library_more_menu_selection_dismissal_and_rename(session, monkeypatch):
+    from types import SimpleNamespace
+    first = saved_library_row(session, monkeypatch)
+    second_id, _ = session.repository.save(actor='alex', title='Second report', course='Course',
+        status='DRAFT', snapshot=session.workspace_snapshot())
+    session.navigate(3)
+    session.root.update_idletasks()
+    first_card, second_card = session.library_cards[first['id']], session.library_cards[second_id]
+    assert 'First reviewer: alex' in first_card['details'].cget('text')
+    assert 'Last saved:' in first_card['details'].cget('text')
+    assert not first_card['panel'].winfo_manager()
+    first_card['trigger'].invoke()
+    assert first_card['panel'].winfo_manager() == 'grid'
+    second_card['trigger'].invoke()
+    assert not first_card['panel'].winfo_manager()
+    assert second_card['panel'].winfo_manager() == 'grid'
+    session.dismiss_library_actions(SimpleNamespace(widget=second_card['rename']))
+    assert session.library_open_actions is second_card
+    session.dismiss_library_actions(SimpleNamespace(widget=session.page_title))
+    assert session.library_open_actions is None
+    assert not second_card['panel'].winfo_manager()
+    first_card['trigger'].invoke()
+    first_card['trigger'].invoke()
+    assert session.library_open_actions is None
+    first_card['trigger'].invoke()
+    session.root.update()
+    first_card['rename'].event_generate('<Escape>')
+    session.root.update()
+    assert session.library_open_actions is None
+    first_card['trigger'].invoke()
+    monkeypatch.setattr('tkinter.simpledialog.askstring', lambda *a, **k: 'Renamed from menu')
+    first_card['rename'].invoke()
+    assert session.repository.load(first['id'], 'alex')['title'] == 'Renamed from menu'
+    assert session.library_open_actions is None
+    session.library_cards[first['id']]['trigger'].invoke()
+    session.navigate(0)
+    assert session.library_open_actions is None
+
+
+def test_library_expanded_card_fits_small_window_and_delete_cancel(session, monkeypatch):
+    row = saved_library_row(session, monkeypatch)
+    long_title = 'Long report title with several words ' * 5
+    session.repository.rename(actor='alex', report_id=row['id'], version=row['version'], title=long_title)
+    session.root.geometry('1080x740')
+    session.navigate(3)
+    item = session.library_cards[row['id']]
+    item['trigger'].invoke()
+    session.root.update_idletasks()
+    for widget in (item['card'], item['resume'], item['trigger'], item['rename'], item['delete']):
+        assert widget.winfo_ismapped()
+        assert widget.winfo_rootx() >= session.root.winfo_rootx()
+        assert widget.winfo_rootx() + widget.winfo_width() <= session.root.winfo_rootx() + session.root.winfo_width()
+    item['delete'].invoke()  # Confirmation defaults to cancellation in this fixture.
+    assert session.library_open_actions is None
+    assert len(session.repository.list_owned('alex')) == 1
