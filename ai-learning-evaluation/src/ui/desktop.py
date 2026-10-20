@@ -1028,6 +1028,8 @@ class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, Questio
         widget.configure(state='disabled')
 
     def sync_controls(self):
+        for button in self.library_action_buttons:
+            button.configure(state='disabled' if self.busy else 'normal')
         self.library_save_button.configure(state='normal' if self.context and self.username and not self.busy and self.workflow.status in ('DRAFT', 'CHANGES REQUESTED') else 'disabled')
         for button in self.account_actions:
             button.configure(state='disabled' if self.busy or self.on_logout is None else 'normal')

@@ -11,6 +11,7 @@ class LibraryUI:
         self.repository = ReportRepository()
         self.library_id = self.library_version = self.saved_snapshot = None
         self.library_title = ''
+        self.library_action_buttons = []
 
     def build_library(self):
         page = self.pages[3]
@@ -27,6 +28,7 @@ class LibraryUI:
         self.library_rows.pack(fill='both', expand=True)
 
     def refresh_library(self):
+        self.library_action_buttons = []
         for widget in self.library_rows.winfo_children():
             widget.destroy()
         try:
@@ -50,7 +52,17 @@ class LibraryUI:
         for row in rows:
             line = tk.Frame(inner, bg=WHITE, padx=16, pady=12)
             line.pack(fill='x')
-            ttk.Button(line, text='Continue editing', command=lambda rid=row['id']: self.open_library_report(rid)).pack(side='right', padx=(12, 0))
+            actions = tk.Frame(line, bg=WHITE)
+            actions.pack(side='right', padx=(12, 0))
+            for caption, command in (
+                ('Continue editing', lambda rid=row['id']: self.open_library_report(rid)),
+                ('Rename', lambda item=row: self.rename_library_report(item)),
+                ('Delete', lambda item=row: self.delete_library_report(item)),
+            ):
+                button = ttk.Button(actions, text=caption, command=command,
+                                    state='disabled' if self.busy else 'normal')
+                button.pack(fill='x', pady=2)
+                self.library_action_buttons.append(button)
             tk.Label(line, text=row['title'], bg=WHITE, fg=INK, anchor='w', wraplength=520,
                      font=(self.font_family, 11, 'bold')).pack(fill='x')
             from datetime import datetime
@@ -61,6 +73,11 @@ class LibraryUI:
     def create_report(self):
         if self.busy or not self.may_replace():
             return False
+        self.reset_library_workspace(0)
+        self.status.set('New report · import survey files to begin. Name it when you save your first draft.')
+        return True
+
+    def reset_library_workspace(self, page):
         # Rebuild the workspace just as on account switching. This also cancels
         # queued callbacks so an old dataset cannot leak into a new report.
         root, username, callback, repository = self.root, self.username, self.on_logout, self.repository
@@ -68,8 +85,61 @@ class LibraryUI:
         self.__dict__.clear()
         self.__init__(root, username=username, on_logout=callback)
         self.repository = repository
-        self.navigate(0)
-        self.status.set('New report · import survey files to begin. Name it when you save your first draft.')
+        self.navigate(page)
+
+    def rename_library_report(self, row):
+        if self.busy:
+            return False
+        current = row['id'] == self.library_id
+        title = simpledialog.askstring('Rename draft', 'Report name:',
+                                      initialvalue=self.library_title if current else row['title'],
+                                      parent=self.root)
+        if title is None:
+            return False
+        title = title.strip()
+        if not title:
+            messagebox.showinfo('Report name required', 'Enter a name for this draft.', parent=self.root)
+            return False
+        try:
+            version = self.repository.rename(actor=self.username, report_id=row['id'],
+                version=self.library_version if current else row['version'], title=title)
+        except Exception as exc:
+            messagebox.showerror('Could not rename draft', str(exc), parent=self.root)
+            return False
+        if current:
+            self.library_title, self.library_version = title, version
+            # Renaming never saves or discards any unsaved content.
+            self.update_journey()
+        self.record('Library draft renamed', self.username, report_id=row['id'], version=version)
+        self.refresh_library()
+        self.status.set(f'Renamed · {title}')
+        return True
+
+    def delete_library_report(self, row):
+        if self.busy:
+            return False
+        current = row['id'] == self.library_id
+        title = self.library_title if current else row['title']
+        extra = ('\n\nThis draft is open. Its workspace will also close and any unsaved changes will be discarded.'
+                 if current else '')
+        if not messagebox.askyesno('Delete draft?',
+                f'Delete “{title}” from Report library?\n\n'
+                'Its saved data and review progress will be permanently removed. This cannot be undone. '
+                'Original survey files and exported documents will remain.' + extra,
+                parent=self.root, icon='warning', default='no'):
+            return False
+        try:
+            self.repository.delete(actor=self.username, report_id=row['id'],
+                                   version=self.library_version if current else row['version'])
+        except Exception as exc:
+            messagebox.showerror('Could not delete draft', str(exc), parent=self.root)
+            return False
+        self.record('Library draft deleted', self.username, report_id=row['id'])
+        if current:
+            self.reset_library_workspace(3)
+        else:
+            self.refresh_library()
+        self.status.set(f'Deleted · {title}')
         return True
 
     def continue_report(self):
