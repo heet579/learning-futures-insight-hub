@@ -170,6 +170,19 @@ class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, Questio
                     padding=(15, 9))
         s.map('Primary.TButton', background=[('disabled', '#DCCFF7'), ('active', '#6B2FD4')],
               foreground=[('disabled', '#8E7FB0')])
+        # Library controls keep a visible outline on both Tk/Aqua and Linux/clam.
+        s.configure('Library.TButton', background=WHITE, foreground=INK, padding=(14, 10),
+                    relief='solid', borderwidth=1, bordercolor='#CFC0E5',
+                    lightcolor='#CFC0E5', darkcolor='#CFC0E5')
+        s.map('Library.TButton', background=[('active', '#F3ECFC')],
+              bordercolor=[('focus', TEAL), ('active', '#AB8FD4')])
+        s.configure('Library.Primary.TButton', padding=(16, 10), relief='solid', borderwidth=1,
+                    bordercolor=TEAL, lightcolor=TEAL, darkcolor=TEAL)
+        s.configure('More.Library.TButton', padding=(10, 10))
+        s.configure('Danger.Library.TButton', foreground='#AC3434', bordercolor='#E7BEBE',
+                    lightcolor='#E7BEBE', darkcolor='#E7BEBE')
+        s.map('Danger.Library.TButton', background=[('active', '#FFF0F0')],
+              foreground=[('disabled', '#BCA4A4'), ('active', '#922929')])
         s.configure('TCombobox', padding=7, fieldbackground=WHITE, foreground=INK, bordercolor=BORDER)
         s.map('TCombobox', fieldbackground=[('readonly', WHITE)], selectbackground=[('readonly', WHITE)], selectforeground=[('readonly', INK)])
         s.configure('TEntry', padding=8, fieldbackground=WHITE, bordercolor=BORDER)
@@ -972,6 +985,7 @@ class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, Questio
         self.show(self.answer, 'Choose a suggestion or ask about ratings, participation, themes, recommendations or limitations.')
 
     def navigate(self, index):
+        self.close_library_actions()
         self.current_page = index
         for page in self.pages:
             page.grid_remove()
@@ -1028,6 +1042,8 @@ class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, Questio
         widget.configure(state='disabled')
 
     def sync_controls(self):
+        if self.busy:
+            self.close_library_actions()
         for button in self.library_action_buttons:
             button.configure(state='disabled' if self.busy else 'normal')
         self.library_save_button.configure(state='normal' if self.context and self.username and not self.busy and self.workflow.status in ('DRAFT', 'CHANGES REQUESTED') else 'disabled')

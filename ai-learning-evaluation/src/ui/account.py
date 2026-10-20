@@ -122,6 +122,8 @@ class AccountUI:
             except tk.TclError:
                 pass
         self.session_jobs.clear()
+        for sequence, binding in self.library_bindings.items():
+            self.root.unbind(sequence, binding)
         for sequence, binding in self.account_bindings.items():
             self.root.unbind(sequence, binding)
         self.root.unbind('<Control-o>')

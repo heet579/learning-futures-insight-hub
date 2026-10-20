@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from src.storage.reports import ReportRepository
 from src.storage.snapshot import pack, unpack
-from src.ui.theme import WHITE, INK, MUTED
+from src.ui.theme import BG, WHITE, INK, MUTED, TEAL, BORDER
 
 
 class LibraryUI:
@@ -12,63 +12,163 @@ class LibraryUI:
         self.library_id = self.library_version = self.saved_snapshot = None
         self.library_title = ''
         self.library_action_buttons = []
+        self.library_cards = {}
+        self.library_open_actions = None
+        self.library_bindings = {}
 
     def build_library(self):
         page = self.pages[3]
-        tk.Label(page, text='Your reports', bg=page.cget('bg'), fg=INK,
-                 font=(self.font_family, 16, 'bold')).pack(anchor='w')
-        tk.Label(page, text='Create a report or continue a saved draft. This library currently shows drafts saved by your account on this computer.',
-                 bg=page.cget('bg'), fg=MUTED, wraplength=750, justify='left').pack(anchor='w', pady=(6, 14))
-        bar = ttk.Frame(page)
-        bar.pack(fill='x', pady=(0, 12))
+        heading = tk.Frame(page, bg=BG)
+        heading.pack(fill='x', pady=(0, 6))
+        tk.Label(heading, text='Your reports', bg=BG, fg=INK,
+                 font=(self.font_family, 16, 'bold')).pack(side='left')
+        self.library_count = tk.Label(heading, text='', bg=BG, fg=MUTED,
+                                      font=(self.font_family, 10))
+        self.library_count.pack(side='left', padx=12)
+        tk.Label(page, text='Pick up where you left off, or start a new report.',
+                 bg=BG, fg=MUTED, anchor='w').pack(fill='x', pady=(0, 16))
+        bar = tk.Frame(page, bg=BG)
+        bar.pack(fill='x', pady=(0, 16))
         self.create_report_button = self.action(bar, '+ Create report', self.create_report, True)
-        self.create_report_button.pack(side='left', padx=(0, 8))
-        ttk.Button(bar, text='Refresh', command=self.refresh_library).pack(side='left')
-        self.library_rows = tk.Frame(page, bg=WHITE)
+        self.create_report_button.configure(style='Library.Primary.TButton')
+        self.create_report_button.pack(side='left', padx=(0, 10))
+        ttk.Button(bar, text='Refresh', style='Library.TButton', command=self.refresh_library).pack(side='left')
+        tk.Label(bar, text='Your drafts · saved on this computer', bg=BG, fg=MUTED,
+                 font=(self.font_family, 9)).pack(side='right')
+        self.library_rows = tk.Frame(page, bg=BG)
         self.library_rows.pack(fill='both', expand=True)
+        self.library_bindings = {
+            '<Button-1>': self.root.bind('<Button-1>', self.dismiss_library_actions, add='+'),
+            '<Escape>': self.root.bind('<Escape>', lambda e: self.close_library_actions(restore_focus=True), add='+'),
+        }
+
+    def close_library_actions(self, restore_focus=False):
+        item = self.library_open_actions
+        if item:
+            item['panel'].grid_remove()
+            item['trigger'].configure(text='More ▾')
+            if restore_focus:
+                item['trigger'].focus_set()
+        self.library_open_actions = None
+
+    def toggle_library_actions(self, report_id):
+        if self.busy:
+            return
+        item = self.library_cards[report_id]
+        already_open = self.library_open_actions is item
+        self.close_library_actions()
+        if not already_open:
+            item['panel'].grid()
+            item['trigger'].configure(text='More ▴')
+            self.library_open_actions = item
+            item['rename'].focus_set()
+
+    def dismiss_library_actions(self, event):
+        if not self.library_open_actions:
+            return
+        widget = event.widget
+        while widget is not None:
+            if widget in (self.library_open_actions['panel'], self.library_open_actions['trigger']):
+                return
+            widget = getattr(widget, 'master', None)
+        self.close_library_actions()
+
+    def run_library_action(self, action, row):
+        self.close_library_actions()
+        return action(row)
 
     def refresh_library(self):
+        self.close_library_actions()
         self.library_action_buttons = []
+        self.library_cards = {}
         for widget in self.library_rows.winfo_children():
             widget.destroy()
+        self.library_count.configure(text='')
         try:
             rows = self.repository.list_owned(self.username) if self.username else []
         except Exception as exc:
-            tk.Label(self.library_rows, text=f'Could not open report library: {exc}', bg=WHITE, wraplength=700).pack(pady=20)
+            tk.Label(self.library_rows, text=f'Could not open report library: {exc}', bg=BG, wraplength=700).pack(pady=20)
             return
+        self.library_count.configure(text=f'{len(rows)} saved')
         if not rows:
-            tk.Label(self.library_rows, text='No saved reports yet.\n\nChoose Create report to start with your survey files.\nYou will name your report when you first save a draft.',
-                     bg=WHITE, fg=MUTED, wraplength=700).pack(padx=20, pady=30)
+            empty = tk.Frame(self.library_rows, bg=WHITE, highlightbackground=BORDER, highlightthickness=1,
+                             padx=24, pady=32)
+            empty.pack(fill='x')
+            tk.Label(empty, text='Your next report starts here', bg=WHITE, fg=INK,
+                     font=(self.font_family, 14, 'bold')).pack(anchor='w')
+            tk.Label(empty, text='Choose Create report to import your survey files.\nYou will name your report when you first save a draft.',
+                     bg=WHITE, fg=MUTED, justify='left', wraplength=700).pack(anchor='w', pady=(10, 0))
             return
-        canvas = tk.Canvas(self.library_rows, bg=WHITE, highlightthickness=0)
+        canvas = tk.Canvas(self.library_rows, bg=BG, highlightthickness=0)
         scrollbar = ttk.Scrollbar(self.library_rows, orient='vertical', command=canvas.yview)
-        scrollbar.pack(side='right', fill='y')
-        canvas.pack(fill='both', expand=True)
-        canvas.configure(yscrollcommand=scrollbar.set)
-        inner = tk.Frame(canvas, bg=WHITE)
+        def scroll_region(first, last):
+            scrollbar.set(first, last)
+            if float(first) <= 0 and float(last) >= 1:
+                scrollbar.grid_remove()
+            else:
+                scrollbar.grid()
+        self.library_rows.columnconfigure(0, weight=1)
+        self.library_rows.rowconfigure(0, weight=1)
+        scrollbar.grid(row=0, column=1, sticky='ns', padx=(8, 0))
+        canvas.grid(row=0, column=0, sticky='nsew')
+        canvas.configure(yscrollcommand=scroll_region)
+        inner = tk.Frame(canvas, bg=BG)
         window = canvas.create_window(0, 0, window=inner, anchor='nw')
         inner.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
         canvas.bind('<Configure>', lambda e: canvas.itemconfigure(window, width=e.width))
         for row in rows:
-            line = tk.Frame(inner, bg=WHITE, padx=16, pady=12)
-            line.pack(fill='x')
-            actions = tk.Frame(line, bg=WHITE)
-            actions.pack(side='right', padx=(12, 0))
-            for caption, command in (
-                ('Continue editing', lambda rid=row['id']: self.open_library_report(rid)),
-                ('Rename', lambda item=row: self.rename_library_report(item)),
-                ('Delete', lambda item=row: self.delete_library_report(item)),
-            ):
-                button = ttk.Button(actions, text=caption, command=command,
-                                    state='disabled' if self.busy else 'normal')
-                button.pack(fill='x', pady=2)
-                self.library_action_buttons.append(button)
-            tk.Label(line, text=row['title'], bg=WHITE, fg=INK, anchor='w', wraplength=520,
-                     font=(self.font_family, 11, 'bold')).pack(fill='x')
-            from datetime import datetime
-            updated = datetime.fromisoformat(row['updated']).astimezone().strftime('%d %b %Y %H:%M')
-            tk.Label(line, text=f"{row['course']} · {row['owner']} · {row['status']} · {updated}",
-                     bg=WHITE, fg=MUTED, anchor='w', wraplength=520).pack(fill='x', pady=(4, 0))
+            self.build_library_card(inner, row)
+
+    def build_library_card(self, parent, row):
+        from datetime import datetime
+        card = tk.Frame(parent, bg=WHITE, padx=18, pady=16,
+                        highlightbackground=BORDER, highlightthickness=1)
+        card.pack(fill='x', pady=(0, 12))
+        card.columnconfigure(0, weight=1)
+        info = tk.Frame(card, bg=WHITE)
+        info.grid(row=0, column=0, sticky='nsew', padx=(18, 20))
+        tk.Frame(card, bg=TEAL, width=3).place(x=0, y=0, relheight=1)
+        state_text = {'DRAFT': 'Draft', 'CHANGES REQUESTED': 'Changes requested'}.get(row['status'], row['status'])
+        tk.Label(info, text=state_text, bg='#F0E9FC', fg='#6530B3', padx=9, pady=3,
+                 font=(self.font_family, 9, 'bold')).pack(anchor='w', pady=(0, 9))
+        title = tk.Label(info, text=row['title'], bg=WHITE, fg=INK, anchor='w', justify='left',
+                         font=(self.font_family, 14, 'bold'), width=1, wraplength=420)
+        title.pack(fill='x')
+        title.bind('<Configure>', lambda e: title.configure(wraplength=max(100, e.width)))
+        scope = tk.Label(info, text=row['course'], bg=WHITE, fg=MUTED, anchor='w', justify='left',
+                         font=(self.font_family, 10), width=1, wraplength=420)
+        scope.pack(fill='x', pady=(5, 14))
+        scope.bind('<Configure>', lambda e: scope.configure(wraplength=max(100, e.width)))
+        updated = datetime.fromisoformat(row['updated']).astimezone().strftime('%d %b %Y · %H:%M')
+        details = tk.Label(info, text=f"First reviewer: {row['owner']}\nLast saved: {updated}",
+                           bg=WHITE, fg=MUTED, anchor='w', justify='left', width=1, wraplength=420,
+                           font=(self.font_family, 9))
+        details.pack(fill='x')
+        details.bind('<Configure>', lambda e: details.configure(wraplength=max(100, e.width)))
+        actions = tk.Frame(card, bg=WHITE)
+        actions.grid(row=0, column=1, sticky='ne')
+        state = 'disabled' if self.busy else 'normal'
+        resume = ttk.Button(actions, text='Continue editing →', style='Library.TButton', state=state,
+                            command=lambda: self.open_library_report(row['id']))
+        resume.pack(side='left', padx=(0, 8))
+        trigger = ttk.Button(actions, text='More ▾', style='More.Library.TButton', state=state,
+                             command=lambda: self.toggle_library_actions(row['id']))
+        trigger.pack(side='left')
+        panel = tk.Frame(card, bg='#FAF8FD', padx=12, pady=10,
+                         highlightbackground=BORDER, highlightthickness=1)
+        panel.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(14, 0))
+        tk.Label(panel, text='Manage draft', bg='#FAF8FD', fg=MUTED,
+                 font=(self.font_family, 9)).pack(side='left')
+        delete = ttk.Button(panel, text='Delete draft', style='Danger.Library.TButton', state=state,
+                            command=lambda: self.run_library_action(self.delete_library_report, row))
+        delete.pack(side='right', padx=(8, 0))
+        rename = ttk.Button(panel, text='Rename', style='Library.TButton', state=state,
+                            command=lambda: self.run_library_action(self.rename_library_report, row))
+        rename.pack(side='right')
+        panel.grid_remove()
+        self.library_action_buttons.extend((resume, trigger, rename, delete))
+        self.library_cards[row['id']] = dict(panel=panel, trigger=trigger, rename=rename,
+                                             delete=delete, resume=resume, card=card, details=details)
 
     def create_report(self):
         if self.busy or not self.may_replace():
