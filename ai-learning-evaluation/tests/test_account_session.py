@@ -69,9 +69,10 @@ def test_menu_dismissal_and_busy_guard(session):
 @pytest.mark.parametrize('choice', [None, True])
 def test_cancel_or_failed_export_keeps_workspace(session, monkeypatch, choice):
     session.report = object()
+    monkeypatch.setattr(session, 'library_unsaved', lambda: True)
     session.dirty = True
     monkeypatch.setattr('tkinter.messagebox.askyesnocancel', lambda *a, **k: choice)
-    monkeypatch.setattr(session, 'export', lambda reviewed: False)
+    monkeypatch.setattr(session, 'save_library_draft', lambda: False)
     assert session.sign_out() is False
     assert not session.disposed
     assert session.report is not None
@@ -81,6 +82,7 @@ def test_cancel_or_failed_export_keeps_workspace(session, monkeypatch, choice):
 def test_export_then_switch_clears_session_and_callbacks(session, monkeypatch):
     session.context = object()
     session.report = object()
+    monkeypatch.setattr(session, 'library_unsaved', lambda: True)
     session.dirty = True
     session.question_cache['old'] = 'private answer'
     calls = []
@@ -88,12 +90,12 @@ def test_export_then_switch_clears_session_and_callbacks(session, monkeypatch):
     session.schedule_idle(lambda: calls.append('old idle'))
     session.schedule_review_drawer_open()
     monkeypatch.setattr('tkinter.messagebox.askyesnocancel', lambda *a, **k: True)
-    monkeypatch.setattr(session, 'export', lambda reviewed: calls.append(('export', reviewed)) or True)
+    monkeypatch.setattr(session, 'save_library_draft', lambda: calls.append(('save', False)) or True)
     assert session.sign_out(True)
-    assert calls == [('export', False)]
+    assert calls == [('save', False)]
     assert session.signed_out == [True]
     session.root.update()
-    assert calls == [('export', False)]
+    assert calls == [('save', False)]
     assert session.context is session.report is session.raw is None
     assert session.username == ''
     assert session.workflow.reviewer == ''
@@ -105,10 +107,11 @@ def test_export_then_switch_clears_session_and_callbacks(session, monkeypatch):
 
 
 def test_loaded_workspace_requires_discard_confirmation(session, monkeypatch):
-    session.context = object()
+    load_sample(session, count=12, review=False)
+    monkeypatch.setattr('tkinter.messagebox.askyesnocancel', lambda *a, **k: None)
     assert not session.sign_out()
     assert not session.disposed
-    monkeypatch.setattr('tkinter.messagebox.askyesno', lambda *a, **k: True)
+    monkeypatch.setattr('tkinter.messagebox.askyesnocancel', lambda *a, **k: False)
     assert session.sign_out()
 
 

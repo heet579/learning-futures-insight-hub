@@ -115,6 +115,8 @@ def test_startup_demo_and_navigation(desktop):
     desktop.load_startup_data()
     wait_for_load(desktop)
     assert desktop.context.metrics['response_count'] > 0
+    assert desktop.generate_button.instate(['disabled'])
+    review_themes(desktop)
     assert desktop.generate_button.instate(['!disabled'])
     assert desktop.progress.winfo_manager() == ''
     for i, (title, _) in enumerate(desktop.TITLES):
@@ -172,7 +174,7 @@ def test_report_preview_and_full_human_review_export(desktop, monkeypatch, tmp_p
     from src.audit.logger import AuditTrail
     load_sample(desktop)
     draft(desktop)
-    assert desktop.report_tabs.index('current') == 0
+    assert desktop.report_tabs.index('current') == 1
     assert str(desktop.editor.cget('state')) == 'normal'
     assert 'Executive Summary' in desktop.preview.get('1.0', 'end')
     assert '**' not in desktop.preview.get('1.0', 'end')
@@ -417,7 +419,7 @@ def test_human_or_copilot_replacement_is_previewed_before_apply(desktop):
     assert 'Run a practical exercise' in desktop.revision_preview.get('1.0', 'end')
     desktop.apply_feedback()
     assert 'Run a practical exercise' in desktop.editor.get('1.0', 'end')
-    assert desktop.report_tabs.index('current') == 0
+    assert desktop.report_tabs.index('current') == 1
     assert not desktop.confirmed.get()
 
 
