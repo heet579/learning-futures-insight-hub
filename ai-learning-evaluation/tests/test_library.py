@@ -234,3 +234,160 @@ def test_primary_navigation_fits_small_window(session):
     buttons = [pair[0] for pair in session.report_tab_buttons]
     assert buttons[1].winfo_rootx() < buttons[0].winfo_rootx()  # Reading preview leads.
     assert buttons[-1].winfo_rootx() + buttons[-1].winfo_width() <= session.root.winfo_rootx() + session.root.winfo_width()
+
+
+def test_repository_rename_delete_owner_version_and_content(tmp_path):
+    repository = ReportRepository(tmp_path / 'reports.db')
+    snapshot = {'schema': 2, 'progress': ['reviewed']}
+    rid, version = repository.save(actor='alex', title='Original', course='Course',
+                                   status='DRAFT', snapshot=snapshot)
+    for actor, expected_version in [('sam', version), ('alex', version + 1)]:
+        with pytest.raises(ValueError):
+            repository.rename(actor=actor, report_id=rid, version=expected_version, title='Changed')
+        with pytest.raises(ValueError):
+            repository.delete(actor=actor, report_id=rid, version=expected_version)
+    with pytest.raises(ValueError):
+        repository.rename(actor='alex', report_id=rid, version=version, title='  ')
+    assert repository.load(rid, 'alex')['title'] == 'Original'
+    new_version = repository.rename(actor='alex', report_id=rid, version=version, title='  Renamed  ')
+    row = repository.load(rid, 'alex')
+    assert row['title'] == 'Renamed'
+    assert row['snapshot'] == snapshot
+    assert row['version'] == new_version == version + 1
+    with pytest.raises(ValueError):
+        repository.delete(actor='alex', report_id=rid, version=version)
+    repository.delete(actor='alex', report_id=rid, version=new_version)
+    assert repository.list_owned('alex') == []
+    with pytest.raises(ValueError):
+        repository.load(rid, 'alex')
+
+
+@pytest.mark.parametrize('status', ['AWAITING HUMAN REVIEW', 'HUMAN REVIEWED'])
+def test_repository_management_rejects_noneditable_reports(tmp_path, status):
+    repository = ReportRepository(tmp_path / 'reports.db')
+    rid, version = repository.save(actor='alex', title='Draft', course='Course', status='DRAFT', snapshot={})
+    with repository.connect() as db:
+        db.execute('UPDATE reports SET status=? WHERE id=?', (status, rid))
+    with pytest.raises(ValueError):
+        repository.rename(actor='alex', report_id=rid, version=version, title='Renamed')
+    with pytest.raises(ValueError):
+        repository.delete(actor='alex', report_id=rid, version=version)
+    assert repository.load(rid, 'alex')['title'] == 'Draft'
+
+
+def saved_library_row(session, monkeypatch):
+    load_sample(session, count=12, review=False)
+    monkeypatch.setattr('tkinter.simpledialog.askstring', lambda *a, **k: 'Original')
+    assert session.save_library_draft()
+    return session.repository.list_owned('alex')[0]
+
+
+def test_rename_open_draft_preserves_unsaved_changes_and_next_save(session, monkeypatch):
+    row = saved_library_row(session, monkeypatch)
+    saved = copy.deepcopy(session.saved_snapshot)
+    session.theme_table.selection_set('0')
+    session.confirm_theme()
+    edited = copy.deepcopy(session.workspace_snapshot())
+    assert session.library_unsaved()
+    monkeypatch.setattr('tkinter.simpledialog.askstring', lambda *a, **k: '  Renamed  ')
+    assert session.rename_library_report(row)
+    assert session.library_id == row['id']
+    assert session.library_title == 'Renamed'
+    assert session.workspace_snapshot() == edited
+    assert session.saved_snapshot == saved
+    assert session.repository.load(row['id'], 'alex')['snapshot'] == saved
+    assert session.library_unsaved()
+    assert session.save_library_draft()
+    assert len(session.repository.list_owned('alex')) == 1
+    stored = session.repository.load(row['id'], 'alex')
+    assert stored['snapshot'] == edited
+    assert stored['title'] == 'Renamed'
+    assert stored['version'] == 3
+
+
+@pytest.mark.parametrize('title', [None, '   '])
+def test_rename_cancel_or_empty_keeps_draft(session, monkeypatch, title):
+    row = saved_library_row(session, monkeypatch)
+    monkeypatch.setattr('tkinter.simpledialog.askstring', lambda *a, **k: title)
+    assert not session.rename_library_report(row)
+    assert session.library_title == 'Original'
+    assert session.library_version == row['version']
+    assert not session.library_unsaved()
+
+
+def test_delete_cancel_then_confirm_clears_open_workspace(session, monkeypatch):
+    row = saved_library_row(session, monkeypatch)
+    session.theme_table.selection_set('0')
+    session.confirm_theme()
+    before = session.workspace_snapshot()
+    assert not session.delete_library_report(row)
+    assert session.workspace_snapshot() == before
+    assert len(session.repository.list_owned('alex')) == 1
+    prompts = []
+    monkeypatch.setattr('tkinter.messagebox.askyesno', lambda *a, **k: prompts.append((a, k)) or True)
+    assert session.delete_library_report(row)
+    assert 'Original' in prompts[0][0][1]
+    assert 'unsaved changes' in prompts[0][0][1]
+    assert prompts[0][1]['default'] == 'no'
+    assert session.current_page == 3
+    assert session.library_id is session.context is session.report is session.raw is None
+    assert session.username == 'alex'
+    assert session.repository.list_owned('alex') == []
+    assert not session.save_library_draft()  # Cannot accidentally re-save a deleted workspace.
+
+
+def test_manage_other_draft_leaves_open_workspace_intact(session, monkeypatch):
+    row = saved_library_row(session, monkeypatch)
+    other_id, _ = session.repository.save(actor='alex', title='Other', course='Course',
+        status='DRAFT', snapshot=session.workspace_snapshot())
+    other = next(r for r in session.repository.list_owned('alex') if r['id'] == other_id)
+    before = session.workspace_snapshot()
+    monkeypatch.setattr('tkinter.simpledialog.askstring', lambda *a, **k: 'Other renamed')
+    assert session.rename_library_report(other)
+    other = next(r for r in session.repository.list_owned('alex') if r['id'] == other_id)
+    monkeypatch.setattr('tkinter.messagebox.askyesno', lambda *a, **k: True)
+    assert session.delete_library_report(other)
+    assert session.workspace_snapshot() == before
+    assert session.library_id == row['id']
+    assert session.library_title == 'Original'
+    assert not session.library_unsaved()
+    assert [r['id'] for r in session.repository.list_owned('alex')] == [row['id']]
+
+
+@pytest.mark.parametrize('operation', ['rename', 'delete'])
+def test_manage_stale_open_draft_keeps_current_edits(session, monkeypatch, operation):
+    row = saved_library_row(session, monkeypatch)
+    session.repository.rename(actor='alex', report_id=row['id'], version=row['version'], title='Another workspace')
+    fresh_row = session.repository.list_owned('alex')[0]
+    before = session.workspace_snapshot()
+    errors = []
+    monkeypatch.setattr('tkinter.messagebox.showerror', lambda *a, **k: errors.append(a))
+    monkeypatch.setattr('tkinter.messagebox.askyesno', lambda *a, **k: True)
+    monkeypatch.setattr('tkinter.simpledialog.askstring', lambda *a, **k: 'Attempt')
+    assert not getattr(session, f'{operation}_library_report')(fresh_row)
+    assert errors
+    assert session.workspace_snapshot() == before
+    assert session.library_id == row['id']
+    assert session.library_version == row['version']
+    assert session.repository.load(row['id'], 'alex')['title'] == 'Another workspace'
+
+
+def test_library_actions_busy_guard_and_small_window(session, monkeypatch):
+    row = saved_library_row(session, monkeypatch)
+    session.root.geometry('1080x740')
+    session.navigate(3)
+    session.root.update_idletasks()
+    assert len(session.library_action_buttons) == 3
+    for button in session.library_action_buttons:
+        assert button.winfo_ismapped()
+        assert button.winfo_rootx() + button.winfo_width() <= session.root.winfo_rootx() + session.root.winfo_width()
+    session.busy = True
+    session.sync_controls()
+    assert all(button.instate(['disabled']) for button in session.library_action_buttons)
+    monkeypatch.setattr('tkinter.simpledialog.askstring', lambda *a, **k: pytest.fail('Prompt while busy'))
+    monkeypatch.setattr('tkinter.messagebox.askyesno', lambda *a, **k: pytest.fail('Prompt while busy'))
+    assert not session.rename_library_report(row)
+    assert not session.delete_library_report(row)
+    session.busy = False
+    session.sync_controls()
+    assert all(button.instate(['!disabled']) for button in session.library_action_buttons)
