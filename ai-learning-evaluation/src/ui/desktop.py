@@ -1,6 +1,7 @@
 """Presentation interface for the native desktop workflow."""
 import os
 import tkinter as tk
+from src.ui.library import LibraryUI
 from src.ui.account import AccountUI
 from src.ui.revisions import RevisionUI
 from src.ui.review import ReviewUI
@@ -46,10 +47,11 @@ def analyse(frame, name, scope):
     return masked, context, count, courses
 
 
-class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
+class DesktopApp(LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
     TITLES = [('Explore data', 'A clear view of learner experience, grounded in your survey data.'),
               ('Themes & evidence', 'Explore recurring feedback and the comments supporting it, or ask a question.'),
-              ('Report studio', 'Turn evidence into a draft, refine it, then review and export.')]
+              ('Report studio', 'Turn evidence into a draft, refine it, then review and export.'),
+              ('Report library', 'Open saved drafts and continue your review.')]
 
     def __init__(self, root, auto_load=False, *, username="", on_logout=None):
         global FONT
@@ -59,6 +61,7 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.on_logout = on_logout
         self.disposed = False
         self.session_jobs = set()
+        self.init_library()
         self.font_family = FONT
         self.pool = ThreadPoolExecutor(max_workers=1)
         self.context = self.raw = self.report = self.frame = None
@@ -66,7 +69,7 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.loaded_file_label = ''
         self.busy = self.dirty = False
         self.controls = []
-        self.nav_buttons = []
+        self.nav_buttons = [None] * 4
         self.metric_values = []
         self.search_id = None
         self.sort_column = None
@@ -86,10 +89,11 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.build_data_page()
         self.build_themes_page()
         self.build_report()
+        self.build_library()
         self.build_revision_ui()
         self.build_claims_tab()
         self.refresh_report_tab_bar()
-        self.navigate(0)
+        self.navigate(3)
         self.sync_controls()
         root.protocol('WM_DELETE_WINDOW', self.close)
         root.bind('<Control-o>', lambda e: self.open_file() if not self.busy else None)
@@ -207,11 +211,14 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         label(sidebar, 'LEARNING FUTURES', 8, '#A9A0C9').pack(anchor='w', padx=20)
         tk.Frame(sidebar, bg='#3D2B63', height=1).pack(fill='x', padx=20, pady=26)
         label(sidebar, 'WORKSPACE', 8, '#A9A0C9', True).pack(anchor='w', padx=20, pady=(0, 12))
-        for i, name in enumerate(['Explore data', 'Themes & evidence', 'Report studio']):
-            b = ttk.Button(sidebar, text=f'{i+1:02}   {name}', style='Nav.TButton',
+        for i, name in [(3, 'Report library'), (0, '01   Explore data'),
+                        (1, '02   Themes & evidence'), (2, '03   Report studio')]:
+            if i == 0:
+                label(sidebar, 'CURRENT REPORT', 8, '#A9A0C9', True).pack(anchor='w', padx=20, pady=(22, 8))
+            b = ttk.Button(sidebar, text=name, style='Nav.TButton',
                            cursor='hand2', command=lambda index=i: self.navigate(index))
             b.pack(fill='x', padx=10, pady=3)
-            self.nav_buttons.append(b)
+            self.nav_buttons[i] = b
         bottom = tk.Frame(sidebar, bg=NAVY)
         bottom.pack(side='bottom', fill='x', padx=20, pady=24)
         label(bottom, '●  WORKSPACE', 9, '#5EEAD4', True).pack(anchor='w')
@@ -234,6 +241,19 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.page_title.pack(anchor='w')
         self.page_subtitle = label(head, '', 10, MUTED)
         self.page_subtitle.pack(anchor='w', pady=(4, 0))
+        self.journey_bar = panel(main, padx=12, pady=8)
+        self.journey_bar.pack(fill='x', padx=24, pady=(0, 10))
+        self.library_save_button = ttk.Button(self.journey_bar, text='Save draft', command=self.save_library_draft)
+        self.library_save_button.pack(side='right', padx=(12, 0))
+        self.next_button = ttk.Button(self.journey_bar, text='Continue to themes →', command=self.continue_report,
+                                      style='Primary.TButton')
+        self.next_button.pack(side='right', padx=(12, 0))
+        self.workspace_caption = label(self.journey_bar, 'Untitled report', 10, INK, True, width=1)
+        self.workspace_caption.pack(fill='x')
+        self.journey_hint = label(self.journey_bar, 'Import a survey file to begin.', 9, MUTED,
+                                  wraplength=440, justify='left', width=1)
+        self.journey_hint.pack(fill='x', pady=(3, 0))
+        self.journey_hint.bind('<Configure>', lambda e: self.journey_hint.configure(wraplength=max(160, e.width)))
         toolbar = panel(main, padx=12, pady=12)
         self.toolbar = toolbar
         toolbar.pack(fill='x', padx=24, pady=(0, 18))
@@ -637,8 +657,7 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.audience.pack(anchor='w')
         self.audience.bind('<<ComboboxSelected>>', self.audience_changed)
 
-        # Human review becomes a contextual drawer instead of a permanently
-        # visible right rail. Hover previews it; click pins it open.
+        # Detailed approval controls open on click; the next action is always visible.
         self.review_drawer_pinned = False
         self.review_drawer_visible = False
         self.review_drawer_width = 360
@@ -666,10 +685,8 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             cursor='hand2'
         )
         self.review_drawer_button.pack(side='right', anchor='s', pady=(18, 0))
-        self.review_drawer_button.bind('<Enter>', self.schedule_review_drawer_open)
-        self.review_drawer_button.bind('<Leave>', self.schedule_review_drawer_close)
 
-        self.generate_button = self.action(actions, 'Get Gemini draft', self.generate, True)
+        self.generate_button = self.action(actions, 'Generate draft', self.generate, True)
         self.generate_button.pack(side='right', anchor='s', padx=(0, 8), pady=(18, 0))
 
         label(workspace, 'Drafts are grounded in the selected survey summaries and must pass human review before export.',
@@ -695,8 +712,8 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.preview = self.text(preview)
         self.preview.pack(fill='both', expand=True, padx=1, pady=(0, 1))
         self.report_tabs.bind('<<NotebookTabChanged>>', self.on_report_tab_changed)
-        self.show(self.preview, 'Get a draft to see a formatted reading preview.')
-        self.report_tabs.select(0)
+        self.show(self.preview, 'Your report will appear here.\n\n1. Import survey data in Explore data.\n2. Confirm or reject each theme in Themes & evidence.\n3. Choose a report type above, then Generate draft.\n\nYou can save your progress at any stage after importing data.')
+        self.report_tabs.select(1)
 
         # Overlay drawer. It is placed over the report instead of resizing it.
         self.review_drawer = tk.Frame(
@@ -705,8 +722,6 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             highlightbackground='#D8C8ED',
             highlightthickness=1
         )
-        self.review_drawer.bind('<Enter>', self.cancel_review_drawer_close)
-        self.review_drawer.bind('<Leave>', self.schedule_review_drawer_close)
 
         review_inner = tk.Frame(self.review_drawer, bg=WHITE, padx=8, pady=8)
         review_inner.pack(fill='both', expand=True)
@@ -874,7 +889,11 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
 
         self.report_tab_buttons = []
 
-        for index, tab_id in enumerate(self.report_tabs.tabs()):
+        # Keep stable notebook IDs for existing edit/revision actions, but lead with reading.
+        tabs = self.report_tabs.tabs()
+        self.report_tab_buttons = [None] * len(tabs)
+        for index in [1, 0, *range(2, len(tabs))]:
+            tab_id = tabs[index]
             caption = self.report_tabs.tab(tab_id, 'text')
 
             holder = tk.Frame(self.report_tabbar, bg=WHITE)
@@ -901,7 +920,7 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             underline = tk.Frame(holder, bg='#F5F1FA', height=3)
             underline.pack(fill='x')
 
-            self.report_tab_buttons.append((button, underline))
+            self.report_tab_buttons[index] = (button, underline)
 
         self.sync_report_tabs()
 
@@ -953,11 +972,18 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.show(self.answer, 'Choose a suggestion or ask about ratings, participation, themes, recommendations or limitations.')
 
     def navigate(self, index):
+        self.current_page = index
         for page in self.pages:
             page.grid_remove()
         self.pages[index].grid()
         self.pages[index].tkraise()
 
+        if index == 3:
+            self.journey_bar.pack_forget()
+            self.refresh_library()
+        else:
+            self.journey_bar.pack(fill='x', padx=24, pady=(0, 10), before=self.content_frame)
+        self.update_journey()
         title, subtitle = self.TITLES[index]
         self.page_title.configure(text=title)
         self.page_subtitle.configure(text=subtitle)
@@ -1002,6 +1028,7 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         widget.configure(state='disabled')
 
     def sync_controls(self):
+        self.library_save_button.configure(state='normal' if self.context and self.username and not self.busy and self.workflow.status in ('DRAFT', 'CHANGES REQUESTED') else 'disabled')
         for button in self.account_actions:
             button.configure(state='disabled' if self.busy or self.on_logout is None else 'normal')
         if self.busy:
@@ -1014,7 +1041,9 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             self.progress.pack_forget()
         for b in self.controls:
             b.configure(state='disabled' if self.busy else 'normal')
-        self.generate_button.configure(state='normal' if self.context and not self.busy else 'disabled')
+        self.generate_button.configure(state='normal' if self.context and self.theme_review.complete and not self.busy else 'disabled',
+                                       text='Regenerate draft' if self.report else 'Generate draft',
+                                       style='TButton' if self.report else 'Primary.TButton')
         self.insights_button.configure(state='normal' if self.context and not self.busy else 'disabled')
         self.question.configure(state='disabled' if self.busy else 'normal')
         self.audience.configure(state='disabled' if self.busy else 'readonly')
@@ -1079,7 +1108,7 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             self.preview_meta.configure(text='No report available yet')
 
     def may_replace(self):
-        return not self.dirty or messagebox.askyesno('Unsaved report', 'Continue and discard the unsaved report? Use Save draft to keep a copy.', parent=self.root)
+        return not self.library_unsaved() or messagebox.askyesno('Unsaved report', 'Continue and discard unsaved changes? Choose Cancel/No and use Save draft to keep your review progress.', parent=self.root)
 
     def load(self, source, name, scope='All courses (aggregate)', file_label=None):
         from pathlib import Path
@@ -1125,10 +1154,14 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             self.apply_analysis(result)
             self.status.set(f'Ready • {len(self.frame):,} responses analysed')
             self.sync_controls()
+            self.navigate(0)
         self.load_poll = self.schedule(80, finish)
 
     def apply_analysis(self, result):
+        self.library_id = self.library_version = self.saved_snapshot = None
+        self.library_title = ''
         self.frame, self.context, count, courses = result
+        self.masked_count = count
         self.show_local_insights()
         self.report, self.dirty = None, False
         self.reset_revisions()
@@ -1141,7 +1174,7 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.ledger.reset()
         self.workflow = type(self.workflow)()
         self.preview_meta.configure(text='No report available yet')
-        self.show(self.preview, 'Get a draft to see a formatted reading preview.')
+        self.show(self.preview, 'Your report will appear here.\n\n1. Import survey data in Explore data.\n2. Confirm or reject each theme in Themes & evidence.\n3. Choose a report type above, then Generate draft.\n\nYou can save your progress at any stage after importing data.')
         self.show(self.answer, 'Ask about this dataset or choose a suggestion above.')
         self.question.configure(state='normal')
         self.question.delete(0, 'end')
@@ -1180,6 +1213,7 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         else:
             self.show(self.theme_detail, 'No recurring themes met the evidence threshold.')
         self.draw_chart()
+        self.sync_controls()
 
     def update_data_filters(self):
         """Refresh Survey data filter choices from the loaded dataset."""
@@ -1462,6 +1496,7 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
             self.render(self.theme_detail, self.theme_detail_text(theme))
 
     def audience_changed(self, event=None):
+        self.update_journey()
         if self.report and self.audience.get() != self.report.audience:
             self.status.set(f'Current draft is for {self.report.audience}. Get a new draft to change audience.')
 
@@ -1476,7 +1511,9 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
                 'Only themes a person has confirmed are used in the report.', parent=self.root)
             self.navigate(1)
             return
-        if self.report and not self.may_replace():
+        if self.report and not messagebox.askyesno('Regenerate draft?',
+                'This replaces the current text and resets fact checks, revisions and approval progress. '
+                'Your saved copy stays unchanged until you save again. Continue?', parent=self.root, default='no'):
             return
         self.busy = True
         self.status.set('Preparing report draft…')
@@ -1538,9 +1575,8 @@ class DesktopApp(AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
         self.record('Draft generated', self.author_identity(), audience=report.audience, written_by=report.source_mode,
                     claims=len(self.ledger.claims))
         self.update_audit_status()
-        self.report_tabs.select(0)
-        self.editor.focus_set()
-        self.status.set(f'Draft ready ({report.source_mode}). Next: decide every claim in the Review claims tab, '
+        self.report_tabs.select(1)
+        self.status.set(f'Draft ready ({report.source_mode}). Next: decide every claim in Check facts & quotes, '
                         'then submit for approval.')
         self.sync_controls()
 

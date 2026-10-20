@@ -89,21 +89,20 @@ class AccountUI:
             return False
         self.hide_account_menu()
         action = 'Switch account' if switching else 'Sign out'
-        if self.report and self.dirty:
+        if (self.report or self.context is not None) and self.library_unsaved():
             choice = messagebox.askyesnocancel(action,
-                'Export a draft copy before leaving?\n\n'
-                'Yes: export the report text, then return to sign-in.\n'
+                'Save your draft before leaving?\n\n'
+                'Yes: save to Report library, then return to sign-in.\n'
                 'No: discard unsaved work and return to sign-in.\n'
                 'Cancel: stay in this workspace.\n\n'
-                'The report library is not available yet. Data and review decisions '
-                'will be cleared; an exported document cannot restore this workspace.',
+                'Saved drafts can be reopened by your account from Report library.',
                 parent=self.root, default='cancel')
-            if choice is None or (choice and not self.export(False)):
+            if choice is None or (choice and not self.save_library_draft()):
                 return False
-        elif self.context is not None or self.report is not None:
+        elif self.context is not None and not self.library_id:
             if not messagebox.askyesno(action,
                 'Return to sign-in and clear this workspace?\n\n'
-                'Imported data and review decisions are not saved between sessions yet. '
+                'This workspace has not been saved to Report library. '
                 'Any documents already exported will remain on disk.',
                 parent=self.root, default='no'):
                 return False

@@ -178,7 +178,7 @@ class ReviewUI:
     # ------------------------------------------------------------------ Gate 2/3: claims
     def build_claims_tab(self):
         page = tk.Frame(self.report_tabs, bg=WHITE, padx=10, pady=8)
-        self.report_tabs.add(page, text='Review claims')
+        self.report_tabs.add(page, text='Check facts & quotes')
         self.claims_progress = tk.StringVar(value='Get a draft to review its claims.')
         tk.Label(page, textvariable=self.claims_progress, bg=WHITE, fg=INK, anchor='w', justify='left',
                  wraplength=760).pack(side='top', fill='x')
@@ -519,7 +519,7 @@ class ReviewUI:
         secondary.pack(fill='x')
         self.return_button = self.action(secondary, 'Return for changes', self.return_for_changes)
         self.return_button.pack(fill='x', pady=(0, 5))
-        self.save_button = self.action(secondary, 'Save draft', lambda: self.export(False))
+        self.save_button = self.action(secondary, 'Export draft', lambda: self.export(False))
         self.save_button.pack(fill='x')
 
         audit = tk.Label(
@@ -567,7 +567,7 @@ class ReviewUI:
         if self.report:
             c = self.ledger.counts()
             mark = ' ✓' if self.ledger.complete else ''
-            self.claims_status.set(f'{c["decided"]} of {c["total"]} claims decided{mark}. Use the Review claims tab.')
+            self.claims_status.set(f'{c["decided"]} of {c["total"]} claims decided{mark}. Use the Check facts & quotes tab.')
             self.pace_status.set(self.ledger.pace()['message'])
             state = self.workflow.status
             if state == 'AWAITING HUMAN REVIEW':
@@ -584,6 +584,7 @@ class ReviewUI:
         self.sync_review_buttons()
         if hasattr(self, 'update_review_drawer_badge'):
             self.update_review_drawer_badge()
+        self.update_journey()
 
     def sync_review_buttons(self):
         if not hasattr(self, 'submit_button') or not hasattr(self, 'accept_claim_button'):

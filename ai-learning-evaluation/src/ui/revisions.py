@@ -618,6 +618,7 @@ class RevisionUI:
 
     def feedback_changed(self, event=None):
         """Invalidate an existing preview when the revision instruction changes."""
+        self.update_journey()
         feedback_modified = self.feedback.edit_modified()
         replacement_modified = self.replacement.edit_modified()
 
