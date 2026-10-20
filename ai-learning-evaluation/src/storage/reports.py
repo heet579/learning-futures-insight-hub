@@ -42,6 +42,26 @@ class ReportRepository:
         result['snapshot'] = json.loads(result['snapshot'])
         return result
 
+    def rename(self, *, actor, report_id, version, title):
+        if not actor or not title.strip():
+            raise ValueError('A signed-in account and report name are required.')
+        with self.connect() as db:
+            count = db.execute('''UPDATE reports SET title=?, updated=?, version=version+1
+                WHERE id=? AND owner=? AND version=? AND status IN ('DRAFT', 'CHANGES REQUESTED')''',
+                (title.strip(), datetime.now(timezone.utc).isoformat(),
+                 report_id, actor, version)).rowcount
+            if not count:
+                raise ValueError('This draft changed or is unavailable. Refresh the library and reopen it before renaming.')
+        return version + 1
+
+    def delete(self, *, actor, report_id, version):
+        with self.connect() as db:
+            count = db.execute('''DELETE FROM reports WHERE id=? AND owner=? AND version=?
+                AND status IN ('DRAFT', 'CHANGES REQUESTED')''',
+                (report_id, actor, version)).rowcount
+            if not count:
+                raise ValueError('This draft changed or is unavailable. Refresh the library and reopen it before deleting.')
+
     def save(self, *, actor, title, course, status, snapshot, report_id=None, version=None):
         if not actor or not title.strip():
             raise ValueError('A signed-in account and report name are required.')
