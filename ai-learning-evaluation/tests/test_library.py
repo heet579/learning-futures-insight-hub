@@ -181,9 +181,11 @@ def test_studio_guides_read_check_and_approval(session):
     session.continue_report()
     assert session.report_tabs.index(session.report_tabs.select()) == 3
     decide_all_claims(session)
+    session.library_title = 'Visible handoff'
     session.continue_report()
-    assert session.review_drawer_visible
-    assert session.review_drawer_pinned
+    assert session.workflow.status == 'AWAITING HUMAN REVIEW'
+    assert not session.review_drawer_visible
+    assert 'Submitted and saved' in session.handoff_title.cget('text')
 
 
 def test_schema_one_draft_still_opens(session, monkeypatch):
@@ -219,6 +221,7 @@ def test_primary_navigation_fits_small_window(session):
         session.root.update_idletasks()
         widgets = [session.account_button, session.nav_buttons[page]]
         widgets += ([session.create_report_button] if page == 3 else
+                    [session.studio_save_button] if page == 2 else
                     [session.library_save_button, session.next_button, session.workspace_caption])
         for widget in widgets:
             assert widget.winfo_width() > 20
