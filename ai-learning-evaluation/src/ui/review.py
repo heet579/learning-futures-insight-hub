@@ -412,7 +412,7 @@ class ReviewUI:
         review = self.scrollable(outer)
 
         tk.Label(
-            review, text='Human review',
+            review, text='Review details' if self.username else 'Human review',
             font=(self.font_family, 15, 'bold'),
             bg=WHITE, fg=INK
         ).pack(anchor='w', padx=4, pady=(2, 0))
@@ -486,7 +486,7 @@ class ReviewUI:
         if self.username:
             self.author_entry.insert(0, self.username)
             self.author_entry.configure(state='readonly')
-        self.submit_button = self.action(step3, 'Submit for approval', self.submit_for_approval)
+        self.submit_button = self.action(self.handoff_actions if self.username else step3, 'Submit for approval', self.submit_for_approval)
         self.submit_button.pack(fill='x')
 
         # Step 4
@@ -502,30 +502,39 @@ class ReviewUI:
             step4, text='Approver role', bg='#FAF8FD', fg=MUTED,
             font=(self.font_family, 8, 'bold')
         ).pack(anchor='w', pady=(2, 3))
+        options = self.handoff_options if self.username else step4
+        if self.username:
+            tk.Label(options, text='Your role', bg='#FAF8FD', fg=MUTED).pack(side='left', padx=(0, 6))
         self.approver_role = ttk.Combobox(
-            step4, values=list(APPROVER_ROLES),
+            options, values=list(APPROVER_ROLES),
             state='readonly', width=24
         )
         self.approver_role.set(APPROVER_ROLES[0])
-        self.approver_role.pack(fill='x')
+        self.approver_role.pack(side='left' if self.username else 'top', fill='x')
 
         self.review_check = ttk.Checkbutton(
-            step4,
+            options,
             text='I checked the evidence, privacy\nand final wording.',
             variable=self.confirmed,
             command=self.review_changed
         )
-        self.review_check.pack(anchor='w', pady=(8, 7))
+        self.review_check.pack(side='left' if self.username else 'top', anchor='w', padx=(8, 0), pady=3)
 
-        self.export_button = self.action(step4, 'Approve & export', self.export, True)
+        self.export_button = self.action(self.handoff_actions if self.username else step4, 'Approve & export', self.export, True)
         self.export_button.pack(fill='x', pady=(0, 5))
 
         secondary = tk.Frame(step4, bg='#FAF8FD')
         secondary.pack(fill='x')
-        self.return_button = self.action(secondary, 'Return for changes', self.return_for_changes)
+        self.return_button = self.action(self.handoff_actions if self.username else secondary, 'Return for changes', self.return_for_changes)
         self.return_button.pack(fill='x', pady=(0, 5))
-        self.save_button = self.action(secondary, 'Export draft', lambda: self.export(False))
+        self.save_button = self.action(review if self.username else secondary, 'Export draft', lambda: self.export(False))
         self.save_button.pack(fill='x')
+        if self.username:
+            step3.pack_forget()
+            step4.pack_forget()
+            self.submit_button.configure(style='Library.Primary.TButton')
+            self.export_button.configure(style='Library.Primary.TButton')
+            self.return_button.configure(style='Danger.Library.TButton')
 
         audit = tk.Label(
             review, textvariable=self.audit_status,
@@ -534,6 +543,12 @@ class ReviewUI:
         )
         audit.pack(fill='x', padx=5, pady=(1, 6))
 
+        if self.username:
+            for widget in review.winfo_children():
+                widget.pack_forget()
+            self.build_progress_drawer(review)
+            self.save_button.pack(fill='x', padx=4, pady=6)
+            audit.pack(fill='x', padx=5, pady=(1, 6))
         self.update_audit_status()
 
     def update_audit_status(self):

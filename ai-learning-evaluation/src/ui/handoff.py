@@ -4,7 +4,10 @@ import os
 from tkinter import messagebox, filedialog
 
 
-class HandoffUI:
+from src.ui.review_experience import ReviewExperienceUI
+
+
+class HandoffUI(ReviewExperienceUI):
     def can_edit_workspace(self):
         if not self.username:
             return True  # Legacy direct DesktopApp callers; production always signs in.
@@ -36,6 +39,7 @@ class HandoffUI:
         except Exception as exc:
             messagebox.showerror('Could not update review', str(exc), parent=self.root)
             return False
+        self.handoff_success = action in ('submit', 'approve')
         self.library_version = version
         self.workflow = state['workflow']
         self.approved_export = state.get('approved_export', '')
@@ -45,6 +49,8 @@ class HandoffUI:
                     action_taken=action, version=version, status=self.workflow.status)
         self.sync_controls()
         self.update_audit_status()
+        self.refresh_preview()
+        self.select_report_tab(1)
         return True
 
     def approve_persistent(self):
@@ -136,3 +142,7 @@ class HandoffUI:
                 widget.configure(state='disabled')
             for button in self.revision_section_buttons.values():
                 button.configure(state='disabled')
+
+        self.update_handoff_surface()
+        self.update_progress_drawer()
+        self.sync_report_tabs()

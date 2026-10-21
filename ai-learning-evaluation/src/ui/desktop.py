@@ -179,6 +179,16 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
               bordercolor=[('focus', TEAL), ('active', '#AB8FD4')])
         s.configure('Library.Primary.TButton', padding=(16, 10), relief='solid', borderwidth=1,
                     bordercolor=TEAL, lightcolor=TEAL, darkcolor=TEAL)
+        s.configure('Create.Library.Primary.TButton', font=(FONT, 12, 'bold'),
+                    padding=(24, 15), width=18)
+        s.configure('Tab.Library.TButton', font=(FONT, 10), padding=(12, 7),
+                    background=BG, foreground=MUTED, bordercolor=BORDER,
+                    lightcolor=BORDER, darkcolor=BORDER)
+        s.map('Tab.Library.TButton', background=[('active', '#EEE7F8')])
+        s.configure('Selected.Tab.Library.TButton', font=(FONT, 10, 'bold'),
+                    background='#EDE4FB', foreground='#6530B3', bordercolor='#CBB7EB',
+                    lightcolor='#CBB7EB', darkcolor='#CBB7EB')
+        s.map('Selected.Tab.Library.TButton', background=[('active', '#E4D7F7')])
         s.configure('More.Library.TButton', padding=(10, 10))
         s.configure('Danger.Library.TButton', foreground='#AC3434', bordercolor='#E7BEBE',
                     lightcolor='#E7BEBE', darkcolor='#E7BEBE')
@@ -659,16 +669,17 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         workspace = panel(p, padx=18, pady=14)
         workspace.grid(row=0, column=0, sticky='nsew')
 
-        actions = tk.Frame(workspace, bg=WHITE)
+        actions = self.report_actions = tk.Frame(workspace, bg=WHITE)
         actions.pack(fill='x', pady=(0, 8))
 
-        audience_box = tk.Frame(actions, bg=WHITE)
+        audience_box = self.audience_box = tk.Frame(actions, bg=WHITE)
         audience_box.pack(side='left')
-        label(audience_box, 'REPORT TYPE', 8, MUTED, True).pack(anchor='w', pady=(0, 4))
+        label(audience_box, 'Report type', 9, MUTED).pack(side='left', padx=(0, 8))
         self.audience = ttk.Combobox(audience_box, values=['facilitator', 'client'],
                                      state='readonly', width=16)
         self.audience.set('facilitator')
-        self.audience.pack(anchor='w')
+        self.audience.pack(side='left')
+        self.audience_summary = label(audience_box, '', 9, MUTED)
         self.audience.bind('<<ComboboxSelected>>', self.audience_changed)
 
         # Detailed approval controls open on click; the next action is always visible.
@@ -698,13 +709,13 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
             pady=9,
             cursor='hand2'
         )
-        self.review_drawer_button.pack(side='right', anchor='s', pady=(18, 0))
+        self.review_drawer_button.pack(side='right')
 
         self.generate_button = self.action(actions, 'Generate draft', self.generate, True)
-        self.generate_button.pack(side='right', anchor='s', padx=(0, 8), pady=(18, 0))
+        self.generate_button.pack(side='right', padx=(0, 8))
 
-        label(workspace, 'Drafts are grounded in the selected survey summaries and must pass human review before export.',
-              9, MUTED, wraplength=820).pack(anchor='w', pady=(0, 10))
+
+        self.build_handoff_surface(workspace)
 
         self.report_tabbar = tk.Frame(workspace, bg=WHITE)
         self.report_tabbar.pack(fill='x')
@@ -891,7 +902,10 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
             counts = self.ledger.counts()
             text = f'Human review · {counts["decided"]}/{counts["total"]} claims'
 
-        self.review_drawer_text.set(text)
+        if self.username:
+            self.update_progress_drawer()
+        else:
+            self.review_drawer_text.set(text)
 
     def refresh_report_tab_bar(self):
         """Rebuild the flat Report Studio tab bar from the notebook tabs."""
@@ -939,6 +953,8 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         self.sync_report_tabs()
 
     def select_report_tab(self, index):
+        if self.username and not self.can_edit_workspace() and index in (0, 2):
+            index = 1
         self.report_tabs.select(index)
         self.sync_report_tabs()
 
@@ -950,7 +966,16 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         except tk.TclError:
             return
 
+        locked = bool(self.username and not self.can_edit_workspace())
         for index, (button, underline) in enumerate(self.report_tab_buttons):
+            if locked and index in (0, 2):
+                button.master.pack_forget()
+            elif not button.master.winfo_manager():
+                # Restore original reading-first order after opening another draft.
+                order = [1, 0, *range(2, len(self.report_tab_buttons))]
+                following = next((self.report_tab_buttons[i][0].master for i in order[order.index(index)+1:]
+                                  if self.report_tab_buttons[i][0].master.winfo_manager()), None)
+                button.master.pack(side='left', padx=(0, 3), **({'before': following} if following else {}))
             active = index == selected
             button.configure(
                 bg=WHITE if active else '#F5F1FA',
@@ -993,9 +1018,10 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         self.pages[index].grid()
         self.pages[index].tkraise()
 
-        if index == 3:
+        if index == 3 or (index == 2 and self.username):
             self.journey_bar.pack_forget()
-            self.refresh_library()
+            if index == 3:
+                self.refresh_library()
         else:
             self.journey_bar.pack(fill='x', padx=24, pady=(0, 10), before=self.content_frame)
         self.update_journey()
@@ -1123,7 +1149,8 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
             audience = self.report.audience.title()
             scope = self.context.course_name if self.context else 'Unknown scope'
             self.preview_meta.configure(text=f'{audience} report • {scope}')
-            self.render(self.preview, self.editor.get('1.0', 'end-1c'))
+            approved = self.username and self.workflow.status == 'HUMAN REVIEWED' and self.approved_export
+            self.render(self.preview, self.approved_export if approved else self.editor.get('1.0', 'end-1c'))
         else:
             self.preview_meta.configure(text='No report available yet')
 
@@ -1182,6 +1209,8 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         self.library_title = ''
         self.library_owner = ''
         self.approved_export = ''
+        self.handoff_success = False
+        self.feedback_expanded = False
         self.frame, self.context, count, courses = result
         self.masked_count = count
         self.show_local_insights()
