@@ -32,8 +32,19 @@ class ReportRepository:
 
     def list_owned(self, actor):
         with self.connect() as db:
-            return [dict(row) for row in db.execute(
+            rows = [dict(row) for row in db.execute(
                 'SELECT id, owner, title, course, status, updated, version, reviewer FROM reports WHERE owner=? ORDER BY updated DESC', (actor,))]
+            # Read feedback only for returned reports, without rebuilding their datasets.
+            from src.storage.snapshot import decode
+            for row in rows:
+                if row['status'] != 'CHANGES REQUESTED':
+                    continue
+                payload = db.execute('SELECT snapshot FROM reports WHERE id=?', (row['id'],)).fetchone()[0]
+                workflow = decode(json.loads(payload)['state']['items']['workflow'])
+                returned = next((e for e in reversed(workflow.events) if e.action == 'Returned for changes'), None)
+                if returned:
+                    row.update(return_notes=returned.notes, returned_by=returned.actor, returned_at=returned.timestamp)
+            return rows
 
     def load(self, report_id, actor):
         with self.connect() as db:
