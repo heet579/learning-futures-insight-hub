@@ -163,8 +163,12 @@ def test_approved_preview_matches_saved_export_and_compact_layout(session, monke
         assert 'Status: HUMAN REVIEWED' in reviewer.preview.get('1.0', 'end-1c')
         assert 'DRAFT — REQUIRES HUMAN REVIEW' not in reviewer.preview.get('1.0', 'end-1c')
         assert reviewer.handoff_success
+        reviewer.root.update_idletasks()
+        height_with_notice = reviewer.report_tabs.winfo_height()
         reviewer.dismiss_handoff_success()
+        reviewer.root.update_idletasks()
         assert not reviewer.handoff_notice.winfo_manager()
+        assert reviewer.report_tabs.winfo_height() > height_with_notice
     assert session.open_library_report(rid)
     session.root.update_idletasks()
     assert not session.handoff_success
@@ -173,7 +177,11 @@ def test_approved_preview_matches_saved_export_and_compact_layout(session, monke
     assert not session.audience.winfo_ismapped()
     assert not session.report_tab_buttons[0][0].winfo_ismapped()
     assert not session.report_tab_buttons[2][0].winfo_ismapped()
-    assert session.report_tabs.winfo_height() / session.pages[2].winfo_height() >= .65
+    # Tk fonts and wrapping differ between macOS and Linux. Use the same
+    # minimum reading-area share as drafts, plus a useful absolute height.
+    # The relative check above verifies that collapsing the notice frees space.
+    assert session.report_tabs.winfo_height() / session.pages[2].winfo_height() >= .60
+    assert session.report_tabs.winfo_height() >= 300
     for widget in (session.export_button, session.review_drawer_button):
         assert_visible_inside(session, widget)
     session.select_report_tab(0)
