@@ -18,19 +18,23 @@ Windows setup launcher: `./run_app.ps1`. After dependencies are installed in you
 
 ## Sign in and manage accounts
 
-The app opens on a sign-in screen. There is no signup, and the workspace is built only after a valid username and password. The repository includes the shared prototype accounts in `config/users.txt`. To add another account from the application folder:
+The app opens on a sign-in screen. There is no signup, and the workspace is built only after a valid username and password. Local accounts live in `config/users.txt`, which is deliberately ignored by Git because it contains authentication data. The repository provides the comment-only `config/users.example.txt` template, but no active credentials.
+
+From the application folder, initialise at least two accounts so the author and second reviewer can sign in separately:
 
 ```powershell
-python -m src.auth add newuser
+python -m src.auth init demo-author demo-reviewer
 ```
 
-Enter and confirm a nonempty password when prompted. Accounts live in **`config/users.txt`**, an editable UTF-8 plain text file tracked in Git. Each active line contains a username, one tab or space, and the readable password (up to 1024 characters). Usernames are case-insensitive; passwords are case-sensitive. Spaces inside passwords are preserved; tabs and line breaks are not allowed. Commit and push account-file changes to share them with the team; teammates receive those changes when they pull.
+The command prompts twice for each password without echoing it, creates `config/users.txt` with restrictive local permissions, and refuses to overwrite an existing file. Passwords are stored as salted PBKDF2-HMAC-SHA256 hashes, never as readable text. Usernames are case-insensitive and passwords are case-sensitive.
 
-To add a user, open `config/users.txt` and add a line such as `alex ExamplePassword123`. Change their password by editing the second value directly. Alternatively, `python -m src.auth add USERNAME` appends an account for you, `python -m src.auth entry USERNAME` prints a line to paste, and `python -m src.auth add USERNAME --replace` resets a password. Remove a line or put `#` at its beginning to disable an account. Changes take effect at the next login attempt; an already-open workspace stays open until closed. Use the account menu in the top-right corner to switch accounts or sign out without restarting the application.
+Use `python -m src.auth add USERNAME` to append an account, `python -m src.auth add USERNAME --replace` to reset one, or `python -m src.auth entry USERNAME` to print a hashed line for an administrator to paste. None of these commands prints the entered password. Remove an account line or put `#` at its beginning to disable it. Changes take effect at the next login attempt; an already-open workspace stays open until closed.
 
-Passwords are stored as plain text for the current prototype. Blank lines and `#` comments are allowed; malformed or duplicate active accounts block login and identify the line to fix. See [the file template](config/users.example.txt). `LOGIN_USERS_FILE` can point to another text file; relative paths resolve from the application folder. Anyone who can read the file can see the passwords, and anyone with write access can manage users. Existing password hashes must be replaced with readable passwords.
+Do not commit `config/users.txt`, copy it into source-controlled locations, or put real passwords in the example file. Blank lines and `#` comments are allowed; plaintext, malformed hashes and duplicate active accounts fail closed and identify the line to fix. `LOGIN_USERS_FILE` can point to another local file; relative paths resolve from the application folder. Anyone with write access to that file can still manage local users.
 
-For Docker Compose, accounts persist in the host's `shared/users.txt`. Copy `config/users.txt` to `../shared/users.txt` to use the repository's accounts, or after starting the container run `docker compose exec insight-hub python -m src.auth add admin` to create the first account if the file has none. You can then edit `shared/users.txt` directly; this Docker copy remains local and is not updated by Git pulls. Other Docker launch methods must set `LOGIN_USERS_FILE` to a writable, persistent account-file location.
+An older plaintext `users.txt` is intentionally not migrated automatically. Move it out of the repository, initialise a new hashed file with the same usernames and new passwords, then securely remove the old copy. Reusing usernames preserves ownership of existing local reports. Any password that was previously committed must be rotated; removing this file now does not remove it from existing Git history.
+
+For Docker Compose, initialise the ignored host file after the container starts with `docker compose exec insight-hub python -m src.auth init demo-author demo-reviewer`. It is written to `shared/users.txt` through `LOGIN_USERS_FILE=/workspace/users.txt`. Other Docker launch methods must point `LOGIN_USERS_FILE` at a writable local location.
 
 ## Application workflow
 

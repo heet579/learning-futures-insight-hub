@@ -9,6 +9,7 @@ from src.ui.desktop import DesktopApp
 from src.storage.reports import ReportRepository
 from src.storage.snapshot import unpack
 from src.ai.local_provider import LocalAnalysisProvider
+from src.auth import authenticate, initialize_users
 from src.reporting.report_generator import generate_report
 from test_account_session import session, tk_runtime
 from test_desktop import load_sample, decide_all_claims
@@ -32,6 +33,28 @@ def ready_report(app, audience='facilitator'):
     app._apply_generated_report(generate_report(app.review_context(), audience, LocalAnalysisProvider()))
     decide_all_claims(app)
     app.library_title = 'Handoff demo'
+
+
+def test_bootstrapped_accounts_complete_two_person_approval(session, tmp_path):
+    accounts = tmp_path / 'users.txt'
+    initialize_users([('demo-author', 'author password'),
+                      ('demo-reviewer', 'reviewer password')], accounts)
+    author_name = authenticate('demo-author', 'author password', accounts)
+    reviewer_name = authenticate('demo-reviewer', 'reviewer password', accounts)
+    with another_account(session, author_name) as author:
+        ready_report(author)
+        assert author.submit_for_approval()
+        report_id = author.library_id
+        assert author.repository.list_pending(author_name) == []
+        assert [row['id'] for row in author.repository.list_pending(reviewer_name)] == [report_id]
+        with another_account(session, reviewer_name) as reviewer:
+            assert reviewer.open_library_report(report_id)
+            assert reviewer.workflow.reviewer == author_name
+            assert reviewer.approver_entry.get() == reviewer_name
+            reviewer.confirmed.set(True)
+            assert reviewer.approve_persistent()
+            assert reviewer.workflow.approver == reviewer_name
+            assert reviewer.workflow.status == 'HUMAN REVIEWED'
 
 
 def test_submit_switch_approve_restart_and_repeat_export(session, monkeypatch, tmp_path):
