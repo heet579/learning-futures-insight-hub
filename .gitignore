@@ -12,6 +12,7 @@ htmlcov/
 .env
 .env.*
 !.env.example
+ai-learning-evaluation/config/users.txt
 
 # Local runtime output
 *.log

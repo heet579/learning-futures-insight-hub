@@ -10,6 +10,14 @@ cd learning-futures-insight-hub
 docker compose up --build -d --wait
 ```
 
+On first use, create two local accounts for the author/second-reviewer workflow:
+
+```sh
+docker compose exec insight-hub python -m src.auth init demo-author demo-reviewer
+```
+
+Enter and confirm a different password for each account. The command writes salted password hashes to the ignored host file `shared/users.txt`, does not print passwords, and refuses to overwrite an existing account file. Never commit that file or real credentials to GitHub. Use `python -m src.auth add USERNAME` inside the container for later accounts.
+
 Open http://localhost:6080/vnc.html?autoconnect=true&resize=scale in your browser. The first build downloads Python, desktop libraries and application dependencies. The browser displays the existing Python desktop application using noVNC; this is not Streamlit or a rewrite of the application as a website.
 
 If Docker reports that it cannot connect to its daemon, open Docker Desktop and wait until its Linux engine is running. This is a host setup issue, before any application code runs.
