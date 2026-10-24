@@ -52,3 +52,5 @@ ai-learning-evaluation/data/*.xlsx
 # Local assistant settings and generated hand-outs
 .claude/
 Claude outputs/
+.neon
+node_modules/

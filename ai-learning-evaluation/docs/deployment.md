@@ -25,21 +25,33 @@ the audit log live:
 
 ## 1. Create the database (Neon)
 
-1. Sign up at <https://neon.tech> (free plan) and create a project, e.g. `insight-hub`.
-   Pick the region closest to Render's (e.g. AWS Singapore or Oregon, matching step 2).
-2. On the project dashboard choose **Connect**, keep the default database, and copy the
-   connection string. It looks like
-   `postgresql://user:password@ep-xxxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require`.
-3. Keep it private. Do not commit it or paste it into chats or tickets.
+The repository is linked to Neon with `neon.ts` (services: Postgres only). From the repository
+root, in PowerShell (needs Node.js):
 
-The server creates its tables (`users`, `reports`, `audit_log`) on first start.
+```powershell
+npx neon@latest login        # finish the sign-in in the browser
+npx neon@latest init -y --org-id org-plain-mouse-72839248 --project-id calm-dawn-47734230 --branch production --services postgres
+npx neon@latest deploy       # provisions neon.ts and writes DATABASE_URL + DATABASE_URL_UNPOOLED to .env.local (or .env)
+cd ai-learning-evaluation
+pip install -r server/requirements.txt
+python -m server.manage check
+```
+
+`check` connects, creates the tables (`users`, `reports`, `audit_log`) over the direct connection,
+does a rolled-back write/read, verifies the audit chain and runs a library query.
+
+* `DATABASE_URL` is the **pooled** URL (host contains `-pooler`): the server's normal traffic.
+* `DATABASE_URL_UNPOOLED` is the **direct** URL: used only to create tables.
+* Both contain the password. `.env` and `.env.local` are ignored by Git; never paste them into
+  chats or tickets.
 
 ## 2. Deploy the API (Render)
 
 1. Sign up at <https://render.com> with GitHub and allow access to this repository.
 2. **New + → Blueprint**, pick the repository. Render reads [`render.yaml`](../../render.yaml).
 3. When asked for values, enter:
-   * `DATABASE_URL` – the Neon connection string from step 1.
+   * `DATABASE_URL` and `DATABASE_URL_UNPOOLED` – copy both values from the `.env.local` (or `.env`)
+     that `neon deploy` wrote in step 1.
    * `ADMIN_USERNAME` / `ADMIN_PASSWORD` – the first administrator (e.g. `heet`). It is created on
      startup if it does not exist. You can remove `ADMIN_PASSWORD` afterwards.
    * `SECRET_KEY` is generated automatically.

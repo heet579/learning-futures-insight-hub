@@ -121,11 +121,15 @@ class _EmptyCursor:
 class Database:
     """One storage location: a postgresql:// URL, or a SQLite file path for tests and local runs."""
 
-    def __init__(self, url):
+    def __init__(self, url, direct_url=None):
+        """`url` carries the app's queries (Neon: the pooled -pooler URL). `direct_url`
+        (Neon: DATABASE_URL_UNPOOLED) is used only to create tables, as Neon recommends
+        for schema changes; without it the main URL is used."""
         if not url:
             raise ValueError('DATABASE_URL is not set.')
         self.is_postgres = url.startswith(('postgres://', 'postgresql://'))
         self.url = normalise_url(url) if self.is_postgres else str(Path(url).expanduser())
+        self.direct_url = normalise_url(direct_url) if self.is_postgres and direct_url else self.url
         self._ready = False
 
     def describe(self):
@@ -135,10 +139,13 @@ class Database:
         return f'Postgres {parts.hostname}{parts.path}'
 
     @contextmanager
-    def connect(self):
+    def connect(self, direct=False):
         if self.is_postgres:
             import psycopg
-            raw = psycopg.connect(self.url, connect_timeout=20)
+            # prepare_threshold=None: no server-side prepared statements, which a
+            # transaction-mode connection pooler (Neon's -pooler endpoint) cannot track.
+            raw = psycopg.connect(self.direct_url if direct else self.url,
+                                  connect_timeout=20, prepare_threshold=None)
             db = PostgresConnection(raw)
         else:
             Path(self.url).parent.mkdir(parents=True, exist_ok=True)
@@ -152,7 +159,7 @@ class Database:
     def initialise(self):
         if self._ready:
             return
-        with self.connect() as db:
+        with self.connect(direct=True) as db:
             with db:
                 db.execute(REPORTS_TABLE)
                 db.execute(USERS_TABLE)

@@ -14,7 +14,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.13.5
       - key: DATABASE_URL
-        sync: false          # Neon connection string, entered in the Render dashboard
+        sync: false          # Neon pooled connection string (host contains -pooler)
+      - key: DATABASE_URL_UNPOOLED
+        sync: false          # Neon direct connection string, used only to create tables
       - key: SECRET_KEY
         generateValue: true  # signs sign-in tokens; Render generates it once
       - key: ADMIN_USERNAME

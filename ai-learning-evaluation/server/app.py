@@ -2,7 +2,7 @@
 
 Run locally:   uvicorn server.app:app --reload        (from ai-learning-evaluation/)
 On Render:     uvicorn server.app:app --host 0.0.0.0 --port $PORT
-Configuration: DATABASE_URL (Neon), SECRET_KEY, optional ADMIN_USERNAME / ADMIN_PASSWORD.
+Configuration: DATABASE_URL (Neon pooled URL), optional DATABASE_URL_UNPOOLED, SECRET_KEY, optional ADMIN_USERNAME / ADMIN_PASSWORD.
 """
 import logging
 import os
@@ -21,8 +21,8 @@ log = logging.getLogger('insight_hub.server')
 
 
 class Services:
-    def __init__(self, url):
-        self.database = Database(url)
+    def __init__(self, url, direct_url=None):
+        self.database = Database(url, direct_url)
         self.reports = DatabaseReportRepository(self.database)
         # SQLite allows one writer per file, and an approval writes the audit chain while the
         # report row is locked, so a SQLite server keeps its audit chain in a second file.
@@ -48,7 +48,8 @@ def bootstrap_admin(users):
 
 
 def create_app(database_url=None):
-    services = Services(database_url or default_database_url())
+    services = Services(database_url or default_database_url(),
+                        None if database_url else os.getenv('DATABASE_URL_UNPOOLED', '').strip() or None)
 
     @asynccontextmanager
     async def lifespan(app):
