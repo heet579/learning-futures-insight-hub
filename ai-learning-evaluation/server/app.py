@@ -21,6 +21,14 @@ from src.storage.database import (NO_PASSWORD, Database, DatabaseAuditTrail, Dat
 from server.security import issue_token, read_token
 
 log = logging.getLogger('insight_hub.server')
+APP_FOLDER = Path(__file__).resolve().parents[1]
+WEB_FOLDER = APP_FOLDER / 'web'
+
+try:  # Local runs read ai-learning-evaluation/.env; on Render the dashboard variables are used.
+    from dotenv import load_dotenv
+    load_dotenv(APP_FOLDER / '.env', override=False)
+except ImportError:
+    pass
 
 
 class Services:
@@ -41,13 +49,13 @@ def google_config():
 
 def verify_google_token(token):
     """Check a Google ID token's signature, expiry, issuer and audience. Returns its claims."""
-    client_id, _ = google_config()
-    if not client_id:
+    audiences = [a for a in (google_config()[0], os.getenv('GOOGLE_WEB_CLIENT_ID', '').strip()) if a]
+    if not audiences:
         raise ValueError('Google sign-in is not set up on this server.')
     from google.auth.transport import requests as google_requests
     from google.oauth2 import id_token
     try:
-        return id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+        return id_token.verify_oauth2_token(token, google_requests.Request(), audiences)
     except ValueError:
         raise ValueError('Google sign-in could not be verified. Please try again.') from None
 
@@ -376,6 +384,14 @@ def create_app(database_url=None):
     @app.get('/audit/verify')
     def verify_audit(user=Depends(current_user)):
         return services.audit.verify()
+
+    from server.web_api import build_router
+    app.include_router(build_router(services, current_user))
+
+    if WEB_FOLDER.is_dir():
+        # The browser app. Registered last so every API route above takes precedence.
+        from fastapi.staticfiles import StaticFiles
+        app.mount('/', StaticFiles(directory=WEB_FOLDER, html=True), name='web')
 
     return app
 
