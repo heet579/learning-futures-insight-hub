@@ -21,8 +21,6 @@ from src.review.claims import ClaimLedger, ai_text_retained, extract_claims, rem
 from src.review.themes import CATEGORIES, ThemeReview, matched_keywords
 from src.workflow import ReviewWorkflow
 
-DEFAULT_CHART_SPECS = ({'kind': 'ratings_stacked'}, {'kind': 'ratings_box'}, {'kind': 'themes'}, {'kind': 'recommend'})
-
 ALL_COURSES = 'All courses (aggregate)'
 EDITABLE = ('DRAFT', 'CHANGES REQUESTED')
 
@@ -68,17 +66,47 @@ def new_state(raw, file_names):
         'revision_section_snapshots': {}, 'content': '', 'theme_decisions': {}, 'claim_decisions': {},
         'claim_history': [], 'revision_input': '', 'revision_method': 'Gemini', 'replacement_input': '',
         'revision_selection': [], 'audience': 'facilitator', 'approved_export': '',
-        'charts': [dict(spec) for spec in DEFAULT_CHART_SPECS],
+        'charts': [], 'charts_enabled': True,
     }
 
 
 # ---- charts in the designed report -----------------------------------------------------------
-def charts_of(state):
-    from src.reporting.charts import DEFAULT_CHARTS, chart_list
+def _ai_or_none():
+    from src.ai.selection import ai_provider
     try:
-        return chart_list(state.get('charts') or DEFAULT_CHARTS)
+        return ai_provider()
     except ValueError:
-        return chart_list(DEFAULT_CHARTS)
+        return None
+
+
+def charts_enabled(state):
+    return state.get('charts_enabled', True) is not False
+
+
+def charts_of(state):
+    """The report's charts. Reports saved before charts were chosen get the rule-based choice."""
+    from src.reporting.charts import auto_choose, chart_list
+    specs = state.get('charts')
+    if specs:
+        try:
+            return chart_list(specs)
+        except ValueError:
+            pass
+    return auto_choose(state['frame'], reviewed_context(state))
+
+
+def choose_charts(state, provider=None):
+    """Let the AI (or the rules, without one) pick the charts that suit this data."""
+    from src.reporting.charts import auto_choose
+    require_editable(state)
+    state['charts'] = auto_choose(state['frame'], reviewed_context(state), provider if provider is not None else _ai_or_none())
+    return state['charts']
+
+
+def set_charts_enabled(state, enabled):
+    require_editable(state)
+    state['charts_enabled'] = bool(enabled)
+    return 'The report will include charts.' if enabled else 'The report will be text only.'
 
 
 def set_charts(state, specs):
@@ -86,29 +114,43 @@ def set_charts(state, specs):
     from src.reporting.charts import MAX_CHARTS, chart_list
     require_editable(state)
     if not specs:
-        raise ValueError('Keep at least one chart in the report.')
+        raise ValueError('Keep at least one chart, or switch the report to text only.')
     if len(specs) > MAX_CHARTS:
         raise ValueError(f'The two-page report has room for {MAX_CHARTS} charts.')
     state['charts'] = chart_list(specs)
     return state['charts']
 
 
-def describe_chart(state, text, replace=None):
-    """Add (or replace chart number `replace`) from a plain-English description."""
-    from src.reporting.charts import MAX_CHARTS, parse_request
+def remove_chart(state, index):
     require_editable(state)
-    spec, message = parse_request(text)
     charts = charts_of(state)
+    if not 0 <= index < len(charts):
+        raise ValueError('That chart is not in the report.')
+    if len(charts) == 1:
+        raise ValueError('Keep at least one chart, or switch the report to text only.')
+    charts.pop(index)
+    state['charts'] = charts
+    return 'Chart removed.'
+
+
+def describe_chart(state, text, replace=None, provider=None):
+    """Add (or replace chart number `replace`) from a plain-English description of any chart."""
+    from src.reporting.charts import MAX_CHARTS, request_chart
+    require_editable(state)
+    spec, message = request_chart(text, provider if provider is not None else _ai_or_none())
+    spec['reason'] = 'Requested: ' + text.strip()[:150]
+    charts = charts_of(state)
+    if replace is None and len(charts) >= MAX_CHARTS:
+        replace = len(charts) - 1          # the report has room for four: the last one makes way
     if replace is not None:
         if not 0 <= replace < len(charts):
             raise ValueError('That chart is not in the report.')
         charts[replace] = spec
-        message = message.replace('Added:', 'Changed to:')
-    elif len(charts) >= MAX_CHARTS:
-        raise ValueError(f'The report already has {MAX_CHARTS} charts. Remove or replace one first.')
+        message = message.replace('Added:', f'Figure {replace + 1} is now:')
     else:
         charts.append(spec)
     state['charts'] = charts
+    state['charts_enabled'] = True
     return message
 
 
@@ -156,8 +198,9 @@ def decide_theme(state, name, status, category=None):
 
 
 # ---- draft ---------------------------------------------------------------------------------
-def generate(state, audience, provider=None):
-    """Create the draft. Returns a short notice when the draft had to use local wording."""
+def generate(state, audience, provider=None, charts=True):
+    """Create the draft. Returns a short notice when the draft had to use local wording.
+    `charts` is the author's answer to "Include charts in the report?"; when yes, the AI picks them."""
     from src.ai.local_provider import LocalAnalysisProvider
     from src.reporting.report_generator import generate_report
     require_editable(state)
@@ -184,7 +227,11 @@ def generate(state, audience, provider=None):
         notice = 'The AI service was unavailable, so this draft uses fixed local wording.'
     state.update(report=report, content=report.content, audience=audience, claim_decisions={}, claim_history=[],
                  themes_changed_since_draft=False, pending_revision=None, revision_history=[],
-                 revision_section_decisions={}, revision_section_snapshots={})
+                 revision_section_decisions={}, revision_section_snapshots={}, charts_enabled=bool(charts))
+    if charts:
+        from src.reporting.charts import auto_choose
+        state['charts'] = auto_choose(state['frame'], context,
+                                      None if isinstance(provider, LocalAnalysisProvider) else provider)
     return notice
 
 
@@ -276,7 +323,7 @@ def blockers(state):
         items.append('Themes changed after the draft was created: create the draft again.')
     ledger = ledger_of(state)
     if ledger.pending:
-        items.append(f'Check every statement and quote ({len(ledger.claims) - len(ledger.pending)} of {len(ledger.claims)} done).')
+        items.append(f'Fix the {len(ledger.pending)} item(s) the automatic check flagged.')
     if unsupported_claims(state['content'], reviewed_context(state)):
         items.append('Fix numbers or quotes that do not match the data.')
     if state['pending_revision'] is not None:
@@ -313,8 +360,9 @@ def _claim_view(ledger):
             'key': claim.key, 'section': claim.section, 'text': claim.text, 'kind': claim.kind,
             'origin': claim.origin, 'problems': claim.problems, 'possible_names': claim.possible_names,
             'evidence': claim.evidence, 'decision': ledger.status_of(claim.key),
+            'verified': claim.verified, 'needs_person': claim.needs_person,
             'checks': [{'kind': c.kind, 'text': c.text, 'supported': c.supported} for c in claim.checks],
-            'blocking': any(p.startswith(('Unsupported', 'Quote does not match')) for p in claim.problems),
+            'blocking': claim.blocking,
         })
     return claims
 
@@ -359,9 +407,23 @@ def view(state, *, can_edit, can_review):
         'blockers': blockers(state) if workflow.status in EDITABLE else [],
         'summary': review_summary(state) if state['report'] is not None else None,
         'approved': bool(state.get('approved_export')),
-        'charts': charts_of(state), 'chart_kinds': _chart_catalogue(),
+        'charts': charts_of(state), 'chart_kinds': _chart_catalogue(), 'charts_enabled': charts_enabled(state),
+        'clear': _clear_view(state, ledger, can_review),
         'can_edit': can_edit, 'can_review': can_review,
     }
+
+
+def _clear_view(state, ledger, can_review):
+    from src.reporting.grounding import unsupported_claims
+    from src.review import clear
+    if state['report'] is None:
+        return None
+    context = reviewed_context(state)
+    out = {'check': clear.check(state, ledger, unsupported_claims(state['content'], context)),
+           'level': clear.level(state, context), 'answers': state.get('clear')}
+    if can_review:
+        out['examine'] = clear.examine(state, context)
+    return out
 
 
 def _chart_catalogue():

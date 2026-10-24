@@ -178,9 +178,8 @@ def test_studio_guides_read_check_and_approval(session):
     assert session.generate_button.instate(['!disabled'])
     session._apply_generated_report(generate_report(session.review_context(), 'facilitator', LocalAnalysisProvider()))
     assert session.report_tabs.index(session.report_tabs.select()) == 1
-    session.continue_report()
-    assert session.report_tabs.index(session.report_tabs.select()) == 3
-    decide_all_claims(session)
+    # CLEAR: the app already checked every fact, so the next step goes straight to the handoff.
+    assert not session.ledger.pending
     session.library_title = 'Visible handoff'
     session.continue_report()
     assert session.workflow.status == 'AWAITING HUMAN REVIEW'

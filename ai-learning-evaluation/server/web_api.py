@@ -111,11 +111,12 @@ def build_router(services, current_user):
 
     class Draft(BaseModel):
         audience: Literal['facilitator', 'client']
+        charts: bool = True
 
     @router.post('/reports/{report_id}/draft')
     def draft(report_id: str, body: Draft, user=Depends(current_user)):
-        return change(report_id, user, lambda s: workspace.generate(s, body.audience), 'Draft generated',
-                      audience=body.audience)
+        return change(report_id, user, lambda s: workspace.generate(s, body.audience, charts=body.charts),
+                      'Draft generated', audience=body.audience, charts=body.charts)
 
     class Content(BaseModel):
         content: str = Field(max_length=200_000)
@@ -151,12 +152,38 @@ def build_router(services, current_user):
                      'undo': workspace.undo_revision}[action]
         return change(report_id, user, lambda s: operation(s) and None, f'Revision {action}')
 
+    # ---- CLEAR review: timing and the oversight panel -------------------------------------------
+    @router.post('/reports/{report_id}/review/start')
+    def review_start(report_id: str, user=Depends(current_user)):
+        """The reviewer opened the questions; the server times the review from here."""
+        row, state = open_report(report_id, user)
+        _, can_review = permissions(row, state, user)
+        if not can_review:
+            raise HTTPException(403, 'This report is not waiting for your review.')
+        services.audit.append('Review opened', user['username'], report_id=report_id)
+        return {'started': True}
+
+    @router.get('/oversight')
+    def oversight(user=Depends(current_user)):
+        if user['role'] != 'admin':
+            raise HTTPException(403, 'Only an administrator can see the oversight panel.')
+        from server.oversight import summarise
+        names = {u['username']: u['display_name'] or u['username'] for u in services.users.list()}
+        events = services.audit.events({'Approved', 'Returned for changes'})
+        result = summarise(events, names)
+        titles = services.reports.titles([d['report_id'] for d in result['recent']])
+        for item in result['recent']:
+            item['title'] = titles.get(item['report_id'], 'Deleted report')
+        return result
+
     # ---- charts in the two-page report ---------------------------------------------------------
     class ChartSpec(BaseModel):
         kind: str = Field(max_length=40)
         measure: str | None = Field(default=None, max_length=60)
+        measure2: str | None = Field(default=None, max_length=60)
         group: str | None = Field(default=None, max_length=60)
         title: str | None = Field(default=None, max_length=90)
+        reason: str | None = Field(default=None, max_length=200)
 
     class Charts(BaseModel):
         charts: list[ChartSpec] = Field(max_length=4)
@@ -166,6 +193,27 @@ def build_router(services, current_user):
         specs = [c.model_dump(exclude_none=True) for c in body.charts]
         return change(report_id, user, lambda s: workspace.set_charts(s, specs) and None, 'Report charts changed',
                       charts=', '.join(c.kind for c in body.charts))
+
+    class ChartsEnabled(BaseModel):
+        enabled: bool
+
+    @router.put('/reports/{report_id}/charts/enabled')
+    def charts_enabled(report_id: str, body: ChartsEnabled, user=Depends(current_user)):
+        return change(report_id, user, lambda s: workspace.set_charts_enabled(s, body.enabled),
+                      'Report charts changed', enabled=body.enabled)
+
+    @router.post('/reports/{report_id}/charts/auto')
+    def charts_auto(report_id: str, user=Depends(current_user)):
+        def operation(state):
+            workspace.choose_charts(state)
+            state['charts_enabled'] = True
+            return 'Charts chosen to suit this data.'
+        return change(report_id, user, operation, 'Report charts changed', chosen='auto')
+
+    @router.delete('/reports/{report_id}/charts/{index}')
+    def chart_remove(report_id: str, index: int, user=Depends(current_user)):
+        return change(report_id, user, lambda s: workspace.remove_chart(s, index), 'Report charts changed',
+                      removed=index)
 
     class ChartRequest(BaseModel):
         text: str = Field(min_length=1, max_length=300)

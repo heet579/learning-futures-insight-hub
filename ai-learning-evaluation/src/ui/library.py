@@ -361,7 +361,7 @@ class LibraryUI:
             elif self.themes_changed_since_draft:
                 hint, text = 'Theme decisions changed. Regenerate the draft before checking it.', 'Review themes →'
             elif self.ledger.pending:
-                hint = f'{len(self.ledger.pending)} claims still need checking. Read the preview, then check facts & quotes.'
+                hint = f'{len(self.ledger.pending)} item(s) failed the automatic check. Fix them in Check facts & quotes.'
             elif self.update_evidence_check():
                 hint = 'Fix unmatched figures or quotes before submission.'
             else:
@@ -407,7 +407,8 @@ class LibraryUI:
                      replacement_input=self.replacement.get('1.0', 'end-1c'),
                      revision_selection=self.selected_revision_sections(),
                      audience=self.audience.get(), approved_export=self.approved_export,
-                     charts=getattr(self, 'charts', None))
+                     charts=getattr(self, 'charts', None), charts_enabled=getattr(self, 'charts_enabled', True),
+                     clear=getattr(self, 'clear_answers', None))
         return pack(state)
 
     def library_unsaved(self):
@@ -469,6 +470,8 @@ class LibraryUI:
         self.library_owner = row['owner']
         self.approved_export = state.get('approved_export', '')
         self.charts = state.get('charts')
+        self.charts_enabled = state.get('charts_enabled', True)
+        self.clear_answers = state.get('clear')
         for name in ('report', 'workflow', 'themes_changed_since_draft'):
             setattr(self, name, state[name])
         self.theme_review.decisions = state['theme_decisions']

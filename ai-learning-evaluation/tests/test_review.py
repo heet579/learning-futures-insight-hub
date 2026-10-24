@@ -75,7 +75,9 @@ def test_decisions_survive_unrelated_edits_but_not_changed_text(ctx):
     assert ledger.complete
     changed = report.content.replace('Overall satisfaction averaged', 'Overall satisfaction was')
     ledger.sync(extract_claims(changed, report, ctx))
-    assert [c.section for c in ledger.pending] == ['Executive Summary']
+    new = [c for c in ledger.claims if c.key not in ledger.decisions]
+    assert [c.section for c in new] == ['Executive Summary']          # changed text is a new claim
+    assert all(ledger.status_of(c.key) == 'auto' for c in new)        # and the app re-checks it
 
 
 def test_fast_review_flag():

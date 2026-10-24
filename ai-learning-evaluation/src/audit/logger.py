@@ -61,6 +61,20 @@ class AuditTrail:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
         return event
 
+    def events(self, actions=None) -> list[dict]:
+        if not self.path.exists():
+            return []
+        out = []
+        with self.path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if actions is None or event.get("action") in actions:
+                    out.append(event)
+        return out
+
     def verify(self) -> dict:
         """Recompute every hash. Returns ok, number of entries and where the chain breaks."""
         if not self.path.exists():

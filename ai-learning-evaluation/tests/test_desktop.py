@@ -175,13 +175,11 @@ def test_report_preview_and_full_human_review_export(desktop, monkeypatch, tmp_p
     assert 'Facilitator' in desktop.report_status.get()
     assert desktop.preview.tag_ranges('title')
     assert 'DRAFT' in desktop.preview.get('1.0', 'end')
-    # Gate 2: every claim starts pending and blocks submission.
-    assert desktop.ledger.claims and not desktop.ledger.complete
+    # CLEAR Check: facts that match the data are verified automatically; nothing waits for a click.
+    assert desktop.ledger.claims and desktop.ledger.complete and not desktop.ledger.pending
+    assert desktop.ledger.counts()['auto'] == len(desktop.ledger.claims)
     assert desktop.author_entry.get() == 'Alex Author'  # asked for at the first theme decision
-    assert desktop.submit_for_approval() is False
-    assert desktop.workflow.status == 'DRAFT'
     assert desktop.export_button.instate(['disabled'])
-    decide_all_claims(desktop)
     assert desktop.submit_for_approval()
     assert desktop.workflow.status == 'AWAITING HUMAN REVIEW'
     # Gate 4: the author cannot approve their own report.
@@ -205,7 +203,7 @@ def test_report_preview_and_full_human_review_export(desktop, monkeypatch, tmp_p
     chain = AuditTrail(tmp_path / 'audit.jsonl').verify()
     assert chain['ok'] and chain['entries'] > 5
     log = (tmp_path / 'audit.jsonl').read_text(encoding='utf-8')
-    decisions = [json.loads(line) for line in log.splitlines() if '"Claim ' in line or '"Theme ' in line]
+    decisions = [json.loads(line) for line in log.splitlines() if '"Theme ' in line]
     assert decisions and all(d['actor'] == 'Alex Author' for d in decisions)
     assert 'Approved' in log and 'Exported' in log
     assert desktop.context.themes[0].evidence[0] not in log

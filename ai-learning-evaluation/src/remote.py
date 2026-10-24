@@ -208,12 +208,15 @@ class RemoteReportRepository:
         self._check(actor)
         self._call('DELETE', f'/reports/{urllib.parse.quote(report_id, safe="")}?version={int(version)}')
 
-    def transition(self, *, actor, report_id, version, action, notes='', role='', confirmed=False, audit=None):
+    def transition(self, *, actor, report_id, version, action, notes='', role='', confirmed=False, audit=None,
+                   clear=None):
         # The server writes the approval to its own audit chain; `audit` is ignored here.
         from src.storage.snapshot import unpack
         self._check(actor)
-        result = self._call('POST', f'/reports/{urllib.parse.quote(report_id, safe="")}/transition',
-            {'version': version, 'action': action, 'notes': notes, 'role': role, 'confirmed': bool(confirmed)})
+        body = {'version': version, 'action': action, 'notes': notes, 'role': role, 'confirmed': bool(confirmed)}
+        if clear is not None:
+            body['clear'] = clear
+        result = self._call('POST', f'/reports/{urllib.parse.quote(report_id, safe="")}/transition', body)
         return result['version'], unpack(result['snapshot'])
 
 
