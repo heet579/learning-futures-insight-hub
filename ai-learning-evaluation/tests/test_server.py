@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from server.app import create_app
 from server.security import issue_token, read_token
 from src.storage.database import Database, password_hash, password_matches
-from test_login import tk_runtime  # noqa: F401  (shared Tk root fixture)
 
 BACKENDS = ['sqlite'] + (['postgres'] if os.getenv('INSIGHT_HUB_TEST_DATABASE_URL') else [])
 

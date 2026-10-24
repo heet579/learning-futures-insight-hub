@@ -1,5 +1,17 @@
 # Learning Futures Insight Hub
 
+## Run the test suite
+
+From the repository root, run `./testsuit` in PowerShell or on macOS/Linux, or `testsuit.cmd`
+in Command Prompt. PowerShell also accepts the explicit `./testsuit.ps1` filename. The launcher prints progress and results by area, then saves
+JSON and JUnit reports in `test-results/latest/`. It uses temporary local data and does not
+load your app's `.env` settings. First install the packages with
+`python -m pip install -r ai-learning-evaluation/server/requirements.txt`.
+
+Use `--list` to see groups, `--suite data` to select one, or `--headless` to skip desktop
+windows explicitly. See the [test suite guide](ai-learning-evaluation/docs/testing_strategy.md)
+for examples, report fields, setup help, exit codes, and optional Postgres testing.
+
 A Python desktop application for analysing learner feedback, exploring survey insights, and generating human-reviewed evaluation reports.
 
 The application uses Tkinter and runs in its own desktop window. Imports, calculated metrics

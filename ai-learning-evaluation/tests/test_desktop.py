@@ -1,7 +1,6 @@
 """Desktop workflow regressions; no external services or interactive dialogs."""
 import json
 import time
-import os
 import sys
 import tkinter as tk
 from pathlib import Path
@@ -21,22 +20,6 @@ def docx_text(path):
             lines.append(': '.join(cells) if len(cells) == 2 and cells[0] and ':' not in cells[0] else ' '.join(cells))
     return '\n'.join(lines)
 
-
-
-@pytest.fixture(scope='module')
-def tk_runtime():
-    # Keep one Tcl interpreter, with a fresh window per test. Repeated interpreter
-    # creation intermittently fails loading Tcl library files on Windows.
-    _setup_environment()
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        if sys.platform == 'win32' or os.getenv('REQUIRE_DESKTOP_TESTS') == '1':
-            raise
-        pytest.skip(f'Tk display unavailable: {exc}')
-    root.withdraw()
-    yield root
-    root.destroy()
 
 
 @pytest.fixture

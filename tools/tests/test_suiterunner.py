@@ -92,6 +92,14 @@ def test_empty_selection_is_not_a_success(project):
     assert report['status'] == 'NO TESTS' and report['deselected'] == 1
 
 
+def test_interruption_does_not_count_an_unfinished_test_as_passed(project):
+    process, report = run_project(project, 'def test_stop():\n    raise KeyboardInterrupt\n')
+    assert process.returncode == 2
+    assert report['status'] == 'INTERRUPTED'
+    assert report['counts'].get('passed', 0) == 0
+    assert report['counts'] == {'incomplete': 1}
+
+
 def test_unexpected_pass_fails_and_expected_failure_stays_distinct(project):
     source = ('import pytest\n@pytest.mark.xfail(reason="known issue")\ndef test_known():\n    assert False\n'
               '@pytest.mark.xfail(reason="fixed issue")\ndef test_fixed():\n    assert True\n')
@@ -128,6 +136,7 @@ def test_environment_clears_cloud_and_postgres_without_changing_parent(monkeypat
     assert 'GEMINI_API_KEY' not in env and 'SERVER_URL' not in env
     assert 'INSIGHT_HUB_TEST_DATABASE_URL' not in env and 'PYTEST_ADDOPTS' not in env
     assert env['DATABASE_URL'] == str(tmp_path / 'server.sqlite3')
+    assert env['PYTHONUTF8'] == '1'
     import os
     assert os.environ['DATABASE_URL'] == 'private-value'
 

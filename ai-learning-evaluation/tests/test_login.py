@@ -1,7 +1,6 @@
 """Real Tk sign-in interaction and startup gate regressions."""
-import os
-import sys
 import time
+import sys
 import tkinter as tk
 
 import pytest
@@ -9,20 +8,6 @@ import pytest
 from src.auth import add_user
 from src.ui.login import LoginScreen
 from src.ui.runtime import _setup_environment, launch
-
-
-@pytest.fixture(scope='module')
-def tk_runtime():
-    _setup_environment()
-    try:
-        root = tk.Tk()
-    except tk.TclError as exc:
-        if sys.platform == 'win32' or os.getenv('REQUIRE_DESKTOP_TESTS') == '1':
-            raise
-        pytest.skip(f'Tk display unavailable: {exc}')
-    root.withdraw()
-    yield root
-    root.destroy()
 
 
 @pytest.fixture

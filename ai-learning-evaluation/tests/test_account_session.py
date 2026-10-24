@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from test_login import tk_runtime, wait_for_login
+from test_login import wait_for_login
 from test_desktop import load_sample
 from src.ui.desktop import DesktopApp
 

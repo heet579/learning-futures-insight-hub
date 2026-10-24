@@ -5,7 +5,7 @@ from src.storage.reports import ReportRepository
 from src.storage.snapshot import unpack
 from src.ai.local_provider import LocalAnalysisProvider
 from src.reporting.report_generator import generate_report
-from test_account_session import session, tk_runtime
+from test_account_session import session
 from test_desktop import load_sample, decide_all_claims
 
 
@@ -218,7 +218,8 @@ def test_primary_navigation_fits_small_window(session):
     session.root.geometry('1080x740')
     for page in (0, 1, 2, 3):
         session.navigate(page)
-        session.root.update_idletasks()
+        # Process native window mapping as well as idle layout on Windows.
+        session.root.update()
         widgets = [session.account_button, session.nav_buttons[page]]
         widgets += ([session.create_report_button] if page == 3 else
                     [session.studio_save_button] if page == 2 else
@@ -423,6 +424,9 @@ def test_library_more_menu_selection_dismissal_and_rename(session, monkeypatch):
     first_card['trigger'].invoke()
     assert session.library_open_actions is None
     first_card['trigger'].invoke()
+    session.root.update()
+    # Generated key events need keyboard focus, just as a real keypress does.
+    first_card['rename'].focus_force()
     session.root.update()
     first_card['rename'].event_generate('<Escape>')
     session.root.update()

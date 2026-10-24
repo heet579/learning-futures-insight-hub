@@ -10,7 +10,7 @@ from src.storage.reports import ReportRepository
 from src.storage.snapshot import unpack
 from src.ai.local_provider import LocalAnalysisProvider
 from src.reporting.report_generator import generate_report
-from test_account_session import session, tk_runtime
+from test_account_session import session
 from test_desktop import load_sample, decide_all_claims
 
 def docx_text(path):

@@ -21,7 +21,7 @@ class ResultBook:
 
     def record(self, report):
         item = self.tests.setdefault(report.nodeid, {
-            'id': report.nodeid, 'suite': group_for(report.nodeid), 'outcome': 'passed',
+            'id': report.nodeid, 'suite': group_for(report.nodeid), 'outcome': 'incomplete',
             'duration': 0.0, 'detail': '',
         })
         item['duration'] += report.duration
@@ -34,6 +34,8 @@ class ResultBook:
             item['detail'] = str(report.longrepr)
         elif expected and report.passed and report.when == 'call':
             item['outcome'], item['detail'] = 'xpassed', str(expected)
+        elif report.when == 'call' and report.passed and item['outcome'] == 'incomplete':
+            item['outcome'] = 'passed'
         return item
 
     def counts(self, items=None):
@@ -151,7 +153,7 @@ class SuiteReporter:
         if self.file_done[file] == self.file_totals[file]:
             records = [entry for entry in self.book.tests.values() if entry['id'].split('::')[0] == file]
             counts = self.book.counts(records)
-            bad = any(counts.get(key, 0) for key in ('failed', 'error', 'xpassed'))
+            bad = any(counts.get(key, 0) for key in ('failed', 'error', 'xpassed', 'incomplete'))
             skipped = counts.get('skipped', 0) + counts.get('xfailed', 0)
             status = 'FAIL' if bad else 'SKIP' if skipped else 'PASS'
             self.say(f'  [{status}] {Path(file).name:34} ' +
@@ -161,16 +163,17 @@ class SuiteReporter:
     def pytest_sessionfinish(self, session, exitstatus):
         counts = self.book.counts()
         has_skips = counts.get('skipped') or self.collection_skips
-        if counts.get('xpassed') or (has_skips and os.environ.get('INSIGHT_HUB_SUITE_STRICT_SKIPS') == '1'):
+        if (counts.get('xpassed') or counts.get('incomplete') or (has_skips and os.environ.get('INSIGHT_HUB_SUITE_STRICT_SKIPS') == '1')) and not session.exitstatus:
             session.exitstatus = 1
         code = int(session.exitstatus)
         elapsed = time.monotonic() - self.started
         status = ('PASSED WITH SKIPS' if has_skips or counts.get('xfailed') else 'PASSED') if code == 0 else {
-            1: 'FAILED', 2: 'INTERRUPTED OR COLLECTION ERROR', 3: 'INTERNAL ERROR', 4: 'USAGE ERROR', 5: 'NO TESTS',
+            1: 'FAILED', 2: 'COLLECTION ERROR' if self.collection_errors else 'INTERRUPTED',
+            3: 'INTERNAL ERROR', 4: 'USAGE ERROR', 5: 'NO TESTS',
         }.get(code, 'ERROR')
         self.say('\n' + '=' * 78, 'heading')
         self.say('TEST RESULTS BY AREA', 'heading')
-        self.say(f'{"Area":12} {"Pass":>6} {"Fail":>6} {"Error":>6} {"Skip":>6} {"Xfail":>6} {"Xpass":>6} {"Seconds":>9}')
+        self.say(f'{"Area":12} {"Pass":>6} {"Fail":>6} {"Error":>6} {"Skip":>6} {"Xfail":>6} {"Xpass":>6} {"Unfinished":>10} {"Seconds":>9}')
         groups = defaultdict(list)
         for item in self.book.tests.values():
             groups[item['suite']].append(item)
@@ -180,7 +183,7 @@ class SuiteReporter:
             summary = self.book.counts(groups[name])
             values = ''.join(f'{summary.get(key, 0):>7}' for key in ('passed', 'failed', 'error', 'skipped', 'xfailed', 'xpassed'))
             duration = sum(item['duration'] for item in groups[name])
-            self.say(f'{name:12}{values} {duration:>9.2f}')
+            self.say(f'{name:12}{values} {summary.get("incomplete", 0):>10} {duration:>9.2f}')
         for item in [*self.collection_errors, *[entry for entry in self.book.tests.values() if entry['outcome'] in {'failed', 'error', 'xpassed'}]]:
             self.say('\n' + item['id'], 'bad')
             self.say(item['detail'])

@@ -56,7 +56,7 @@ def isolated_environment(folder):
     env.update(PYTEST_DISABLE_PLUGIN_AUTOLOAD='1', PYTHON_DOTENV_DISABLED='1',
                AUDIT_LOG_PATH=str(folder / 'audit.jsonl'), REPORT_LIBRARY_PATH=str(folder / 'reports.sqlite3'),
                LOGIN_USERS_FILE=str(folder / 'users.txt'), DATABASE_URL=str(folder / 'server.sqlite3'),
-               SECRET_KEY='isolated-tests-only', PYTHONIOENCODING='utf-8')
+               SECRET_KEY='isolated-tests-only', PYTHONIOENCODING='utf-8', PYTHONUTF8='1')
     env['PYTHONPATH'] = os.pathsep.join((str(ROOT), str(ROOT / 'ai-learning-evaluation')))
     return env
 
@@ -66,7 +66,8 @@ def main(argv=None):
     if options.list:
         for name, (description, _) in SUITES.items():
             paths = selected_paths(ROOT, [name])
-            print(f'{name:10} {description} ({len(paths)} files)')
+            count = len(paths)
+            print(f'{name:10} {description} ({count} {"file" if count == 1 else "files"})')
         return 0
     test_database = os.environ.get('INSIGHT_HUB_TEST_DATABASE_URL', '')
     if options.postgres and not test_database.startswith(('postgres://', 'postgresql://')):

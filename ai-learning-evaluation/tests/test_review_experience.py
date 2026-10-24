@@ -1,10 +1,11 @@
 """Visible handoff outcomes must follow persisted state, including failed writes."""
-from test_account_session import session, tk_runtime
+from test_account_session import session
 from test_handoff import ready_report, another_account
 
 
 def assert_visible_inside(app, widget):
-    app.root.update_idletasks()
+    # Native map events must run before querying visibility on Windows.
+    app.root.update()
     assert widget.winfo_ismapped()
     assert widget.winfo_width() > 20
     assert widget.winfo_rootx() >= app.root.winfo_rootx()

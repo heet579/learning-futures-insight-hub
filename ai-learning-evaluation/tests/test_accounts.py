@@ -9,7 +9,6 @@ import pytest
 
 pytest.importorskip('fastapi')
 from test_server import api, database_url, live_server, sign_in  # noqa: F401  (shared fixtures)
-from test_login import tk_runtime  # noqa: F401
 
 from src.storage.database import Database, UserStore
 

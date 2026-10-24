@@ -2,3 +2,4 @@
 *.command text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+testsuit text eol=lf

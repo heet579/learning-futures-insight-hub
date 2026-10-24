@@ -1,5 +1,24 @@
 import pandas as pd
 import pytest
+import os
+import sys
+import tkinter as tk
+
+
+@pytest.fixture(scope='session')
+def tk_runtime():
+    """One Tcl interpreter per run; each test creates its own disposable Toplevel."""
+    from src.ui.runtime import _setup_environment
+    _setup_environment()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        if sys.platform == 'win32' or os.getenv('REQUIRE_DESKTOP_TESTS') == '1':
+            raise
+        pytest.skip(f'Tk display unavailable: {exc}')
+    root.withdraw()
+    yield root
+    root.destroy()
 
 @pytest.fixture
 def golden_df():
