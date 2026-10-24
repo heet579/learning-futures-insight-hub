@@ -159,13 +159,23 @@ class Database:
     def initialise(self):
         if self._ready:
             return
-        with self.connect(direct=True) as db:
+        try:
+            self._create_tables(direct=True)
+        except Exception:
+            if not self.is_postgres or self.direct_url == self.url:
+                raise
+            # The direct endpoint is unreachable (for example a DNS hiccup): the pooled
+            # connection can create or check the tables too.
+            self._create_tables(direct=False)
+        self._ready = True
+
+    def _create_tables(self, direct):
+        with self.connect(direct=direct) as db:
             with db:
                 db.execute(REPORTS_TABLE)
                 db.execute(USERS_TABLE)
                 db.execute(AUDIT_TABLE_PG if self.is_postgres else AUDIT_TABLE_SQLITE)
                 self._migrate_users(db)
-        self._ready = True
 
     def _migrate_users(self, db):
         """Add the self-service account columns to databases created before them."""
