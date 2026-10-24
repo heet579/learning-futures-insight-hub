@@ -131,12 +131,17 @@ def create_app(database_url=None):
     @app.get('/reports')
     def list_reports(view: Literal['mine', 'pending', 'approved'] = 'mine', user=Depends(current_user)):
         actor = user['username']
+        if view == 'pending' and user['role'] != 'admin':
+            return []   # only administrators receive review requests
         return {'mine': services.reports.list_owned, 'pending': services.reports.list_pending,
                 'approved': services.reports.list_approved}[view](actor)
 
     @app.get('/reports/{report_id}')
     def load_report(report_id: str, user=Depends(current_user)):
-        return services.reports.load(report_id, user['username'])
+        row = services.reports.load(report_id, user['username'])
+        if row['owner'] != user['username'] and user['role'] != 'admin':
+            raise ValueError('This report is unavailable for this account.')
+        return row
 
     class Save(BaseModel):
         title: str = Field(max_length=300)
@@ -183,6 +188,8 @@ def create_app(database_url=None):
 
     @app.post('/reports/{report_id}/transition')
     def transition(report_id: str, body: Transition, user=Depends(current_user)):
+        if body.action != 'submit' and user['role'] != 'admin':
+            raise HTTPException(403, 'Only an administrator can return or approve a submitted report.')
         from src.storage.snapshot import pack
         version, state = services.reports.transition(actor=user['username'], report_id=report_id,
             version=body.version, action=body.action, notes=body.notes, role=body.role,

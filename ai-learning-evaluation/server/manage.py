@@ -3,6 +3,8 @@
 Point DATABASE_URL at the Neon database (in .env or the shell), then:
     python -m server.manage create-user lisa --role admin
     python -m server.manage create-user heet
+    python -m server.manage create-user gopi --password gop123
+    python -m server.manage create-user heet --role admin --replace   # reset a password
     python -m server.manage list-users
     python -m server.manage disable-user heet
     python -m server.manage enable-user heet
@@ -30,6 +32,7 @@ def main(argv=None):
     create.add_argument('username')
     create.add_argument('--role', choices=ROLES, default='member')
     create.add_argument('--replace', action='store_true', help='Change the password/role of an existing account')
+    create.add_argument('--password', help='Password without prompting (it stays in your shell history)')
     sub.add_parser('list-users')
     sub.add_parser('check', help='Connect, create tables if needed and verify the audit chain')
     for name in ('disable-user', 'enable-user'):
@@ -41,9 +44,11 @@ def main(argv=None):
     users = UserStore(database)
     try:
         if args.command == 'create-user':
-            password = getpass.getpass('Password: ')
-            if password != getpass.getpass('Confirm password: '):
-                raise ValueError('Passwords do not match.')
+            password = args.password
+            if password is None:
+                password = getpass.getpass('Password: ')
+                if password != getpass.getpass('Confirm password: '):
+                    raise ValueError('Passwords do not match.')
             name = users.create(args.username, password, args.role, replace=args.replace)
             print(f'Account {name} ({args.role}) saved in {database.describe()}')
         elif args.command == 'check':

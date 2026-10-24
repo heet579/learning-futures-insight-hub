@@ -73,7 +73,7 @@ Restart the app and sign in with a server account. Leave `SERVER_URL` blank to g
 
 ## Accounts
 
-Accounts on the server have a role: `member` (author/reviewer) or `admin` (also manages accounts).
+Accounts on the server have a role. A `member` creates drafts, saves them and submits them for review. Only an `admin` receives review requests (Pending review), returns or approves submitted reports, and manages accounts. An admin still cannot approve a report they wrote.
 Passwords are stored only as PBKDF2 hashes. `config/users.txt` is not used in shared mode.
 
 From any PC with the project, put the Neon `DATABASE_URL` in your shell or `.env` (administrators

@@ -94,7 +94,9 @@ def test_reports_are_private_and_snapshots_are_validated(api):
     bad = api.post('/reports', headers=alex, json={'title': 't', 'course': 'c', 'status': 'DRAFT',
                                                     'snapshot': {'schema': 2, 'state': {}}})
     assert bad.status_code == 400
-    assert api.post('/reports/x/transition', headers=sam, json={'version': 1, 'action': 'approve'}).status_code == 400
+    assert api.post('/reports/x/transition', headers=sam, json={'version': 1, 'action': 'approve'}).status_code == 403
+    assert api.get('/reports?view=pending', headers=sam).json() == []
+    assert api.post('/reports/x/transition', headers=admin, json={'version': 1, 'action': 'approve'}).status_code == 400
 
 
 @pytest.fixture
@@ -106,7 +108,8 @@ def live_server(database_url, monkeypatch):
     app = create_app(database_url)
     users = app.state.services.users
     users.create('alex', 'alex-pass')
-    users.create('sam', 'sam-pass')
+    users.create('sam', 'sam-pass', role='admin')   # the reviewer
+    users.create('gopi', 'gopi-pass')
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', 0))
         port = probe.getsockname()[1]
@@ -158,12 +161,22 @@ def test_two_computers_share_library_and_review_through_server(live_server, tk_r
     root, author = open_workspace('alex', 'alex-pass')
     ready_report(author)
     assert author.submit_for_approval(), errors
-    rid = author.library_id
+    rid, submitted_version = author.library_id, author.library_version
     assert author.workflow.status == 'AWAITING HUMAN REVIEW'
     assert author.repository.list_pending('alex') == []
     assert author.sign_out()
     assert remote.session.token == ''
     root.destroy()
+
+    # Another member cannot see, open or approve the submitted report.
+    assert remote.login('gopi', 'gopi-pass') == 'gopi'
+    member = RemoteReportRepository()
+    assert member.list_pending('gopi') == []
+    with pytest.raises(ValueError, match='unavailable'):
+        member.load(rid, 'gopi')
+    with pytest.raises(ValueError, match='administrator'):
+        member.transition(actor='gopi', report_id=rid, version=submitted_version, action="approve", confirmed=True)
+    remote.logout()
 
     # Nothing was written to a local library or audit file.
     assert not (tmp_path / 'reports.sqlite3').exists()
