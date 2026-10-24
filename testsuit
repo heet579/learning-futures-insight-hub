@@ -1,0 +1,10 @@
+#!/bin/sh
+# Use an explicit interpreter, the project environment, or Python on PATH.
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 2
+if [ -n "${TESTSUIT_PYTHON:-}" ]; then
+    exec "$TESTSUIT_PYTHON" "$ROOT/tools/testsuit.py" "$@"
+elif [ -x "$ROOT/ai-learning-evaluation/.venv/bin/python" ]; then
+    exec "$ROOT/ai-learning-evaluation/.venv/bin/python" "$ROOT/tools/testsuit.py" "$@"
+else
+    exec python3 "$ROOT/tools/testsuit.py" "$@"
+fi
