@@ -1617,8 +1617,8 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
                     claims=len(self.ledger.claims))
         self.update_audit_status()
         self.report_tabs.select(1)
-        self.status.set(f'Draft ready ({report.source_mode}). Next: decide every claim in Check facts & quotes, '
-                        'then submit for approval.')
+        self.status.set(f'Draft ready ({report.source_mode}). The app checked every fact; fix anything it flagged in '
+                        'Check facts & quotes, then submit for approval.')
         self.sync_controls()
 
     def export(self, reviewed=True):
@@ -1629,11 +1629,22 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         from src.review.record import build_review_record, content_hash
         if not self.report or self.busy:
             return False
+        answers = None
         if reviewed:
             problems = self.approval_problems()
             if problems:
                 messagebox.showinfo('Cannot approve yet', '\n'.join('• ' + p for p in problems), parent=self.root)
                 return False
+            from src.review import clear as clear_review
+            answers = self.ask_clear_answers()
+            if answers is None:
+                return False
+            verdict = clear_review.validate(self.clear_material_state(), self.theme_review.reviewed_context(self.context), answers)
+            if verdict['outcome'] == 'return':
+                messagebox.showinfo('Not approved', 'Your answers mean the report needs changes first: '
+                                    + verdict['notes'], parent=self.root)
+                return False
+            answers = verdict['answers']
         content = self.editor.get('1.0', 'end-1c').strip()
         if not content:
             messagebox.showerror('Empty report', 'Add report content before exporting.', parent=self.root)
@@ -1648,7 +1659,8 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
             return False
         if reviewed:
             approver, role = self.approver_entry.get().strip(), self.approver_role.get()
-            approved_text = approve_report(self.report, content).content
+            approved_text = clear_review.insert_before_record(approve_report(self.report, content).content,
+                                                              clear_review.reviewer_section(answers, approver))
             # Approval must be on record before the file exists.
             event = self.record('Approved', approver, role=role, audience=self.report.audience,
                                 author=self.workflow.reviewer, report_sha256=content_hash(approved_text))
@@ -1663,14 +1675,16 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
             final = approved_text + '\n\n' + build_review_record(
                 workflow=self.workflow, theme_counts=summary['themes'], claim_counts=summary['claims'],
                 pace=summary['pace'], ai_retained=summary['ai_retained'], source_mode=self.report.source_mode,
-                report_hash=content_hash(approved_text), approval_hash=event['hash'], audit_entries=chain['entries'])
+                report_hash=content_hash(approved_text), approval_hash=event['hash'], audit_entries=chain['entries'],
+                clear_lines=clear_review.record_lines(answers))
         else:
             final = '**DRAFT — REQUIRES HUMAN REVIEW**\n\n' + content
         try:
             from src.reporting.designed_report import export_bytes
             state = {'report': self.report, 'workflow': self.workflow, 'frame': self.frame, 'context': self.context,
                      'theme_decisions': self.theme_review.decisions, 'source': self.source,
-                     'loaded_file_label': self.loaded_file_label, 'charts': getattr(self, 'charts', None)}
+                     'loaded_file_label': self.loaded_file_label, 'charts': getattr(self, 'charts', None),
+                     'charts_enabled': getattr(self, 'charts_enabled', True)}
             data = export_bytes(state, final, Path(path).suffix.lower()[1:])
             Path(path).write_bytes(data)
         except Exception as exc:

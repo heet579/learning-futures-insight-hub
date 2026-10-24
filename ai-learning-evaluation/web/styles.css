@@ -355,3 +355,49 @@ td { padding: 10px 12px; border-top: 1px solid var(--line); vertical-align: top;
 .chart-ask { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 14px; }
 .chart-ask select { width: auto; }
 @media (max-width: 720px) { .chart-grid { grid-template-columns: 1fr; } }
+
+/* CLEAR review */
+.chart-card { position: relative; }
+.chart-card .why { display: block; margin-top: 4px; font-size: 12px; color: var(--muted, #6B6382); font-style: italic; }
+.chart-remove { align-self: flex-start; }
+.charts-head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+.ask-charts { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin: 4px 0 18px; }
+.clear-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 18px 0; }
+.clear-summary .big { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 14px 16px; background: #fff; }
+.clear-summary .big b { display: block; font-family: var(--display); font-size: 2rem; line-height: 1.1; color: var(--plum-deep); }
+.clear-summary .big span { font-size: 13px; color: #6B6382; }
+.clear-summary .big.ok b { color: #2E7D5B; }
+.clear-summary .big.warn b { color: #A8650A; }
+.rules { list-style: none; padding: 0; margin: 0 0 20px; display: grid; gap: 8px; }
+.rules li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-s); background: #fff; }
+.rules li small { display: block; color: #6B6382; font-size: 13px; }
+.rules .mark { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
+.rules .ok .mark { background: #E6F3EC; color: #2E7D5B; }
+.rules .bad .mark { background: #F9E1E4; color: #A3213A; }
+.rules .warn .mark { background: #FCF0DC; color: #A8650A; }
+.sub-head { font-family: var(--display); font-size: 1.15rem; margin: 22px 0 10px; }
+.panel.level { margin-top: 22px; }
+.panel.level.high { border-color: #E9C98F; background: #FFFBF3; }
+.level-head { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+.level-head h3 { margin: 0; }
+.panel.level ul { margin: 0 0 8px 18px; }
+.clear-review { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 22px; display: grid; gap: 16px; }
+.clear-head h2 { font-family: var(--display); margin-bottom: 4px; }
+.question { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 18px 20px; background: #fff; display: grid; gap: 12px; }
+.q-head { display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+.q-num { width: 30px; height: 30px; border-radius: 50%; background: var(--plum-tint); color: var(--plum-deep); display: grid; place-items: center; font-weight: 700; font-family: var(--display); }
+.q-head h3 { margin: 0 0 2px; font-family: var(--display); }
+.q-head p { margin: 0; color: #6B6382; max-width: 70ch; }
+.voices { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.voices li { padding: 8px 12px; border-left: 3px solid var(--plum); background: var(--plum-tint); border-radius: 0 8px 8px 0; font-style: italic; }
+.voices small { display: block; font-style: normal; color: #6B6382; font-size: 12px; }
+.versus { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.versus > div { padding: 12px 14px; border-radius: var(--radius-s); background: #E6F3EC; }
+.versus > div + div { background: #FCF0DC; }
+.versus small { display: block; color: #6B6382; font-size: 12px; margin-bottom: 4px; }
+.segmented [role="radio"][aria-checked="true"] { background: var(--paper); color: var(--plum); box-shadow: 0 1px 3px rgba(46, 23, 89, .14); font-weight: 700; }
+.decide-row { grid-template-columns: 1fr; }
+.decide-buttons { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.oversight .table-wrap td .pill { margin: 2px 0; }
+@media (max-width: 720px) { .versus { grid-template-columns: 1fr; } }
+.reveal-on[hidden] { display: none !important; }

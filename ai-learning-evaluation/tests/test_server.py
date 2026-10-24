@@ -10,6 +10,7 @@ import time
 import tkinter as tk
 
 import pytest
+from clear_answers import CLEAR_OK
 
 fastapi = pytest.importorskip('fastapi')
 pytest.importorskip('httpx')
@@ -175,7 +176,7 @@ def test_two_computers_share_library_and_review_through_server(live_server, tk_r
     with pytest.raises(ValueError, match='unavailable'):
         member.load(rid, 'gopi')
     with pytest.raises(ValueError, match='sent to sam'):
-        member.transition(actor='gopi', report_id=rid, version=submitted_version, action="approve", confirmed=True)
+        member.transition(actor='gopi', report_id=rid, version=submitted_version, action="approve", confirmed=True, clear=CLEAR_OK)
     remote.logout()
 
     # Nothing was written to a local library or audit file.
@@ -205,5 +206,5 @@ def test_two_computers_share_library_and_review_through_server(live_server, tk_r
     # The author's own account cannot approve their report through the API either.
     with pytest.raises(ValueError):
         live_server.reports.transition(actor='alex', report_id=rid, version=stored['version'], action='approve',
-                                       confirmed=True, audit=live_server.audit)
+                                       confirmed=True, audit=live_server.audit, clear=CLEAR_OK)
     assert errors == []

@@ -8,6 +8,7 @@ optional ADMIN_USERNAME / ADMIN_PASSWORD, optional GOOGLE_CLIENT_ID / GOOGLE_CLI
 """
 import logging
 import os
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -384,6 +385,19 @@ def create_app(database_url=None):
         role: str = Field(default='', max_length=200)
         confirmed: bool = False
         reviewer: str = Field(default='', max_length=64)   # submit: who should review it
+        clear: dict | None = None                           # approve: the reviewer's CLEAR answers
+
+    def review_started(report_id, reviewer):
+        """When this reviewer first opened the report since it was last sent for review."""
+        started = None
+        for event in services.audit.events({'Review requested', 'Submitted for review', 'Review opened'}):
+            if event.get('details', {}).get('report_id') != report_id:
+                continue
+            if event['action'] != 'Review opened':
+                started = None          # a new submission restarts the clock
+            elif event.get('actor') == reviewer and started is None:
+                started = datetime.fromisoformat(event['timestamp'])
+        return started
 
     @app.post('/reports/{report_id}/transition')
     def transition(report_id: str, body: Transition, user=Depends(current_user)):
@@ -404,11 +418,17 @@ def create_app(database_url=None):
                 raise HTTPException(403, f"This report was sent to {row['reviewer']} for review." if row['reviewer']
                                     else 'Only an administrator can return or approve this report.')
         from src.storage.snapshot import pack
+        clear = dict(body.clear) if body.clear is not None else None
+        if clear is not None and body.action == 'approve':
+            started = review_started(report_id, user['username'])
+            if started is not None:   # measured by the server, not the browser
+                clear['seconds'] = (datetime.now(timezone.utc) - started).total_seconds()
         version, state = services.reports.transition(actor=user['username'], report_id=report_id,
             version=body.version, action=body.action, notes=body.notes, role=body.role,
-            confirmed=body.confirmed, audit=services.audit)
+            confirmed=body.confirmed, audit=services.audit, clear=clear)
         if assigned:
             services.reports.assign_reviewer(report_id, version, assigned)
+        if body.action == 'submit':
             services.audit.append('Review requested', user['username'], report_id=report_id, reviewer=assigned)
         return {'version': version, 'snapshot': pack(state), 'reviewer': assigned}
 

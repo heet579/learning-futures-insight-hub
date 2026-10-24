@@ -53,11 +53,32 @@ class HandoffUI(ReviewExperienceUI):
         self.select_report_tab(1)
         return True
 
+    def clear_material_state(self):
+        return {'frame': self.frame, 'content': self.editor.get('1.0', 'end-1c'), 'report': self.report,
+                'audience': self.report.audience if self.report else 'facilitator'}
+
+    def ask_clear_answers(self):
+        """The CLEAR questions; tests replace this with prepared answers."""
+        from src.ui.clear_dialog import ask_clear
+        return ask_clear(self.root, self.clear_material_state(), self.theme_review.reviewed_context(self.context))
+
     def approve_persistent(self):
         if self.busy or not self.can_review_workspace():
             return False
-        if not self.persist_review_action('approve', role=self.approver_role.get(), confirmed=self.confirmed.get()):
+        answers = self.ask_clear_answers()
+        if answers is None:
             return False
+        owner = self.library_owner
+        if not self.persist_review_action('approve', role=self.approver_role.get(), confirmed=True, clear=answers):
+            return False
+        if self.workflow.status != 'HUMAN REVIEWED':
+            # An answer said the report misses what learners said or is not fit for its audience.
+            messagebox.showinfo('Sent back', f'Your answers sent the report back to {owner} with your note.',
+                                parent=self.root)
+            self.reset_library_workspace(3)
+            self.select_library_view('pending')
+            self.update_review_panel()
+            return True
         self.status.set('Approval saved. Export approved to download the report; it also remains in Library → Approved.')
         return True
 

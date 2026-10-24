@@ -569,7 +569,7 @@ class ReviewUI:
         if self.themes_changed_since_draft:
             blockers.append('Theme decisions changed after this draft. Get a new draft.')
         if self.ledger.pending:
-            blockers.append(f'Decide every claim ({len(self.ledger.pending)} still pending).')
+            blockers.append(f'Fix the {len(self.ledger.pending)} item(s) the automatic check flagged.')
         if self.update_evidence_check():
             blockers.append('Fix or remove numbers and quotes that do not match the data.')
         return blockers
@@ -589,7 +589,8 @@ class ReviewUI:
         if self.report:
             c = self.ledger.counts()
             mark = ' ✓' if self.ledger.complete else ''
-            self.claims_status.set(f'{c["decided"]} of {c["total"]} claims decided{mark}. Use the Check facts & quotes tab.')
+            self.claims_status.set(f'{c["auto"]} of {c["total"]} facts checked automatically; '
+                                   f'{len(self.ledger.pending)} need you{mark}.')
             self.pace_status.set(self.ledger.pace()['message'])
             state = self.workflow.status
             if state == 'AWAITING HUMAN REVIEW':
@@ -677,8 +678,6 @@ class ReviewUI:
         approver = self.approver_entry.get().strip()
         if not approver:
             problems.append('Enter the approver name.')
-        if not self.confirmed.get():
-            problems.append('Tick the confirmation that you checked the evidence, privacy and wording.')
         if approver:
             trial = copy.deepcopy(self.workflow)
             try:

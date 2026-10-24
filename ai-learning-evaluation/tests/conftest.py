@@ -34,3 +34,11 @@ def isolated_report_library(monkeypatch, tmp_path):
     monkeypatch.setenv('REPORT_LIBRARY_PATH', str(tmp_path / 'reports.sqlite3'))
     # Tests use the local library unless a test starts its own server.
     monkeypatch.delenv('SERVER_URL', raising=False)
+
+
+@pytest.fixture(autouse=True)
+def reviewer_answers_clear_questions(monkeypatch):
+    """Desktop approvals ask the CLEAR questions in a dialog; tests answer them like a careful reviewer."""
+    from clear_answers import CLEAR_OK
+    from src.ui.handoff import HandoffUI
+    monkeypatch.setattr(HandoffUI, 'ask_clear_answers', lambda self: dict(CLEAR_OK))

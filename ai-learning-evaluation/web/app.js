@@ -160,6 +160,7 @@ async function route() {
   const parts = hash.split('/').filter(Boolean);
   if (parts[0] === 'r' && parts[1]) return workView(parts[1], parts[2] || '');
   if (parts[0] === 'accounts' && S.user.role === 'admin') return accountsView();
+  if (parts[0] === 'oversight' && S.user.role === 'admin') return oversightView();
   if (parts[0] === 'profile') return profileView();
   return homeView();
 }
@@ -172,7 +173,7 @@ function shell(active, content) {
     <a class="brand" href="#/"><span class="brand-mark">${icon.mark}</span><span class="brand-name">Insight Hub</span> <small>Learning Futures</small></a>
     <nav class="nav" aria-label="Main">
       <a href="#/" ${active === 'home' ? 'aria-current="page"' : ''}>Reports${pending}</a>
-      ${S.user.role === 'admin' ? `<a href="#/accounts" ${active === 'accounts' ? 'aria-current="page"' : ''}>Accounts</a>` : ''}
+      ${S.user.role === 'admin' ? `<a href="#/oversight" ${active === 'oversight' ? 'aria-current="page"' : ''}>Oversight</a><a href="#/accounts" ${active === 'accounts' ? 'aria-current="page"' : ''}>Accounts</a>` : ''}
     </nav>
     <span class="spacer"></span>
     <button class="icon-btn" id="fullscreen" title="Full screen" aria-label="Full screen">${document.fullscreenElement ? icon.shrink : icon.expand}</button>
@@ -415,13 +416,13 @@ const STEPS = [
   ['data', 'Data', 'What the survey says'],
   ['themes', 'Themes', 'Keep what is real'],
   ['draft', 'Draft', 'Write and refine'],
-  ['check', 'Check', 'Statement by statement'],
+  ['check', 'Check', 'Facts checked for you'],
   ['send', 'Send', 'Second review'],
 ];
 
 function stepState(ws) {
   const themesDone = ws.themes_progress.reviewed === ws.themes_progress.total;
-  const claimsDone = ws.claims.length > 0 && ws.claims.every((c) => c.decision !== 'pending');
+  const claimsDone = !!ws.clear && ws.clear.check.passed && ws.claims.every((c) => c.decision !== 'pending');
   return {
     data: true, themes: themesDone, draft: !!ws.report && !ws.themes_changed_since_draft,
     check: claimsDone, send: ws.workflow.status !== 'DRAFT' && ws.workflow.status !== 'CHANGES REQUESTED',
@@ -642,21 +643,26 @@ function draftStep(el, ws) {
         <button class="choice" data-aud="facilitator" aria-pressed="${audience === 'facilitator'}"><b>Facilitator report</b><span>Internal coaching: teaching practice, engagement and what to change next time.</span></button>
         <button class="choice" data-aud="client" aria-pressed="${audience === 'client'}"><b>Client report</b><span>For the client: outcomes, relevance and value. Needs approval by a Learning Futures lead.</span></button>
       </div>
+      <div class="ask-charts"><b>Include charts in the report?</b>
+        <div class="segmented" role="group" aria-label="Charts">
+          <button type="button" data-want="on" aria-pressed="true">Yes, the AI picks them</button>
+          <button type="button" data-want="off" aria-pressed="false">No, text only</button></div></div>
       <button class="btn btn-primary btn-lg" id="create" ${ws.can_edit && ws.themes_progress.reviewed === ws.themes_progress.total ? '' : 'disabled'}>Create draft</button>
       ${ws.themes_progress.reviewed < ws.themes_progress.total ? `<p class="faint" style="margin-top:10px">Review every theme first (${ws.themes_progress.reviewed} of ${ws.themes_progress.total} done).</p>` : ''}`;
-    let chosen = audience;
+    let chosen = audience, wantCharts = true;
     $$('[data-aud]').forEach((b) => b.onclick = () => { chosen = b.dataset.aud; $$('[data-aud]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
+    $$('[data-want]').forEach((b) => b.onclick = () => { wantCharts = b.dataset.want === 'on'; $$('[data-want]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); });
     $('#create').onclick = async (e) => {
       e.currentTarget.innerHTML = 'Writing the draft…';
-      const r = await change('/draft', { audience: chosen }, 'POST', e.currentTarget);
+      const r = await change('/draft', { audience: chosen, charts: wantCharts }, 'POST', e.currentTarget);
       if (r) { if (r.result) toast(r.result); else toast('Draft ready'); renderWork('draft'); }
     };
     return;
   }
   const revision = ws.revision;
   el.innerHTML = `${returnedBanner(ws)}${lockedBanner(ws)}
-    <div class="stage-head"><div><h1>Your draft</h1><p>${ws.report.audience === 'client' ? 'Client' : 'Facilitator'} report, first written by ${esc(ws.report.written_by)}. Read it through, refine any section, then check it statement by statement.</p></div>
-      <a class="btn btn-primary" href="#/r/${id}/check">Check statements</a></div>
+    <div class="stage-head"><div><h1>Your draft</h1><p>${ws.report.audience === 'client' ? 'Client' : 'Facilitator'} report, first written by ${esc(ws.report.written_by)}. Read it through and refine any section. The app then checks every fact for you.</p></div>
+      <a class="btn btn-primary" href="#/r/${id}/check">Run the check</a></div>
     ${ws.themes_changed_since_draft ? '<div class="notice warn banner">Themes changed since this draft was written. Create it again so they match.</div>' : ''}
     ${ws.can_edit ? `<div class="toolbar">
       <button class="btn btn-ghost btn-sm" id="edit">Edit text</button>
@@ -685,7 +691,7 @@ function draftStep(el, ws) {
   if (!ws.can_edit) return;
   $('#regenerate').onclick = async (e) => {
     if (!await dialog({ title: 'Create the draft again?', body: 'This replaces the current text and clears every statement you checked.', confirm: 'Create again', danger: true })) return;
-    const r = await change('/draft', { audience: ws.report.audience }, 'POST', e.target);
+    const r = await change('/draft', { audience: ws.report.audience, charts: ws.charts_enabled }, 'POST', e.target);
     if (r) { toast(r.result || 'New draft ready'); S.checkIndex = 0; renderWork('draft'); }
   };
   $('#undo')?.addEventListener('click', async (e) => { if (await change('/revisions/undo', undefined, 'POST', e.currentTarget)) { toast('Previous wording restored'); renderWork('draft'); } });
@@ -719,35 +725,26 @@ function draftStep(el, ws) {
 
 // charts that go into the two-page Word / PDF report
 function chartsPanel(ws) {
-  const cat = ws.chart_kinds, editable = ws.can_edit;
-  const needs = (k) => ({ measure: ['group_bar', 'group_box', 'trend'].includes(k), group: ['group_bar', 'group_box'].includes(k) });
-  const card = (c, i) => {
-    const n = needs(c.kind);
-    return `<figure class="chart-card" data-chart="${i}">
+  const editable = ws.can_edit, on = ws.charts_enabled;
+  const card = (c, i) => `<figure class="chart-card" data-chart="${i}">
       <div class="chart-img"><img alt="${esc(c.title)}" data-src="/api/reports/${S.work.report.id}/charts/${i}.png?v=${S.work.report.version}"></div>
-      <figcaption><b>Figure ${i + 1}.</b> ${esc(c.title)}</figcaption>
-      ${editable ? `<div class="chart-edit">
-        <select class="input input-sm" data-field="kind" aria-label="Chart type">${Object.entries(cat.kinds).map(([k, v]) => `<option value="${k}" ${k === c.kind ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
-        ${n.measure ? `<select class="input input-sm" data-field="measure" aria-label="Rating">${Object.entries(cat.measures).map(([k, v]) => `<option value="${k}" ${k === c.measure ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>` : ''}
-        ${n.group ? `<select class="input input-sm" data-field="group" aria-label="Compare by">${Object.entries(cat.groups).map(([k, v]) => `<option value="${k}" ${k === c.group ? 'selected' : ''}>by ${esc(v)}</option>`).join('')}</select>` : ''}
-        <div class="chart-tools">
-          ${i > 0 ? `<button class="btn btn-quiet btn-sm" data-move="-1" title="Move earlier">←</button>` : ''}
-          ${i < ws.charts.length - 1 ? `<button class="btn btn-quiet btn-sm" data-move="1" title="Move later">→</button>` : ''}
-          ${ws.charts.length > 1 ? '<button class="btn btn-quiet btn-sm" data-remove>Remove</button>' : ''}</div>
-      </div>` : ''}
+      <figcaption><b>Figure ${i + 1}.</b> ${esc(c.title)}${c.reason ? `<span class="why">${esc(c.reason)}</span>` : ''}</figcaption>
+      ${editable && ws.charts.length > 1 ? '<button class="btn btn-quiet btn-sm chart-remove" data-remove>Remove</button>' : ''}
     </figure>`;
-  };
   return `<section class="panel charts-panel" id="charts">
     <div class="charts-head"><div><h3>Charts in the report</h3>
-      <p class="muted">The Word and PDF downloads are a two-page report with these ${ws.charts.length} chart${ws.charts.length === 1 ? '' : 's'}: two on each page, in this order.</p></div></div>
-    <div class="chart-grid">${ws.charts.map(card).join('')}</div>
+      <p class="muted">${on ? `The AI picked ${ws.charts.length === 1 ? 'this chart' : `these ${ws.charts.length} charts`} to suit the data. The Word and PDF downloads place two on each page and fill both pages.`
+        : 'This report is text only. The two pages are filled with plain-English summaries and tables instead of charts.'}</p></div>
+      ${editable ? `<div class="segmented" role="group" aria-label="Charts in the report">
+        <button type="button" data-charts="on" aria-pressed="${on}">With charts</button>
+        <button type="button" data-charts="off" aria-pressed="${!on}">Text only</button></div>` : ''}</div>
+    ${on ? `<div class="chart-grid">${ws.charts.map(card).join('')}</div>` : ''}
     ${editable ? `<div class="chart-ask">
-      <label class="field" style="flex:1;margin:0"><span>Describe a chart</span>
-        <input class="input" id="chart-text" maxlength="300" placeholder="e.g. box plot of satisfaction by delivery mode · relevance over time · compare content quality by course"></label>
-      <select class="input" id="chart-slot" aria-label="Where">
-        ${ws.charts.length < cat.max ? '<option value="">Add as a new chart</option>' : ''}
-        ${ws.charts.map((c, i) => `<option value="${i}" ${ws.charts.length >= cat.max && i === ws.charts.length - 1 ? 'selected' : ''}>Replace figure ${i + 1}</option>`).join('')}</select>
-      <button class="btn btn-primary" id="chart-add">Make chart</button></div>` : ''}
+      <label class="field" style="flex:1;margin:0"><span>Ask for any chart</span>
+        <input class="input" id="chart-text" maxlength="300" placeholder="e.g. heat map of ratings by course · pie chart of delivery mode · how satisfaction changed month by month"></label>
+      <button class="btn btn-primary" id="chart-add">Make chart</button>
+      ${on ? '<button class="btn btn-ghost" id="chart-auto">Let the AI choose again</button>' : ''}</div>
+      <p class="faint" style="margin-top:8px">${on && ws.charts.length >= ws.chart_kinds.max ? `The report holds ${ws.chart_kinds.max} charts, so a new one replaces figure ${ws.chart_kinds.max}.` : 'Bar, stacked, box, violin, histogram, pie, heat map, scatter and trend charts are all available.'}</p>` : ''}
   </section>`;
 }
 
@@ -760,31 +757,21 @@ function bindCharts(ws, id) {
     } catch { img.closest('.chart-img').classList.add('failed'); }
   });
   if (!ws.can_edit) return;
-  const save = async (charts, button, message) => {
-    if (await change('/charts', { charts }, 'PUT', button)) { toast(message); renderWork('draft'); $('#charts')?.scrollIntoView({ block: 'start' }); }
-  };
-  const plain = () => ws.charts.map(({ kind, measure, group }) => ({ kind, measure, group }));
-  $$('#charts [data-chart]').forEach((card) => {
-    const i = Number(card.dataset.chart);
-    $$('select[data-field]', card).forEach((sel) => sel.onchange = () => {
-      const charts = plain();
-      charts[i] = { ...charts[i], [sel.dataset.field]: sel.value };
-      if (sel.dataset.field === 'kind') charts[i] = { kind: sel.value, measure: charts[i].measure, group: charts[i].group || 'DeliveryMode' };
-      save(charts, null, 'Chart updated');
-    });
-    $('[data-remove]', card)?.addEventListener('click', (e) => save(plain().filter((_, j) => j !== i), e.currentTarget, 'Chart removed'));
-    $$('[data-move]', card).forEach((b) => b.onclick = (e) => {
-      const charts = plain(), j = i + Number(b.dataset.move);
-      [charts[i], charts[j]] = [charts[j], charts[i]];
-      save(charts, e.currentTarget, 'Order changed');
-    });
+  const after = (r, fallback) => { if (r) { toast(r.result || fallback); renderWork('draft'); $('#charts')?.scrollIntoView({ block: 'start' }); } };
+  $$('#charts [data-charts]').forEach((b) => b.onclick = async (e) => {
+    const enabled = b.dataset.charts === 'on';
+    if (enabled === ws.charts_enabled) return;
+    after(await change('/charts/enabled', { enabled }, 'PUT', e.currentTarget), enabled ? 'Charts on' : 'Text only');
   });
+  $$('#charts [data-remove]').forEach((b) => b.onclick = async (e) => {
+    const i = Number(b.closest('[data-chart]').dataset.chart);
+    after(await change(`/charts/${i}`, undefined, 'DELETE', e.currentTarget), 'Chart removed');
+  });
+  $('#chart-auto')?.addEventListener('click', async (e) => after(await change('/charts/auto', undefined, 'POST', e.currentTarget), 'Charts chosen'));
   const ask = async (e) => {
     const text = $('#chart-text').value.trim();
     if (!text) return toast('Describe the chart you want.', true);
-    const slot = $('#chart-slot').value;
-    const r = await change('/charts/describe', { text, replace: slot === '' ? null : Number(slot) }, 'POST', e?.currentTarget || $('#chart-add'));
-    if (r) { toast(r.result || 'Chart added'); renderWork('draft'); $('#charts')?.scrollIntoView({ block: 'start' }); }
+    after(await change('/charts/describe', { text }, 'POST', e?.currentTarget || $('#chart-add')), 'Chart added');
   };
   $('#chart-add').onclick = ask;
   $('#chart-text').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ask(); } };
@@ -798,42 +785,39 @@ function revisionPreview(r) {
     <div style="display:flex;gap:10px"><button class="btn btn-primary" id="apply">Use this wording</button><button class="btn btn-ghost" id="discard">Keep current wording</button></div>`;
 }
 
-// step 4: check, one statement at a time
+// step 4: CLEAR check (automatic) and level
 function checkStep(el, ws) {
   const id = S.work.report.id;
-  if (!ws.report) { el.innerHTML = `<h1>Check statements</h1><p class="muted" style="margin-top:8px">Create the draft first.</p><p style="margin-top:16px"><a class="btn btn-primary" href="#/r/${id}/draft">Go to draft</a></p>`; return; }
-  const claims = ws.claims;
-  const decided = claims.filter((c) => c.decision !== 'pending').length;
-  if (S.checkIndex >= claims.length || claims[S.checkIndex]?.decision !== 'pending') {
-    const next = claims.findIndex((c, i) => i >= S.checkIndex && c.decision === 'pending');
-    const first = claims.findIndex((c) => c.decision === 'pending');
-    S.checkIndex = next >= 0 ? next : first >= 0 ? first : Math.min(S.checkIndex, claims.length - 1);
-  }
-  const c = claims[S.checkIndex];
-  const pace = ws.summary?.pace;
-  const allDone = decided === claims.length;
-  const segment = (x, i) => {
-    const cls = ['accepted', 'cleared'].includes(x.decision) ? 'accepted' : ['rejected', 'removed'].includes(x.decision) ? 'rejected' : x.problems.length || x.possible_names.length ? 'attention' : '';
-    return `<button class="${cls} ${i === S.checkIndex && !allDone ? 'current' : ''}" data-go="${i}" aria-label="Statement ${i + 1}: ${x.decision}" title="${esc(x.section)}"></button>`;
-  };
+  if (!ws.report) { el.innerHTML = `<h1>Check</h1><p class="muted" style="margin-top:8px">Create the draft first.</p><p style="margin-top:16px"><a class="btn btn-primary" href="#/r/${id}/draft">Go to draft</a></p>`; return; }
+  const { check, level } = ws.clear;
+  const pending = ws.claims.filter((c) => c.decision === 'pending');
+  if (S.checkIndex >= pending.length) S.checkIndex = 0;
+  const c = pending[S.checkIndex];
   el.innerHTML = `${returnedBanner(ws)}${lockedBanner(ws)}
-    <div class="stage-head"><div><h1>Check it, statement by statement</h1>
-      <p>Every sentence and quote in the draft needs a person's yes or no. Removing a statement takes it out of the draft.</p></div>
-      <b style="font-family:var(--display);font-size:1.4rem;white-space:nowrap">${decided} / ${claims.length}</b></div>
-    <div class="track-segments" aria-label="Progress">${claims.map(segment).join('')}</div>
-    ${pace?.fast ? `<div class="notice warn banner">${esc(pace.message)}</div>` : ''}
-    ${allDone ? `<div class="finished"><h2>Everything is checked.</h2><p class="muted">${ws.blockers.length ? esc(ws.blockers.join(' ')) : 'The draft is ready to send for a second review.'}</p>
-        <p style="margin-top:22px"><a class="btn btn-primary btn-lg" href="#/r/${id}/send">Continue to send</a></p></div>` : claimCard(c, ws)}`;
-  $$('[data-go]').forEach((b) => b.onclick = () => { S.checkIndex = Number(b.dataset.go); checkStep(el, ws); });
-  if (allDone || !ws.can_edit) return;
+    <div class="stage-head"><div><h1>The app checked the facts</h1>
+      <p>Every number, quote and name in the draft is checked against the survey automatically. You only see what failed or needs a person to confirm.</p></div></div>
+    <div class="clear-summary">
+      <div class="big"><b>${check.auto_verified}</b><span>checked automatically</span></div>
+      <div class="big ${check.needs_person ? 'warn' : 'ok'}"><b>${check.needs_person}</b><span>${check.needs_person === 1 ? 'needs you' : 'need you'}</span></div>
+      <div class="big"><b>${level.questions.length}</b><span>questions for the reviewer</span></div>
+    </div>
+    <ul class="rules">${check.rules.map((r) => `<li class="${r.ok ? 'ok' : r.blocking ? 'bad' : 'warn'}"><span class="mark">${r.ok ? '✓' : r.blocking ? '!' : '?'}</span>
+      <div><b>${esc(r.rule)}</b><small>${esc(r.detail)}</small></div></li>`).join('')}</ul>
+    ${c ? `<h2 class="sub-head">Needs you (${pending.length})</h2>${claimCard(c, ws)}` : ''}
+    <section class="panel level ${level.level}"><div class="level-head"><span class="pill ${level.level === 'high' ? 'changes' : 'approved'}">${esc(level.label)}</span>
+      <h3>How closely the reviewer looks</h3></div>
+      <ul>${level.reasons.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <p class="muted">The reviewer answers ${level.questions.length} questions only a person can answer. ${esc(level.approver)}</p></section>
+    ${!c && check.passed ? `<p style="margin-top:22px"><a class="btn btn-primary btn-lg" href="#/r/${id}/send">Continue to send</a></p>` : ''}`;
+  if (!c || !ws.can_edit) return;
   const decide = async (decision, button) => {
     const r = await change(`/claims/${encodeURIComponent(c.key)}`, { decision }, 'POST', button);
     if (r) { if (decision === 'reject') toast(c.kind === 'quote' ? 'Quote removed from the draft' : 'Removed from the draft'); renderWork('check'); }
   };
   $('#accept')?.addEventListener('click', (e) => decide('accept', e.currentTarget));
   $('#reject').onclick = (e) => decide('reject', e.currentTarget);
-  $('#skip')?.addEventListener('click', () => { S.checkIndex = (S.checkIndex + 1) % claims.length; checkStep(el, ws); });
-  $('#prev')?.addEventListener('click', () => { S.checkIndex = (S.checkIndex - 1 + claims.length) % claims.length; checkStep(el, ws); });
+  $('#skip')?.addEventListener('click', () => { S.checkIndex = (S.checkIndex + 1) % pending.length; checkStep(el, ws); });
+  $('#prev')?.addEventListener('click', () => { S.checkIndex = (S.checkIndex - 1 + pending.length) % pending.length; checkStep(el, ws); });
 }
 
 function claimCard(c, ws) {
@@ -854,7 +838,7 @@ function claimCard(c, ws) {
       <button class="btn btn-quiet" id="prev">Back</button><span class="grow"></span>
       <button class="btn btn-quiet" id="skip">Skip for now</button>
       <button class="btn btn-bad btn-lg" id="reject">${quote ? 'Remove quote' : 'Remove it'} <span class="key">R</span></button>
-      ${c.blocking ? '' : `<button class="btn btn-good btn-lg" id="accept">${quote ? 'Safe to keep' : 'Looks right'} <span class="key">A</span></button>`}
+      ${c.blocking ? '' : `<button class="btn btn-good btn-lg" id="accept">${c.possible_names.length ? 'Not a name, keep it' : quote ? 'Safe to keep' : 'Looks right'} <span class="key">A</span></button>`}
     </div>${c.blocking ? '<p class="faint" style="margin-top:10px">This can only be removed, or fixed by editing the draft, because it does not match the data.</p>' : ''}` : ''}
   </article>`;
 }
@@ -876,14 +860,14 @@ function sendStep(el, ws) {
   const items = [
     ['Every theme reviewed', ws.themes_progress.reviewed === ws.themes_progress.total],
     ['Draft created from the kept themes', !!ws.report && !ws.themes_changed_since_draft],
-    ['Every statement and quote checked', ws.claims.length > 0 && ws.claims.every((c) => c.decision !== 'pending')],
+    ['Automatic fact check passed', !!ws.clear && ws.clear.check.passed && ws.claims.every((c) => c.decision !== 'pending')],
     ['Numbers and quotes match the data', !ws.blockers.some((b) => b.startsWith('Fix'))],
     ['No suggested change left open', !ws.revision],
   ];
   const ready = ws.blockers.length === 0;
   el.innerHTML = `${returnedBanner(ws)}
     <div class="stage-head"><div><h1>Send it for a second review</h1>
-      <p>A second person reads the report, checks your decisions and either approves it or sends it back with notes. It's locked while they review it.</p></div></div>
+      <p>A second person reads the report, answers ${ws.clear ? ws.clear.level.questions.length : 3} short questions only a person can answer, then approves it or sends it back with notes. It's locked while they review it.</p></div></div>
     <ul class="checklist">${items.map(([text, ok]) => `<li class="${ok ? 'ok' : ''}"><span class="mark">${ok ? '✓' : '○'}</span>${esc(text)}</li>`).join('')}</ul>
     ${ready ? '' : `<div class="notice warn banner">${ws.blockers.map(esc).join('<br>')}</div>`}
     <label class="field narrow" id="reviewer-field"><span>Who should review it?</span>
@@ -918,7 +902,34 @@ function sendStep(el, ws) {
   });
 }
 
-// review (administrator) and the read-only states
+// review: the CLEAR questions (reviewer) and the read-only states
+const CHOICE_LABELS = { yes: 'Yes', partly: 'Partly', no: 'No', keep: 'Keep as it is', caveat: 'Add a caveat' };
+
+function clearQuestion(q, ex, n) {
+  const seg = (name, choices) => `<div class="segmented" role="radiogroup" aria-label="${esc(q.title)}">${Object.entries(choices)
+    .map(([value, label]) => `<button type="button" role="radio" aria-checked="false" data-q="${name}" data-v="${value}">${esc(label)}</button>`).join('')}</div>`;
+  let body = '';
+  if (q.id === 'faithful') {
+    body = `<ul class="voices">${ex.comments.map((c) => `<li><small>${esc(c.question)}</small>“${esc(c.text)}”</li>`).join('') || '<li>No written comments in this survey.</li>'}</ul>
+      ${seg('faithful', q.choices)}
+      <label class="field reveal-on" data-for="faithful" data-when="partly,no" hidden><span>What does the report miss?</span><textarea class="input" id="faithful_note" maxlength="600"></textarea></label>`;
+  } else if (q.id === 'balanced') {
+    body = `<div class="versus"><div><small>The report says</small><b>${esc(ex.claim)}</b></div><div><small>But the data also shows</small><b>${esc(ex.counter.text)}</b></div></div>
+      ${seg('balanced', q.choices)}
+      <label class="field reveal-on" data-for="balanced" data-when="caveat" hidden><span>Caveat added to the report</span><textarea class="input" id="caveat" maxlength="600">${esc(ex.counter.caveat)}</textarea></label>`;
+  } else if (q.id === 'owned') {
+    body = `${ex.recommendations.length ? `<div class="chips">${ex.recommendations.map((r, i) => `<button type="button" class="chip" data-rec="${i}">${esc(r.length > 70 ? r.slice(0, 69) + '…' : r)}</button>`).join('')}</div>` : ''}
+      <label class="field"><span>Your priority, in your own words</span><textarea class="input" id="owned" maxlength="600" placeholder="For example: Give online groups more structured activities, and compare their satisfaction next term."></textarea></label>`;
+  } else if (q.id === 'fair') {
+    body = `${seg('fair', q.choices)}
+      <label class="field reveal-on" data-for="fair" data-when="yes" hidden><span>Fairness note added to the report</span><textarea class="input" id="fairness_note" maxlength="600" placeholder="For example: Results for this facilitator come from 12 responses and should not be used on their own."></textarea></label>`;
+  } else if (q.id === 'fit') {
+    body = `${seg('fit', q.choices)}
+      <label class="field reveal-on" data-for="fit" data-when="no" hidden><span>What should the author change?</span><textarea class="input" id="fit_note" maxlength="600"></textarea></label>`;
+  }
+  return `<section class="question" data-question="${q.id}"><div class="q-head"><span class="q-num">${n}</span><div><h3>${esc(q.title)}</h3><p>${esc(q.prompt)}</p></div></div>${body}</section>`;
+}
+
 function reviewStep(el, ws) {
   const { report } = S.work;
   const status = ws.workflow.status;
@@ -926,52 +937,113 @@ function reviewStep(el, ws) {
   const approved = status === 'HUMAN REVIEWED';
   const roles = S.config.approver_roles || [];
   const clientReport = ws.report?.audience === 'client';
+  const clear = ws.clear || {};
+  const ex = clear.examine;
+  const answers = clear.answers;
   el.innerHTML = `${returnedBanner(ws)}
     <div class="stage-head"><div><h1>${approved ? 'Approved' : ws.can_review ? 'Your review' : report.reviewer ? `With ${esc(report.reviewer_name || report.reviewer)}` : 'With the reviewer'}</h1>
-      <p>${approved ? `Approved by ${person(report.reviewer_name, ws.workflow.approver)} as ${esc(ws.workflow.approver_role)}. Written by ${person(report.owner_name, report.owner)}. The download includes a review record page.`
-        : ws.can_review ? `Written by ${person(report.owner_name, report.owner)} and sent to you for review. Read it as the reader will, check the decisions on the right, then approve or send it back with notes.`
+      <p>${approved ? `Approved by ${person(report.reviewer_name, ws.workflow.approver)} as ${esc(ws.workflow.approver_role)}. Written by ${person(report.owner_name, report.owner)}. The download includes the reviewer's notes and a review record.`
+        : ws.can_review ? `Written by ${person(report.owner_name, report.owner)}. The app has already checked every fact. Read the report, then answer ${ex.questions.length} questions only a person can answer.`
         : report.reviewer ? `${person(report.reviewer_name, report.reviewer)} is reviewing this report. You will see it here as approved, or back in your list with their notes.`
         : 'An administrator is reviewing this report. You will see it here as approved, or back in your list with notes.'}</p></div>
       ${approved ? `<div style="display:flex;gap:8px"><button class="btn btn-ghost" data-export="md">Markdown</button><button class="btn btn-ghost" data-export="pdf">PDF</button><button class="btn btn-primary" data-export="docx">Download Word</button></div>` : ''}</div>
     <div class="review-grid">
-      <article class="doc">${md(ws.content)}</article>
+      <article class="doc">${md(approved ? ws.content : ws.content)}</article>
       <aside class="side">
-        <div class="panel"><h3>What the author decided</h3><dl class="facts">
-          <div><dt>Themes kept</dt><dd>${s.themes.confirmed ?? 0}</dd></div>
-          <div><dt>Themes left out</dt><dd>${s.themes.rejected ?? 0}</dd></div>
-          <div><dt>Statements accepted</dt><dd>${s.claims.accepted ?? 0}</dd></div>
-          <div><dt>Statements removed</dt><dd>${s.claims.rejected ?? 0}</dd></div>
-          <div><dt>Quotes cleared</dt><dd>${s.claims.cleared ?? 0}</dd></div>
+        <div class="panel"><h3>Already checked</h3><dl class="facts">
+          <div><dt>Facts checked automatically</dt><dd>${clear.check?.auto_verified ?? 0}</dd></div>
+          <div><dt>Items a person confirmed or removed</dt><dd>${(s.claims.accepted ?? 0) + (s.claims.rejected ?? 0) + (s.claims.cleared ?? 0) + (s.claims.removed ?? 0)}</dd></div>
+          <div><dt>Themes kept / left out</dt><dd>${s.themes.confirmed ?? 0} / ${s.themes.rejected ?? 0}</dd></div>
           <div><dt>Written or changed by a person</dt><dd>${s.claims.human_edited ?? 0}</dd></div>
-          ${s.ai_retained !== null && s.ai_retained !== undefined ? `<div><dt>Gemini wording kept</dt><dd>${Math.round(s.ai_retained)}%</dd></div>` : ''}
+          ${s.ai_retained !== null && s.ai_retained !== undefined ? `<div><dt>AI wording kept</dt><dd>${Math.round(s.ai_retained)}%</dd></div>` : ''}
           <div><dt>Times sent back</dt><dd>${s.returned ?? 0}</dd></div>
-        </dl>${s.pace?.fast ? `<div class="notice warn" style="margin-top:12px">${esc(s.pace.message)}</div>` : ''}</div>
-        ${ws.can_review ? `<div class="panel"><h3>Your decision</h3>
-          <label class="field"><span>Approving as</span><select class="input" id="role">${roles.map((r) => `<option ${clientReport && r === S.config.client_approver_role ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
-          ${clientReport ? `<small>Client reports need a ${esc(S.config.client_approver_role)}.</small>` : ''}</label>
-          <label class="confirm"><input type="checkbox" id="checked"><span>I checked the evidence, privacy and final wording.</span></label>
-          <div style="display:grid;gap:10px"><button class="btn btn-good btn-lg" id="approve" disabled>Approve report</button>
-          <button class="btn btn-bad" id="return">Send back with notes</button></div></div>` : ''}
+          ${clear.level ? `<div><dt>Review level</dt><dd>${esc(clear.level.label)}</dd></div>` : ''}
+        </dl>${clear.level && clear.level.level === 'high' ? `<p class="faint" style="margin-top:10px">${clear.level.reasons.map(esc).join(' ')}</p>` : ''}</div>
+        ${answers ? `<div class="panel"><h3>The reviewer's answers</h3><dl class="facts">
+          <div><dt>Faithful to learners</dt><dd>${esc(CHOICE_LABELS[answers.faithful] || answers.faithful)}</dd></div>
+          <div><dt>Strongest claim</dt><dd>${answers.balanced === 'caveat' ? 'Caveat added' : 'Kept'}</dd></div>
+          ${answers.fair ? `<div><dt>Fair to people</dt><dd>${answers.fair === 'yes' ? 'Note added' : 'No concern'}</dd></div>` : ''}
+          ${answers.fit ? `<div><dt>Fit for the audience</dt><dd>${esc(CHOICE_LABELS[answers.fit])}</dd></div>` : ''}
+          ${answers.seconds ? `<div><dt>Time spent</dt><dd>${answers.seconds >= 60 ? Math.round(answers.seconds / 60) + ' min' : answers.seconds + ' s'}</dd></div>` : ''}
+        </dl><p class="muted" style="margin-top:10px"><b>Priority:</b> ${esc(answers.owned)}</p></div>` : ''}
         <div class="panel"><h3>History</h3><ol class="timeline">${[...ws.workflow.events].reverse().map((e) => `<li><b>${esc(e.action)}</b>${e.actor ? ` by ${esc(e.actor)}` : ''}${e.action === 'Submitted for review' && report.reviewer && status === 'AWAITING HUMAN REVIEW' ? `, sent to ${esc(report.reviewer_name || report.reviewer)}` : ''}<small>${esc(ago(e.at))}</small>${e.action === 'Returned for changes' ? `<div class="muted">${esc(e.notes)}</div>` : ''}</li>`).join('') || '<li>No review activity yet.</li>'}</ol></div>
       </aside>
-    </div>`;
+    </div>
+    ${ws.can_review ? `<section class="clear-review" id="clear">
+      <div class="clear-head"><h2>Your judgement</h2><p class="muted">${ex.level.level === 'high' ? `High risk: ${ex.level.reasons.map(esc).join(' ')}` : 'Standard review.'} Your answers go into the report and the audit record.</p></div>
+      ${ex.questions.map((q, i) => clearQuestion(q, ex, i + 1)).join('')}
+      <div class="question decide-row">
+        <label class="field narrow"><span>Approving as</span><select class="input" id="role">${roles.map((r) => `<option ${clientReport && r === S.config.client_approver_role ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
+          ${clientReport ? `<small>Client reports need a ${esc(S.config.client_approver_role)}.</small>` : ''}</label>
+        <div class="decide-buttons"><button class="btn btn-bad" id="return">Send back with notes</button>
+          <button class="btn btn-good btn-lg" id="approve">Approve report</button></div>
+        <p class="faint">Answering "No" or "Partly" to the first question, or "No" to the last, sends the report back to the author with your note.</p>
+      </div></section>` : ''}`;
   $$('[data-export]').forEach((b) => b.onclick = () => download(`/api/reports/${report.id}/export?format=${b.dataset.export}`, `report.${b.dataset.export}`));
   if (!ws.can_review) return;
-  $('#checked').onchange = (e) => { $('#approve').disabled = !e.target.checked; };
-  const transition = async (body, button, message) => busy(button, async () => {
-    await api(`/reports/${report.id}/transition`, { method: 'POST', body: { version: report.version, ...body } });
-    toast(message);
-    if (body.action === 'return') { go('#/'); return; }   // it is back with the author now
-    S.work = await api(`/api/reports/${report.id}`);
-    renderWork('review');
+  if (S.reviewStarted !== report.id + ':' + report.version) {
+    S.reviewStarted = report.id + ':' + report.version;
+    api(`/api/reports/${report.id}/review/start`, { method: 'POST' }).catch(() => {});
+  }
+  const picked = {};
+  $$('[data-q]').forEach((b) => b.onclick = () => {
+    picked[b.dataset.q] = b.dataset.v;
+    $$(`[data-q="${b.dataset.q}"]`).forEach((x) => x.setAttribute('aria-checked', String(x === b)));
+    $$(`.reveal-on[data-for="${b.dataset.q}"]`).forEach((f) => { f.hidden = !f.dataset.when.split(',').includes(b.dataset.v); });
   });
-  $('#approve').onclick = (e) => transition({ action: 'approve', role: $('#role').value, confirmed: true }, e.currentTarget, 'Report approved')
-    .then(() => { S.pendingCount = Math.max(0, (S.pendingCount || 1) - 1); });
-  $('#return').onclick = async (e) => {
-    const r = await dialog({ title: 'Send back with notes', body: `Tell ${esc(report.owner)} what to change. They'll see this at the top of the report.`, confirm: 'Send back',
-      fields: '<label class="field"><span>Notes</span><textarea class="input" name="notes" required maxlength="5000"></textarea></label>' });
-    if (r) transition({ action: 'return', notes: r.notes }, e.target, 'Sent back to the author').then(() => { S.pendingCount = Math.max(0, (S.pendingCount || 1) - 1); });
+  $$('[data-rec]').forEach((b) => b.onclick = () => { const t = $('#owned'); t.value = ex.recommendations[Number(b.dataset.rec)]; t.focus(); });
+  const transition = async (body, button) => busy(button, async () => {
+    await api(`/reports/${report.id}/transition`, { method: 'POST', body: { version: report.version, ...body } });
+    S.pendingCount = Math.max(0, (S.pendingCount || 1) - 1);
+    S.work = await api(`/api/reports/${report.id}`);
+    if (S.work.workspace.workflow.status === 'HUMAN REVIEWED') { toast('Report approved'); renderWork('review'); }
+    else { toast('Sent back to the author with your notes'); go('#/'); }
+  });
+  $('#approve').onclick = (e) => {
+    const val = (id) => ($(`#${id}`)?.value || '').trim();
+    const missing = ex.questions.find((q) => q.choices && !picked[q.id]) || (!val('owned') && ex.questions.find((q) => q.id === 'owned'));
+    if (missing) { toast(`Answer "${missing.title}" first.`, true); $(`[data-question="${missing.id}"]`)?.scrollIntoView({ block: 'center' }); return; }
+    const clearAnswers = { ...picked, owned: val('owned'), faithful_note: val('faithful_note'), caveat: val('caveat'),
+      fairness_note: val('fairness_note'), fit_note: val('fit_note') };
+    transition({ action: 'approve', role: $('#role').value, confirmed: true, clear: clearAnswers }, e.currentTarget);
   };
+  $('#return').onclick = async (e) => {
+    const r = await dialog({ title: 'Send back with notes', body: `Tell ${esc(report.owner_name || report.owner)} what to change. They'll see this at the top of the report.`, confirm: 'Send back',
+      fields: '<label class="field"><span>Notes</span><textarea class="input" name="notes" required maxlength="5000"></textarea></label>' });
+    if (r) transition({ action: 'return', notes: r.notes }, e.target);
+  };
+}
+
+// ---- oversight (administrators): is the human review real? ------------------------------------
+async function oversightView() {
+  shell('oversight', '<div class="loading"><div class="spinner"></div>Loading the oversight panel…</div>');
+  let o;
+  try { o = await api('/api/oversight'); } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
+  const time = (sec) => sec === null || sec === undefined ? '—' : sec >= 60 ? `${Math.round(sec / 60)} min` : `${Math.round(sec)} s`;
+  const pct = (v) => v === null || v === undefined ? '—' : `${Math.round(v)}%`;
+  const t = o.totals;
+  $('#main').innerHTML = `<div class="page oversight">
+    <div class="hello"><h1>Oversight</h1><p>How the human review is really going. Every number comes from the audit chain.</p></div>
+    <div class="clear-summary">
+      <div class="big"><b>${t.reviews}</b><span>reviews</span></div>
+      <div class="big"><b>${time(t.median_seconds)}</b><span>typical time per review</span></div>
+      <div class="big"><b>${pct(t.concern_percent)}</b><span>raised a concern or caveat</span></div>
+      <div class="big"><b>${pct(t.returned_percent)}</b><span>sent back to the author</span></div>
+      <div class="big ${t.quick ? 'warn' : ''}"><b>${t.quick}</b><span>reviews under 2 minutes</span></div>
+    </div>
+    <h2 class="sub-head">Reviewers</h2>
+    <div class="table-wrap" style="max-height:none"><table><thead><tr><th>Reviewer</th><th>Reviews</th><th>Approved</th><th>Sent back</th><th>Typical time</th><th>Raised a concern</th><th>Signals</th></tr></thead><tbody>
+      ${o.reviewers.map((r) => `<tr><td><b>${esc(r.name)}</b></td><td>${r.reviews}</td><td>${r.approved}</td><td>${r.returned}</td><td>${time(r.median_seconds)}</td><td>${pct(r.concern_rate)}</td>
+        <td>${r.flags.length ? r.flags.map((f) => `<span class="pill changes">${esc(f)}</span>`).join(' ') : '<span class="pill approved">Looks engaged</span>'}</td></tr>`).join('') || '<tr><td colspan="7">No reviews yet.</td></tr>'}
+    </tbody></table></div>
+    <h2 class="sub-head">Recent reviews</h2>
+    <div class="table-wrap" style="max-height:none"><table><thead><tr><th>Report</th><th>Author</th><th>Reviewer</th><th>Decision</th><th>Level</th><th>Time</th><th>Concerns</th><th>When</th></tr></thead><tbody>
+      ${o.recent.map((d) => `<tr><td>${esc(d.title)}</td><td>${esc(d.author_name)}</td><td>${esc(d.reviewer_name)}</td>
+        <td><span class="pill ${d.decision === 'Approved' ? 'approved' : 'changes'}">${esc(d.decision)}</span></td>
+        <td>${d.level === 'high' ? 'High risk' : d.level ? 'Standard' : '—'}</td><td>${time(d.seconds)}</td><td>${d.concerns ?? '—'}</td><td>${esc(ago(d.when))}</td></tr>`).join('') || '<tr><td colspan="8">No reviews yet.</td></tr>'}
+    </tbody></table></div>
+    <p class="faint" style="margin-top:14px">A reviewer is flagged after 5 reviews with no concern raised, or when their typical review takes under 2 minutes. Flags are prompts for a conversation, not a judgement.</p>
+  </div>`;
 }
 
 // ---- accounts (administrators) -----------------------------------------------------------------

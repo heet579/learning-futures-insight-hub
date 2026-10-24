@@ -282,6 +282,21 @@ class DatabaseAuditTrail:
                 db.execute('INSERT INTO audit_log (line) VALUES (?)', (json.dumps(event, ensure_ascii=False),))
         return event
 
+    def events(self, actions=None):
+        """Audit events in order, optionally only these actions (read-only; used by the oversight panel)."""
+        self.database.initialise()
+        with self.database.connect() as db:
+            rows = db.execute('SELECT line FROM audit_log ORDER BY seq').fetchall()
+        out = []
+        for row in rows:
+            try:
+                event = json.loads(row[0])
+            except ValueError:
+                continue
+            if actions is None or event.get('action') in actions:
+                out.append(event)
+        return out
+
     def verify(self):
         self.database.initialise()
         with self.database.connect() as db:
