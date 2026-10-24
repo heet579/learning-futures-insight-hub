@@ -195,3 +195,10 @@ def test_admin_report_goes_to_another_person_even_a_member(api, people):
     assert returned.status_code == 200
     mine = api.get('/reports?view=mine', headers=admin).json()[0]
     assert mine['status'] == 'CHANGES REQUESTED' and mine['return_notes'] == 'Add the course dates.'
+
+
+def test_a_client_secret_is_never_offered_as_the_google_client_id(api, monkeypatch):
+    monkeypatch.setenv('GOOGLE_WEB_CLIENT_ID', 'GOCSPX-not-an-id')
+    assert api.get('/api/config').json()['google_web_client_id'] == ''
+    monkeypatch.setenv('GOOGLE_WEB_CLIENT_ID', '123-abc.apps.googleusercontent.com')
+    assert api.get('/api/config').json()['google_web_client_id'] == '123-abc.apps.googleusercontent.com'

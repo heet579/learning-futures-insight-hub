@@ -204,7 +204,15 @@ def build_router(services, current_user):
         from src.workflow import APPROVER_ROLES, CLIENT_APPROVER_ROLE
         from server.app import google_config
         import os
-        return {'google_web_client_id': os.getenv('GOOGLE_WEB_CLIENT_ID', '').strip(),
+        web_id = os.getenv('GOOGLE_WEB_CLIENT_ID', '').strip().strip('"\'')
+        if web_id and not web_id.endswith('.apps.googleusercontent.com'):
+            # A client secret (GOCSPX-...) or anything else here makes Google answer
+            # "invalid_client"; hide the button rather than show a broken one.
+            import logging
+            logging.getLogger('insight_hub.server').warning(
+                'GOOGLE_WEB_CLIENT_ID is not a client ID (it must end with .apps.googleusercontent.com).')
+            web_id = ''
+        return {'google_web_client_id': web_id,
                 'google_desktop': bool(google_config()[0]),
                 'approver_roles': list(APPROVER_ROLES), 'client_approver_role': CLIENT_APPROVER_ROLE,
                 'sections': list(__import__('src.reporting.revisions', fromlist=['SECTIONS']).SECTIONS)}

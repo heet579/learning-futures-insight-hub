@@ -60,6 +60,19 @@ def check_env_file():
         values[key.strip()] = value
     for name in ('GEMINI_API_KEY', 'GEMINI_MODEL', 'SERVER_URL'):
         say(OK if values.get(name) else WARN, f'{name} is {"set" if values.get(name) else "empty"}')
+    web_id = values.get('GOOGLE_WEB_CLIENT_ID', '')
+    if web_id.startswith('GOCSPX-'):
+        say(BAD, 'GOOGLE_WEB_CLIENT_ID holds a client SECRET (GOCSPX-...), not the client ID',
+            'Use the Client ID of the "Web application" client (ends with .apps.googleusercontent.com). '
+            'Reset that secret in Google Cloud: it should never be in .env.')
+    elif web_id and not web_id.endswith('.apps.googleusercontent.com'):
+        say(BAD, 'GOOGLE_WEB_CLIENT_ID does not look like a client ID',
+            'It must end with .apps.googleusercontent.com (Google Cloud > Clients > your Web application client).')
+    elif web_id:
+        say(OK, 'GOOGLE_WEB_CLIENT_ID looks right (browser Google sign-in)')
+    else:
+        say(WARN, 'GOOGLE_WEB_CLIENT_ID is empty: no Google button in the browser app',
+            'Google Cloud > Clients > Create client > Web application; add http://127.0.0.1:8000 as an origin.')
     return values
 
 
