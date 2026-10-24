@@ -54,7 +54,9 @@ class LoginScreen:
         if not self.username.get().strip() or not self.password.get():
             self.status.set('Enter your username and password.')
             return
-        self.status.set('Signing in…')
+        from src.remote import server_url
+        self.status.set('Connecting to the Insight Hub server… the first sign-in of the day can take up to a minute.'
+                        if server_url() else 'Signing in…')
         self.button.configure(state='disabled')
         for entry in self.entries:
             entry.configure(state='disabled')

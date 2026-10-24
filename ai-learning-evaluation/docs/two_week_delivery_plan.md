@@ -4,7 +4,7 @@
 
 Deliver a working learning-evaluation application: import Qualtrics feedback through an API or CSV, validate and mask it, persist the processed data, calculate metrics and themes, generate evidence-backed facilitator/client reports, and require human review before approved export.
 
-Deliver the same application in two forms: a hosted web app and a local Docker installation opened in a browser. This plan treats “software” as a locally installable application, not a separate native Windows executable. A native installer is a later milestone if required.
+Deliver the same application in two forms: a hosted API with the desktop client and a local offline mode. This plan treats “software” as a locally installable application, not a separate native Windows executable. A native installer is a later milestone if required.
 
 Assume ten working days, five available team members, and reuse of the existing Python/Streamlit prototype. This is a tested capstone MVP, not a complete enterprise production rollout. Obtain approved Qualtrics sandbox credentials, a representative survey schema, approved AI credentials if needed, and a hosting destination on day 1. Use synthetic data until real-data access and handling are approved.
 
@@ -15,7 +15,7 @@ Assume ten working days, five available team members, and reuse of the existing 
 - PostgreSQL: users/roles, imports, masked responses, metrics, report versions, job status and audit metadata.
 - Python worker: durable database-backed job queue for ETL and report generation; bounded retries and safe recovery after restart.
 - Existing Python modules: validation, masking, metrics, themes, providers and DOCX export, moved behind backend services.
-- Docker Compose: UI, API, worker and database, with persistent volumes and health checks. A hosted reverse proxy provides HTTPS; local deployment binds to localhost by default.
+- Hosting: API on Render (HTTPS) with a Neon Postgres database; local offline mode keeps SQLite.
 - Qualtrics connector: request export, poll completion, download and map responses. Keep CSV import available.
 - AI provider: retain the deterministic offline mode; optionally use the configured approved provider with masked evidence only. Clearly display active mode and provider failures.
 
@@ -27,7 +27,7 @@ Use survey ID + response ID for source identity, and source hashes/version metad
 
 | Person | Primary ownership | Required deliverables | Reviewer |
 |---|---|---|---|
-| Heet | Architecture, backend foundation, Docker and integration | API contracts, authentication/roles, Compose stack, deployment, integrated demo | Gopi |
+| Heet | Architecture, backend foundation, hosting and integration | API contracts, authentication/roles, Render/Neon deployment, integrated demo | Gopi |
 | Gopi | Qualtrics/CSV ingestion, ETL and database | Connector, mappings, migrations, worker, deduplication, retries, import tests | Heet |
 | Zhongyi | Analytics, AI and reporting | Reused metrics/themes, evidence references, provider integration, versioned drafts and exports | Esrat |
 | Xinling | UI and user journey | API-connected screens, progress/errors, report editor and approval UX, browser QA | Heet |
@@ -40,10 +40,10 @@ Owners implement their packages and tests; Esrat coordinates independent verific
 | Day | Heet | Gopi | Zhongyi | Xinling | Esrat | Exit condition |
 |---|---|---|---|---|---|---|
 | 1 | Freeze scope, architecture and API contracts; record baseline test results | Inspect source schema; design database and request API access | Inventory reusable analytics/report code; define evidence contracts | Sketch the minimum screens and full user journey | Define acceptance cases, synthetic fixtures and access/retention checklist | Agreed contracts, owners, fixtures and dependency deadlines |
-| 2 | Scaffold API, configuration, authentication and Compose | Create migrations, import/job tables and CSV ingestion service | Extract analytics/report services from UI dependencies | Build login/import/status screens against agreed mock responses | Add malformed, missing-field, duplicate and PII fixtures | Local stack starts; initial API and database work |
+| 2 | Scaffold API, configuration, authentication and hosting | Create migrations, import/job tables and CSV ingestion service | Extract analytics/report services from UI dependencies | Build login/import/status screens against agreed mock responses | Add malformed, missing-field, duplicate and PII fixtures | Local stack starts; initial API and database work |
 | 3 | Enforce roles and authenticated resource access | Implement worker, validation, masking and transactional load | Connect metrics/themes with stored evidence identifiers | Connect upload and job polling; show actionable errors | Verify metrics and masking; test access denial | CSV → stored masked dataset → analysis works end to end |
 | 4 | Implement report/version/review API with Zhongyi | Implement Qualtrics export/poll/download/mapping and retry handling | Generate both draft types through provider boundary | Build dashboard and inspectable evidence views | Check API failures, schema changes and factual grounding | Analysis produces evidence-linked draft reports |
-| 5 | Integrate and demonstrate week-one build | Add duplicate detection and job restart recovery | Add report edit/version/export service; test provider failure | Complete editor, review decisions and download flow | Execute first full acceptance run; log blockers | Import → draft → edit → approve → export works in Compose |
+| 5 | Integrate and demonstrate week-one build | Add duplicate detection and job restart recovery | Add report edit/version/export service; test provider failure | Complete editor, review decisions and download flow | Execute first full acceptance run; log blockers | Import → draft → edit → approve → export works against the hosted API |
 | 6 | Deploy hosted test instance with HTTPS and secrets | Complete approved live sandbox import if credentials exist | Validate approved AI provider if available; preserve offline mode | Improve validation messages, progress and navigation | Test hosted/local parity and browser compatibility | Hosted and local workflows usable; integration status documented |
 | 7 | Harden sessions, health checks and restart behavior | Test interrupted imports, repeated imports and raw-file cleanup | Ensure edits invalidate approval; export only the approved version | Show version history, failed jobs and retry actions | Run privacy, permission and restart tests | No duplicate data, approval bypass or lost completed results |
 | 8 | Resolve integration blockers; freeze features | Fix ETL defects and document mappings | Fix grounding/report issues and evaluate sample outputs | Run stakeholder UAT and fix usability blockers | Lead UAT, capture evidence and verify backup/restore | Agreed acceptance cases pass or have explicit recorded exceptions |
@@ -64,7 +64,7 @@ Freeze request/response models on day 1, including authentication, stable IDs, e
 
 ## Acceptance criteria
 
-1. A clean machine with Docker installed starts the stack using documented configuration and `docker compose up --build`; migrations and synthetic demo setup are documented.
+1. A clean machine runs the desktop app against the hosted API using documented configuration; database setup and synthetic demo data are documented.
 2. Hosted and local editions complete the same workflow. Local offline mode works without external API credentials after images/dependencies are available.
 3. CSV import always works. Live Qualtrics integration is accepted only after a successful authorized sandbox import; otherwise it is clearly recorded as unverified, with mocked contract tests and the access blocker documented.
 4. Invalid files produce clear errors; repeated imports do not duplicate data; failed jobs expose safe errors and retry without corrupting completed work.

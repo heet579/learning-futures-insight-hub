@@ -3,7 +3,7 @@ import copy
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 
-from src.audit.logger import AuditTrail
+from src.remote import audit_trail
 from src.review.claims import ClaimLedger, extract_claims, remove_claim, ai_text_retained
 from src.review.themes import ThemeReview, CATEGORIES, matched_keywords
 from src.workflow import ReviewWorkflow, APPROVER_ROLES
@@ -19,7 +19,7 @@ class ReviewUI:
         self.theme_review = ThemeReview([])
         self.ledger = ClaimLedger()
         self.workflow = ReviewWorkflow()
-        self.audit = AuditTrail()
+        self.audit = audit_trail()
         self.themes_changed_since_draft = False
         self.claims_refresh_id = None
 

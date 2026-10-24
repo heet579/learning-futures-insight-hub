@@ -1,0 +1,22 @@
+# Render blueprint: New + > Blueprint > pick this repository.
+# Free web service; the database is Neon (paste its connection string as DATABASE_URL).
+services:
+  - type: web
+    name: insight-hub-api
+    runtime: python
+    plan: free
+    rootDir: ai-learning-evaluation
+    buildCommand: pip install -r server/requirements.txt
+    startCommand: uvicorn server.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: DATABASE_URL
+        sync: false          # Neon connection string, entered in the Render dashboard
+      - key: SECRET_KEY
+        generateValue: true  # signs sign-in tokens; Render generates it once
+      - key: ADMIN_USERNAME
+        sync: false          # first administrator, created on startup if missing
+      - key: ADMIN_PASSWORD
+        sync: false

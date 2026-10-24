@@ -13,3 +13,5 @@ def golden_df():
 @pytest.fixture(autouse=True)
 def isolated_report_library(monkeypatch, tmp_path):
     monkeypatch.setenv('REPORT_LIBRARY_PATH', str(tmp_path / 'reports.sqlite3'))
+    # Tests use the local library unless a test starts its own server.
+    monkeypatch.delenv('SERVER_URL', raising=False)

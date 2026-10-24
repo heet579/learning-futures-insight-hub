@@ -107,6 +107,8 @@ class AccountUI:
                 parent=self.root, default='no'):
                 return False
         callback = self.on_logout
+        from src.remote import logout
+        logout()
         self.dispose_workspace()
         callback()
         return True

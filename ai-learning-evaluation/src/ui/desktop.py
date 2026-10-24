@@ -111,7 +111,7 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
     def open_file(self):
         if self.busy:
             return
-        paths = filedialog.askopenfilenames(parent=self.root, title='Open evaluation data', initialdir=os.getenv('DEMO_SHARED_DIR', str(DATA_DIR)), filetypes=[('Survey files', '*.csv *.xlsx *.xls')])
+        paths = filedialog.askopenfilenames(parent=self.root, title='Open evaluation data', initialdir=str(DATA_DIR), filetypes=[('Survey files', '*.csv *.xlsx *.xls')])
         if paths:
             import pandas as pd
             from src.ingestion.qualtrics_loader import load_survey
@@ -252,7 +252,7 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
             'selected report section are submitted; raw survey comments stay on this device. '
             'Submitted summaries may be used by the service to improve its products. Avoid personal details in questions.\n\n'
             'Review actions (theme and claim decisions, submissions, approvals, exports) are recorded in a tamper-evident '
-            'audit log on this computer: ' + str(self.audit.path),
+            'audit log: ' + str(self.audit.path),
             parent=self.root)).pack(anchor='w', pady=(8, 0))
         label(bottom, 'Explore feedback.\nTurn insights into action.\nReports require human review.', 9, '#B8AED9', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
         main = tk.Frame(self.root, bg=BG)
@@ -1650,7 +1650,7 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         if not content:
             messagebox.showerror('Empty report', 'Add report content before exporting.', parent=self.root)
             return False
-        path = filedialog.asksaveasfilename(parent=self.root, initialdir=os.getenv('DEMO_SHARED_DIR', str(Path.cwd())), title='Export reviewed report' if reviewed else 'Save draft report',
+        path = filedialog.asksaveasfilename(parent=self.root, initialdir=str(Path.cwd()), title='Export reviewed report' if reviewed else 'Save draft report',
             initialfile=f'learning_evaluation_{self.report.audience}_{"reviewed" if reviewed else "draft"}.docx',
             defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('Markdown', '*.md')])
         if not path:
