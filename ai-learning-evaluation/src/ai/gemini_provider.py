@@ -10,6 +10,20 @@ from src.ai.insights import insight_evidence
 from src.privacy.pii_masker import mask_text
 
 
+# Gemini 3 models "think" before answering and that thinking counts towards the output
+# limit; a small limit cuts the JSON answer off. 8192 leaves room for both.
+OUTPUT_TOKENS = 8192
+
+
+def _google_error(exc):
+    """Google's own error text (status and message), for a precise explanation."""
+    try:
+        error = json.loads(exc.read().decode("utf-8")).get("error", {})
+        return f"{error.get('status', '')}: {error.get('message', '')}".strip(": ")[:300]
+    except Exception:
+        return ""
+
+
 class GeminiAIProvider(AIProvider):
     name = "Gemini"
 
@@ -56,7 +70,7 @@ class GeminiAIProvider(AIProvider):
                 "Keep the summary concise and return up to four insights as JSON."
             )}]},
             "contents": [{"role": "user", "parts": [{"text": json.dumps({"audience": audience, "evidence": facts})}]}],
-            "generationConfig": {"temperature": 0, "maxOutputTokens": 2500,
+            "generationConfig": {"temperature": 0, "maxOutputTokens": OUTPUT_TOKENS,
                                  "responseMimeType": "application/json", "responseSchema": schema},
         }
         result = self._request(body)
@@ -87,7 +101,7 @@ class GeminiAIProvider(AIProvider):
                 "Mention small samples or missing data when material. Return JSON with answer and evidence_ids."
             )}]},
             "contents": [{"role": "user", "parts": [{"text": json.dumps({"question": question, "evidence": facts})}]}],
-            "generationConfig": {"temperature": 0, "maxOutputTokens": 2000,
+            "generationConfig": {"temperature": 0, "maxOutputTokens": OUTPUT_TOKENS,
                 "responseMimeType": "application/json", "responseSchema": {
                     "type": "OBJECT", "required": ["answer", "evidence_ids"],
                     "properties": {"answer": {"type": "STRING"},
@@ -128,7 +142,7 @@ class GeminiAIProvider(AIProvider):
                 "request": str(mask_text(instruction.strip())),
                 "evidence": facts,
             })}]}],
-            "generationConfig": {"temperature": 0, "maxOutputTokens": 2000,
+            "generationConfig": {"temperature": 0, "maxOutputTokens": OUTPUT_TOKENS,
                 "responseMimeType": "application/json", "responseSchema": {
                     "type": "OBJECT", "required": ["revised_section", "evidence_ids"],
                     "properties": {"revised_section": {"type": "STRING"},
@@ -163,13 +177,17 @@ class GeminiAIProvider(AIProvider):
                 404: "Gemini model unavailable. Update GEMINI_MODEL to a supported model.",
                 429: "Gemini quota reached. Wait and try again, or use local insights. No automatic retries were made.",
             }
-            raise RuntimeError(messages.get(exc.code, "Gemini is temporarily unavailable. Try again later or use local insights.")) from None
+            detail = _google_error(exc)
+            message = messages.get(exc.code, "Gemini is temporarily unavailable. Try again later or use local insights.")
+            raise RuntimeError(f"{message} (Google says: {detail})" if detail else message) from None
         except (URLError, TimeoutError, OSError):
             raise RuntimeError("Could not reach Gemini within the time limit. Check your connection or use local insights.") from None
         except (ValueError, UnicodeError):
             raise RuntimeError("Gemini returned an unreadable response. Use local insights or try again.") from None
         try:
             candidate = envelope["candidates"][0]
+            if candidate.get("finishReason") == "MAX_TOKENS":
+                raise RuntimeError("Gemini's answer was cut off (output limit reached). Try again or use local insights.")
             if candidate.get("finishReason") != "STOP":
                 raise ValueError("Incomplete or blocked response")
             text = "".join(p.get("text", "") for p in candidate["content"]["parts"] if not p.get("thought"))
