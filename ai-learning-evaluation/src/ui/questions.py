@@ -22,9 +22,9 @@ class QuestionsUI:
             return
         context = self.context
         scope = f'\n\n## Analysis scope\n{context.course_name} | {context.metrics["response_count"]:,} responses'
-        from src.ai.gemini_provider import GeminiAIProvider
+        from src.ai.selection import ai_provider
         try:
-            provider = GeminiAIProvider()
+            provider = ai_provider()
         except ValueError:
             self.show(self.answer, 'Question answering is not configured. Contact your workspace administrator.')
             return

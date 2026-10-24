@@ -80,7 +80,7 @@ class HandoffUI(ReviewExperienceUI):
         if self.busy or self.workflow.status != 'HUMAN REVIEWED' or not self.library_id:
             return False
         from src.storage.snapshot import unpack
-        from src.reporting.exporter import docx_bytes, markdown_bytes
+        from src.reporting.designed_report import export_bytes
         try:
             # Export the immutable saved approval, never whatever is in the editor.
             state = unpack(self.repository.load(self.library_id, self.username)['snapshot'])
@@ -93,14 +93,14 @@ class HandoffUI(ReviewExperienceUI):
         path = filedialog.asksaveasfilename(parent=self.root, title='Export approved report',
             initialdir=str(Path.cwd()),
             initialfile=f'learning_evaluation_{state["report"].audience}_reviewed.docx',
-            defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('Markdown', '*.md')])
+            defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('PDF', '*.pdf'), ('Markdown', '*.md')])
         if not path:
             return False
         try:
             suffix = Path(path).suffix.lower()
-            if suffix not in ('.docx', '.md'):
-                raise ValueError('Choose a .docx or .md filename.')
-            data = docx_bytes(final, os.getenv('UNIVERSITY_LOGO_PATH')) if suffix == '.docx' else markdown_bytes(final)
+            if suffix not in ('.docx', '.pdf', '.md'):
+                raise ValueError('Choose a .docx, .pdf or .md filename.')
+            data = export_bytes(state, final, suffix[1:])
             Path(path).write_bytes(data)
         except Exception as exc:
             messagebox.showerror('Export failed', f'{exc}\n\nThe approval is saved. You can try exporting again.', parent=self.root)

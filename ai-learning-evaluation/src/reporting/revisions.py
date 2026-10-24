@@ -106,8 +106,8 @@ def propose_revision(report, content, context, section, feedback, provider='Loca
     if provider in ('Offline edits', 'Local assistant'):
         replacement = local_revision(original_section, feedback)
     elif provider == 'Gemini':
-        from src.ai.gemini_provider import GeminiAIProvider
-        adapter = client if client is not None else GeminiAIProvider()
+        from src.ai.selection import ai_provider
+        adapter = client if client is not None else ai_provider()
         result = adapter.revise_section(context, section, original_section, feedback, report.audience)
         replacement, evidence, note = result['revised_section'], tuple(result['evidence']), result['note']
         if replacement.strip() == original_section.strip():

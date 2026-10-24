@@ -663,8 +663,9 @@ function draftStep(el, ws) {
       ${ws.can_undo_revision ? '<button class="btn btn-ghost btn-sm" id="undo">Undo last change</button>' : ''}
       <button class="btn btn-quiet btn-sm" id="regenerate">Create draft again</button>
       <span class="spacer" style="flex:1"></span>
-      <button class="btn btn-quiet btn-sm" data-export="md">Download Markdown</button><button class="btn btn-quiet btn-sm" data-export="docx">Download Word</button></div>` : ''}
+      <button class="btn btn-quiet btn-sm" data-export="md">Markdown</button><button class="btn btn-quiet btn-sm" data-export="docx">Word</button><button class="btn btn-ghost btn-sm" data-export="pdf">PDF</button></div>` : ''}
     <div id="doc-area"><article class="doc">${md(ws.content)}</article></div>
+    ${chartsPanel(ws)}
     ${ws.can_edit ? `<section class="panel improve" id="improve">
       <h3>Improve a section</h3>
       ${revision ? revisionPreview(revision) : `
@@ -680,6 +681,7 @@ function draftStep(el, ws) {
       <button class="btn btn-primary" id="suggest">Show suggested change</button>`}
     </section>` : ''}`;
   $$('[data-export]').forEach((b) => b.onclick = () => download(`/api/reports/${id}/export?format=${b.dataset.export}`, `report.${b.dataset.export}`));
+  bindCharts(ws, id);
   if (!ws.can_edit) return;
   $('#regenerate').onclick = async (e) => {
     if (!await dialog({ title: 'Create the draft again?', body: 'This replaces the current text and clears every statement you checked.', confirm: 'Create again', danger: true })) return;
@@ -713,6 +715,79 @@ function draftStep(el, ws) {
     e.currentTarget.innerHTML = S.improve.method === 'gemini' ? 'Asking Gemini…' : 'Preparing…';
     if (await change('/revisions', body, 'POST', e.currentTarget)) { renderWork('draft'); $('#improve').scrollIntoView({ block: 'start' }); }
   };
+}
+
+// charts that go into the two-page Word / PDF report
+function chartsPanel(ws) {
+  const cat = ws.chart_kinds, editable = ws.can_edit;
+  const needs = (k) => ({ measure: ['group_bar', 'group_box', 'trend'].includes(k), group: ['group_bar', 'group_box'].includes(k) });
+  const card = (c, i) => {
+    const n = needs(c.kind);
+    return `<figure class="chart-card" data-chart="${i}">
+      <div class="chart-img"><img alt="${esc(c.title)}" data-src="/api/reports/${S.work.report.id}/charts/${i}.png?v=${S.work.report.version}"></div>
+      <figcaption><b>Figure ${i + 1}.</b> ${esc(c.title)}</figcaption>
+      ${editable ? `<div class="chart-edit">
+        <select class="input input-sm" data-field="kind" aria-label="Chart type">${Object.entries(cat.kinds).map(([k, v]) => `<option value="${k}" ${k === c.kind ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
+        ${n.measure ? `<select class="input input-sm" data-field="measure" aria-label="Rating">${Object.entries(cat.measures).map(([k, v]) => `<option value="${k}" ${k === c.measure ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>` : ''}
+        ${n.group ? `<select class="input input-sm" data-field="group" aria-label="Compare by">${Object.entries(cat.groups).map(([k, v]) => `<option value="${k}" ${k === c.group ? 'selected' : ''}>by ${esc(v)}</option>`).join('')}</select>` : ''}
+        <div class="chart-tools">
+          ${i > 0 ? `<button class="btn btn-quiet btn-sm" data-move="-1" title="Move earlier">←</button>` : ''}
+          ${i < ws.charts.length - 1 ? `<button class="btn btn-quiet btn-sm" data-move="1" title="Move later">→</button>` : ''}
+          ${ws.charts.length > 1 ? '<button class="btn btn-quiet btn-sm" data-remove>Remove</button>' : ''}</div>
+      </div>` : ''}
+    </figure>`;
+  };
+  return `<section class="panel charts-panel" id="charts">
+    <div class="charts-head"><div><h3>Charts in the report</h3>
+      <p class="muted">The Word and PDF downloads are a two-page report with these ${ws.charts.length} chart${ws.charts.length === 1 ? '' : 's'}: two on each page, in this order.</p></div></div>
+    <div class="chart-grid">${ws.charts.map(card).join('')}</div>
+    ${editable ? `<div class="chart-ask">
+      <label class="field" style="flex:1;margin:0"><span>Describe a chart</span>
+        <input class="input" id="chart-text" maxlength="300" placeholder="e.g. box plot of satisfaction by delivery mode · relevance over time · compare content quality by course"></label>
+      <select class="input" id="chart-slot" aria-label="Where">
+        ${ws.charts.length < cat.max ? '<option value="">Add as a new chart</option>' : ''}
+        ${ws.charts.map((c, i) => `<option value="${i}" ${ws.charts.length >= cat.max && i === ws.charts.length - 1 ? 'selected' : ''}>Replace figure ${i + 1}</option>`).join('')}</select>
+      <button class="btn btn-primary" id="chart-add">Make chart</button></div>` : ''}
+  </section>`;
+}
+
+function bindCharts(ws, id) {
+  $$('#charts img[data-src]').forEach(async (img) => {
+    try {
+      const response = await api(img.dataset.src, { raw: true });
+      img.src = URL.createObjectURL(await response.blob());
+      img.onload = () => URL.revokeObjectURL(img.src);
+    } catch { img.closest('.chart-img').classList.add('failed'); }
+  });
+  if (!ws.can_edit) return;
+  const save = async (charts, button, message) => {
+    if (await change('/charts', { charts }, 'PUT', button)) { toast(message); renderWork('draft'); $('#charts')?.scrollIntoView({ block: 'start' }); }
+  };
+  const plain = () => ws.charts.map(({ kind, measure, group }) => ({ kind, measure, group }));
+  $$('#charts [data-chart]').forEach((card) => {
+    const i = Number(card.dataset.chart);
+    $$('select[data-field]', card).forEach((sel) => sel.onchange = () => {
+      const charts = plain();
+      charts[i] = { ...charts[i], [sel.dataset.field]: sel.value };
+      if (sel.dataset.field === 'kind') charts[i] = { kind: sel.value, measure: charts[i].measure, group: charts[i].group || 'DeliveryMode' };
+      save(charts, null, 'Chart updated');
+    });
+    $('[data-remove]', card)?.addEventListener('click', (e) => save(plain().filter((_, j) => j !== i), e.currentTarget, 'Chart removed'));
+    $$('[data-move]', card).forEach((b) => b.onclick = (e) => {
+      const charts = plain(), j = i + Number(b.dataset.move);
+      [charts[i], charts[j]] = [charts[j], charts[i]];
+      save(charts, e.currentTarget, 'Order changed');
+    });
+  });
+  const ask = async (e) => {
+    const text = $('#chart-text').value.trim();
+    if (!text) return toast('Describe the chart you want.', true);
+    const slot = $('#chart-slot').value;
+    const r = await change('/charts/describe', { text, replace: slot === '' ? null : Number(slot) }, 'POST', e?.currentTarget || $('#chart-add'));
+    if (r) { toast(r.result || 'Chart added'); renderWork('draft'); $('#charts')?.scrollIntoView({ block: 'start' }); }
+  };
+  $('#chart-add').onclick = ask;
+  $('#chart-text').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ask(); } };
 }
 
 function revisionPreview(r) {
@@ -857,7 +932,7 @@ function reviewStep(el, ws) {
         : ws.can_review ? `Written by ${person(report.owner_name, report.owner)} and sent to you for review. Read it as the reader will, check the decisions on the right, then approve or send it back with notes.`
         : report.reviewer ? `${person(report.reviewer_name, report.reviewer)} is reviewing this report. You will see it here as approved, or back in your list with their notes.`
         : 'An administrator is reviewing this report. You will see it here as approved, or back in your list with notes.'}</p></div>
-      ${approved ? `<div style="display:flex;gap:8px"><button class="btn btn-ghost" data-export="md">Markdown</button><button class="btn btn-primary" data-export="docx">Download Word</button></div>` : ''}</div>
+      ${approved ? `<div style="display:flex;gap:8px"><button class="btn btn-ghost" data-export="md">Markdown</button><button class="btn btn-ghost" data-export="pdf">PDF</button><button class="btn btn-primary" data-export="docx">Download Word</button></div>` : ''}</div>
     <div class="review-grid">
       <article class="doc">${md(ws.content)}</article>
       <aside class="side">

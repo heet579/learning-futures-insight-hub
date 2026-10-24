@@ -406,7 +406,8 @@ class LibraryUI:
                      revision_method=self.revision_provider.get(),
                      replacement_input=self.replacement.get('1.0', 'end-1c'),
                      revision_selection=self.selected_revision_sections(),
-                     audience=self.audience.get(), approved_export=self.approved_export)
+                     audience=self.audience.get(), approved_export=self.approved_export,
+                     charts=getattr(self, 'charts', None))
         return pack(state)
 
     def library_unsaved(self):
@@ -467,6 +468,7 @@ class LibraryUI:
         self.apply_analysis((state['frame'], state['context'], state['masked_count'], []))
         self.library_owner = row['owner']
         self.approved_export = state.get('approved_export', '')
+        self.charts = state.get('charts')
         for name in ('report', 'workflow', 'themes_changed_since_draft'):
             setattr(self, name, state[name])
         self.theme_review.decisions = state['theme_decisions']

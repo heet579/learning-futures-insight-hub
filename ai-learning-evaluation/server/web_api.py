@@ -151,13 +151,44 @@ def build_router(services, current_user):
                      'undo': workspace.undo_revision}[action]
         return change(report_id, user, lambda s: operation(s) and None, f'Revision {action}')
 
+    # ---- charts in the two-page report ---------------------------------------------------------
+    class ChartSpec(BaseModel):
+        kind: str = Field(max_length=40)
+        measure: str | None = Field(default=None, max_length=60)
+        group: str | None = Field(default=None, max_length=60)
+        title: str | None = Field(default=None, max_length=90)
+
+    class Charts(BaseModel):
+        charts: list[ChartSpec] = Field(max_length=4)
+
+    @router.put('/reports/{report_id}/charts')
+    def set_charts(report_id: str, body: Charts, user=Depends(current_user)):
+        specs = [c.model_dump(exclude_none=True) for c in body.charts]
+        return change(report_id, user, lambda s: workspace.set_charts(s, specs) and None, 'Report charts changed',
+                      charts=', '.join(c.kind for c in body.charts))
+
+    class ChartRequest(BaseModel):
+        text: str = Field(min_length=1, max_length=300)
+        replace: int | None = Field(default=None, ge=0, le=3)
+
+    @router.post('/reports/{report_id}/charts/describe')
+    def describe_chart(report_id: str, body: ChartRequest, user=Depends(current_user)):
+        return change(report_id, user, lambda s: workspace.describe_chart(s, body.text, body.replace),
+                      'Report charts changed', request=body.text[:120])
+
+    @router.get('/reports/{report_id}/charts/{index}.png')
+    def chart_image(report_id: str, index: int, user=Depends(current_user)):
+        _, state = open_report(report_id, user)
+        return Response(workspace.chart_png(state, index), media_type='image/png',
+                        headers={'Cache-Control': 'private, max-age=60'})
+
     # ---- Gemini on the server ------------------------------------------------------------------
     def gemini():
-        from src.ai.gemini_provider import GeminiAIProvider
+        from src.ai.selection import ai_provider
         try:
-            return GeminiAIProvider()
+            return ai_provider()
         except ValueError:
-            raise ValueError('Gemini is not set up on the server yet (GEMINI_API_KEY).') from None
+            raise ValueError('No AI service is set up on the server yet (ANTHROPIC_API_KEY or GEMINI_API_KEY).') from None
 
     @router.post('/reports/{report_id}/insights')
     def insights(report_id: str, user=Depends(current_user)):
@@ -179,9 +210,8 @@ def build_router(services, current_user):
 
     # ---- export --------------------------------------------------------------------------------
     @router.get('/reports/{report_id}/export')
-    def export(report_id: str, format: Literal['docx', 'md'] = 'docx', user=Depends(current_user)):
-        import os
-        from src.reporting.exporter import docx_bytes, markdown_bytes
+    def export(report_id: str, format: Literal['docx', 'pdf', 'md'] = 'docx', user=Depends(current_user)):
+        from src.reporting.designed_report import MEDIA, export_bytes
         row, state = open_report(report_id, user)
         if state['workflow'].status == 'HUMAN REVIEWED' and state.get('approved_export'):
             text, suffix = state['approved_export'], 'reviewed'
@@ -191,11 +221,7 @@ def build_router(services, current_user):
             raise ValueError('There is nothing to export yet.')
         audience = state['report'].audience if state['report'] else 'report'
         name = f'learning_evaluation_{audience}_{suffix}.{format}'
-        if format == 'docx':
-            data, media = docx_bytes(text, os.getenv('UNIVERSITY_LOGO_PATH')), \
-                'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        else:
-            data, media = markdown_bytes(text), 'text/markdown; charset=utf-8'
+        data, media = export_bytes(state, text, format), MEDIA[format]
         services.audit.append('Report exported', user['username'], report_id=row['id'], kind=suffix, format=format)
         return Response(data, media_type=media, headers={'Content-Disposition': f'attachment; filename="{name}"'})
 
@@ -204,7 +230,15 @@ def build_router(services, current_user):
         from src.workflow import APPROVER_ROLES, CLIENT_APPROVER_ROLE
         from server.app import google_config
         import os
-        return {'google_web_client_id': os.getenv('GOOGLE_WEB_CLIENT_ID', '').strip(),
+        web_id = os.getenv('GOOGLE_WEB_CLIENT_ID', '').strip().strip('"\'')
+        if web_id and not web_id.endswith('.apps.googleusercontent.com'):
+            # A client secret (GOCSPX-...) or anything else here makes Google answer
+            # "invalid_client"; hide the button rather than show a broken one.
+            import logging
+            logging.getLogger('insight_hub.server').warning(
+                'GOOGLE_WEB_CLIENT_ID is not a client ID (it must end with .apps.googleusercontent.com).')
+            web_id = ''
+        return {'google_web_client_id': web_id,
                 'google_desktop': bool(google_config()[0]),
                 'approver_roles': list(APPROVER_ROLES), 'client_approver_role': CLIENT_APPROVER_ROLE,
                 'sections': list(__import__('src.reporting.revisions', fromlist=['SECTIONS']).SECTIONS)}
