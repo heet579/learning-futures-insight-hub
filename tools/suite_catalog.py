@@ -24,5 +24,5 @@ def selected_paths(root, names):
     """Discover paths afresh so an all-suite run includes newly added tests."""
     files = sorted((root / 'ai-learning-evaluation' / 'tests').glob('test_*.py'))
     files += sorted((root / 'tools' / 'tests').glob('test_*.py'))
-    return [str(path.relative_to(root)) for path in files
+    return [path.relative_to(root).as_posix() for path in files
             if not names or group_for(path.relative_to(root).as_posix()) in names]

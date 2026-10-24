@@ -30,13 +30,16 @@ def parser():
     result.add_argument('--no-color', action='store_true', help='Disable ANSI console colors')
     result.add_argument('--strict-skips', action='store_true', help='Treat skipped tests as a failed run')
     result.add_argument('--output-dir', type=Path, default=ROOT / 'test-results' / 'latest', help='Directory for JSON and JUnit reports')
+    result.add_argument('--postgres', action='store_true', help='Also test the disposable database in INSIGHT_HUB_TEST_DATABASE_URL (its tables are emptied)')
     return result
 
 
-def missing_dependencies(headless=False):
+def missing_dependencies(headless=False, postgres=False):
     needed = dict(REQUIRED)
     if not headless:
         needed['tkinter'] = 'Tkinter (install the Python Tk component)'
+    if postgres:
+        needed.update(psycopg='psycopg[binary]', psycopg_pool='psycopg-pool')
     return [package for module, package in needed.items() if importlib.util.find_spec(module) is None]
 
 
@@ -65,7 +68,11 @@ def main(argv=None):
             paths = selected_paths(ROOT, [name])
             print(f'{name:10} {description} ({len(paths)} files)')
         return 0
-    missing = missing_dependencies(options.headless)
+    test_database = os.environ.get('INSIGHT_HUB_TEST_DATABASE_URL', '')
+    if options.postgres and not test_database.startswith(('postgres://', 'postgresql://')):
+        print('SETUP REQUIRED: --postgres needs INSIGHT_HUB_TEST_DATABASE_URL pointing to a disposable Postgres database.', file=sys.stderr)
+        return 2
+    missing = missing_dependencies(options.headless, options.postgres)
     if missing:
         print('SETUP REQUIRED: ' + ', '.join(missing), file=sys.stderr)
         print('Install into this interpreter:\n  "' + sys.executable +
@@ -82,7 +89,7 @@ def main(argv=None):
         print(f'Cannot create report directory: {exc}', file=sys.stderr)
         return 2
     command = [sys.executable, '-m', 'pytest', '-c', str(ROOT / 'pytest.ini'), '-p', 'no:cacheprovider',
-               '-p', 'no:terminal', '-p', 'tools.suite_reporter', '--junitxml', str(directory / 'junit.xml')]
+               '-q', '-p', 'tools.suite_reporter', '-o', 'xfail_strict=true', '--junitxml', str(directory / 'junit.xml')]
     if options.match:
         command += ['-k', options.match]
     if options.fail_fast:
@@ -91,6 +98,8 @@ def main(argv=None):
     print('Groups: ' + ', '.join(options.suite or SUITES), flush=True)
     with tempfile.TemporaryDirectory(prefix='insight-hub-tests-') as temporary:
         env = isolated_environment(Path(temporary))
+        if options.postgres:
+            env['INSIGHT_HUB_TEST_DATABASE_URL'] = test_database
         env.update(INSIGHT_HUB_SUITE_OUTPUT=str(directory), INSIGHT_HUB_SUITE_HEADLESS=str(int(options.headless)),
                    INSIGHT_HUB_SUITE_VERBOSE=str(int(options.verbose)),
                    INSIGHT_HUB_SUITE_STRICT_SKIPS=str(int(options.strict_skips)),
