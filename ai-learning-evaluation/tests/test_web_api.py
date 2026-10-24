@@ -239,7 +239,7 @@ def test_report_charts_are_chosen_for_the_data_and_described_in_words(api, peopl
     # Text only: the downloads still fill exactly two pages.
     ws = api.put(f'/api/reports/{rid}/charts/enabled', headers=gopi, json={'enabled': False}).json()['workspace']
     assert ws['charts_enabled'] is False
-    pypdf = pytest.importorskip('pypdf')
+    import pypdf
     from io import BytesIO
     for enabled in (False, True):
         api.put(f'/api/reports/{rid}/charts/enabled', headers=gopi, json={'enabled': enabled})
@@ -325,7 +325,7 @@ def test_client_reports_need_the_two_extra_questions(api, people):
         **CLEAR_OK, 'fair': 'yes', 'fairness_note': 'Results for small cohorts should not be used on their own.'}})
     assert ok.status_code == 200, ok.text
     pdf = api.get(f'/api/reports/{rid}/export?format=pdf', headers=gopi)
-    pypdf = pytest.importorskip('pypdf')
+    import pypdf
     from io import BytesIO
     reader = pypdf.PdfReader(BytesIO(pdf.content))
     text = ''.join(page.extract_text() for page in reader.pages)
