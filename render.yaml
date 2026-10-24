@@ -1,0 +1,29 @@
+# Render blueprint: New + > Blueprint > pick this repository.
+# Free web service; the database is Neon (paste its connection string as DATABASE_URL).
+services:
+  - type: web
+    name: insight-hub-api
+    runtime: python
+    plan: free
+    region: singapore    # same region as the Neon database (AWS ap-southeast-1)
+    rootDir: ai-learning-evaluation
+    buildCommand: pip install -r server/requirements.txt
+    startCommand: uvicorn server.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: DATABASE_URL
+        sync: false          # Neon pooled connection string (host contains -pooler)
+      - key: DATABASE_URL_UNPOOLED
+        sync: false          # Neon direct connection string, used only to create tables
+      - key: SECRET_KEY
+        generateValue: true  # signs sign-in tokens; Render generates it once
+      - key: ADMIN_USERNAME
+        sync: false          # first administrator, created on startup if missing
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false          # Google OAuth "Desktop app" client ID (enables Continue with Google)
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

@@ -91,7 +91,7 @@ class HandoffUI(ReviewExperienceUI):
             messagebox.showerror('Cannot export report', str(exc), parent=self.root)
             return False
         path = filedialog.asksaveasfilename(parent=self.root, title='Export approved report',
-            initialdir=os.getenv('DEMO_SHARED_DIR', str(Path.cwd())),
+            initialdir=str(Path.cwd()),
             initialfile=f'learning_evaluation_{state["report"].audience}_reviewed.docx',
             defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('Markdown', '*.md')])
         if not path:

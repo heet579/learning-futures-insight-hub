@@ -1,14 +1,14 @@
 """Saved drafts, isolated from the SQLite implementation."""
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
-from src.storage.reports import ReportRepository
+from src.remote import report_repository
 from src.storage.snapshot import pack, unpack
 from src.ui.theme import BG, WHITE, INK, MUTED, TEAL, BORDER
 
 
 class LibraryUI:
     def init_library(self):
-        self.repository = ReportRepository()
+        self.repository = report_repository()
         self.library_id = self.library_version = self.saved_snapshot = None
         self.library_title = ''
         self.library_owner = ''

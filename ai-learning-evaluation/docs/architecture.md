@@ -2,7 +2,7 @@
 
 ## Current application
 
-A Python desktop app (Tkinter). Docker can serve the same window in a browser through noVNC. Everything runs on the user's computer except requests to Gemini.
+A Python desktop app (Tkinter). In local mode everything runs on the user's computer except requests to Gemini. In shared mode (`SERVER_URL` set) the desktop signs in to the Insight Hub API (FastAPI on Render), which stores accounts, the Report library and the audit chain in Postgres (Neon); see [deployment.md](deployment.md).
 
 Startup shows a sign-in screen before building the workspace. Local accounts are read from an editable UTF-8 `config/users.txt` file with readable plain-text passwords; the account file is reloaded on each login attempt. Accounts are maintained by an administrator, with no signup flow. Review names are still entered separately from the signed-in account.
 
