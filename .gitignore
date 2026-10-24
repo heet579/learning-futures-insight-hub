@@ -7,6 +7,7 @@ __pycache__/
 .deepeval/
 .coverage
 htmlcov/
+test-results/
 
 # Credentials and local configuration
 .env

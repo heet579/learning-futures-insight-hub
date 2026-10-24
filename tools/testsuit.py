@@ -27,6 +27,9 @@ def parser():
     result.add_argument('--headless', action='store_true', help='Skip tests that require a Tk window')
     result.add_argument('--fail-fast', action='store_true', help='Stop after the first failure')
     result.add_argument('--verbose', action='store_true', help='Show every test name')
+    result.add_argument('--no-color', action='store_true', help='Disable ANSI console colors')
+    result.add_argument('--strict-skips', action='store_true', help='Treat skipped tests as a failed run')
+    result.add_argument('--output-dir', type=Path, default=ROOT / 'test-results' / 'latest', help='Directory for JSON and JUnit reports')
     return result
 
 
@@ -72,8 +75,14 @@ def main(argv=None):
     if not paths:
         print('NO TESTS: no files matched the selected groups.', file=sys.stderr)
         return 5
-    command = [sys.executable, '-m', 'pytest', '-c', str(ROOT / 'pytest.ini'), '-p', 'no:cacheprovider']
-    command += ['-v' if options.verbose else '-q']
+    directory = options.output_dir.resolve()
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f'Cannot create report directory: {exc}', file=sys.stderr)
+        return 2
+    command = [sys.executable, '-m', 'pytest', '-c', str(ROOT / 'pytest.ini'), '-p', 'no:cacheprovider',
+               '-p', 'no:terminal', '-p', 'tools.suite_reporter', '--junitxml', str(directory / 'junit.xml')]
     if options.match:
         command += ['-k', options.match]
     if options.fail_fast:
@@ -81,7 +90,16 @@ def main(argv=None):
     print('LEARNING FUTURES | TEST SUITE', flush=True)
     print('Groups: ' + ', '.join(options.suite or SUITES), flush=True)
     with tempfile.TemporaryDirectory(prefix='insight-hub-tests-') as temporary:
-        return subprocess.call(command + paths, cwd=ROOT, env=isolated_environment(Path(temporary)))
+        env = isolated_environment(Path(temporary))
+        env.update(INSIGHT_HUB_SUITE_OUTPUT=str(directory), INSIGHT_HUB_SUITE_HEADLESS=str(int(options.headless)),
+                   INSIGHT_HUB_SUITE_VERBOSE=str(int(options.verbose)),
+                   INSIGHT_HUB_SUITE_STRICT_SKIPS=str(int(options.strict_skips)),
+                   INSIGHT_HUB_SUITE_COLOR=str(int(not options.no_color and sys.stdout.isatty() and 'NO_COLOR' not in os.environ)))
+        try:
+            return subprocess.call(command + paths, cwd=ROOT, env=env)
+        except KeyboardInterrupt:
+            print('\nTest run interrupted.', file=sys.stderr)
+            return 130
 
 
 if __name__ == '__main__':
