@@ -79,6 +79,10 @@ label.field > small { display: block; color: var(--ink-faint); margin-top: 4px; 
 .input:hover { border-color: var(--line-strong); }
 .input:focus { border-color: var(--plum); box-shadow: var(--focus); outline: none; }
 textarea.input { resize: vertical; min-height: 110px; line-height: 1.5; }
+.reveal { position: relative; }
+.reveal .input { padding-right: 76px; }
+.reveal-btn { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); border: 0; background: var(--lilac); color: var(--plum); font-weight: 700; border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: .88rem; }
+.reveal-btn:hover { background: var(--plum-tint); }
 .error { color: var(--clay); font-weight: 700; margin-top: 10px; }
 .segmented { display: inline-flex; background: var(--lilac); border-radius: 999px; padding: 4px; gap: 2px; }
 .segmented button { border: 0; background: transparent; border-radius: 999px; padding: 7px 16px; cursor: pointer; color: var(--ink-soft); font-weight: 700; }

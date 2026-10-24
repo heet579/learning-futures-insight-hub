@@ -116,3 +116,82 @@ def test_browser_app_is_served(api):
     page = api.get('/')
     assert page.status_code == 200 and 'Insight Hub' in page.text
     assert api.get('/api/config').json()['approver_roles']
+
+
+def submit_ready_report(api, headers):
+    rid = upload(api, headers).json()['report']['id']
+    ws = api.get(f'/api/reports/{rid}', headers=headers).json()['workspace']
+    for theme in ws['themes']:
+        api.post(f'/api/reports/{rid}/themes', headers=headers, json={'name': theme['name'], 'status': 'confirmed'})
+    ws = api.post(f'/api/reports/{rid}/draft', headers=headers, json={'audience': 'facilitator'}).json()['workspace']
+    for _ in range(200):
+        pending = [c for c in ws['claims'] if c['decision'] == 'pending']
+        if not pending:
+            break
+        decision = 'reject' if pending[0]['blocking'] else 'accept'
+        ws = api.post(f'/api/reports/{rid}/claims/{pending[0]["key"]}', headers=headers, json={'decision': decision}).json()['workspace']
+    return rid
+
+
+def test_author_chooses_the_reviewer_and_names_are_shown(api, people):
+    admin, gopi, _ = people
+    api.patch('/auth/me', headers=gopi, json={'display_name': 'Gopi Ravula'})
+    api.post('/users', headers=admin, json={'username': 'heet', 'password': 'heet-pass', 'role': 'admin',
+                                            'display_name': 'Heet Patel'})
+    heet = sign_in(api, 'heet', 'heet-pass')
+    assert {r['username'] for r in api.get('/api/reviewers', headers=gopi).json()} == {'lisa', 'heet'}
+    assert 'heet' not in {r['username'] for r in api.get('/api/reviewers', headers=heet).json()}
+
+    rid = submit_ready_report(api, gopi)
+    version = api.get(f'/api/reports/{rid}', headers=gopi).json()['report']['version']
+    bad = api.post(f'/reports/{rid}/transition', headers=gopi, json={'version': version, 'action': 'submit', 'reviewer': 'esrat'})
+    assert bad.status_code == 400 and 'administrator' in bad.json()['detail']
+    sent = api.post(f'/reports/{rid}/transition', headers=gopi, json={'version': version, 'action': 'submit', 'reviewer': 'heet'})
+    assert sent.status_code == 200 and sent.json()['reviewer'] == 'heet'
+
+    mine = api.get('/reports?view=mine', headers=gopi).json()[0]
+    assert mine['reviewer'] == 'heet' and mine['reviewer_name'] == 'Heet Patel'
+    view = api.get(f'/api/reports/{rid}', headers=gopi).json()['report']
+    assert view['reviewer_name'] == 'Heet Patel' and view['owner_name'] == 'Gopi Ravula'
+
+    # Only the chosen reviewer gets it; another administrator cannot decide it.
+    pending = api.get('/reports?view=pending', headers=heet).json()
+    assert [r['id'] for r in pending] == [rid] and pending[0]['owner_name'] == 'Gopi Ravula'
+    assert api.get('/reports?view=pending', headers=admin).json() == []
+    assert api.get(f'/api/reports/{rid}', headers=admin).json()['workspace']['can_review'] is False
+    blocked = api.post(f'/reports/{rid}/transition', headers=admin, json={'version': version + 1, 'action': 'approve',
+                                                                           'role': 'Program coordinator', 'confirmed': True})
+    assert blocked.status_code == 403 and 'heet' in blocked.json()['detail']
+    review = api.get(f'/api/reports/{rid}', headers=heet).json()
+    assert review['workspace']['can_review'] is True
+    approved = api.post(f'/reports/{rid}/transition', headers=heet, json={'version': review['report']['version'],
+                        'action': 'approve', 'role': 'Program coordinator', 'confirmed': True})
+    assert approved.status_code == 200
+    assert api.get('/reports?view=approved', headers=gopi).json()[0]['reviewer_name'] == 'Heet Patel'
+
+
+def test_admin_report_goes_to_another_person_even_a_member(api, people):
+    admin, gopi, esrat = people
+    choices = {r['username']: r['role'] for r in api.get('/api/reviewers', headers=admin).json()}
+    assert choices == {'gopi': 'member', 'esrat': 'member'}        # members can review an admin's report
+    assert {r['username'] for r in api.get('/api/reviewers', headers=gopi).json()} == {'lisa'}
+
+    rid = submit_ready_report(api, admin)
+    version = api.get(f'/api/reports/{rid}', headers=admin).json()['report']['version']
+    assert 'Choose who' in api.post(f'/reports/{rid}/transition', headers=admin,
+                                   json={'version': version, 'action': 'submit'}).json()['detail']
+    assert api.post(f'/reports/{rid}/transition', headers=admin,
+                    json={'version': version, 'action': 'submit', 'reviewer': 'gopi'}).status_code == 200
+
+    assert [r['id'] for r in api.get('/reports?view=pending', headers=gopi).json()] == [rid]
+    assert api.get('/reports?view=pending', headers=esrat).json() == []
+    assert api.get(f'/api/reports/{rid}', headers=esrat).status_code == 400
+    review = api.get(f'/api/reports/{rid}', headers=gopi).json()
+    assert review['workspace']['can_review'] and review['report']['owner'] == 'lisa'
+    assert api.post(f'/reports/{rid}/transition', headers=esrat, json={'version': review['report']['version'],
+                    'action': 'approve', 'role': 'Program coordinator', 'confirmed': True}).status_code == 403
+    returned = api.post(f'/reports/{rid}/transition', headers=gopi, json={'version': review['report']['version'],
+                        'action': 'return', 'notes': 'Add the course dates.'})
+    assert returned.status_code == 200
+    mine = api.get('/reports?view=mine', headers=admin).json()[0]
+    assert mine['status'] == 'CHANGES REQUESTED' and mine['return_notes'] == 'Add the course dates.'

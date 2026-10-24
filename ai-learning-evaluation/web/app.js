@@ -171,7 +171,7 @@ function shell(active, content) {
   <header class="topbar">
     <a class="brand" href="#/"><span class="brand-mark">${icon.mark}</span><span class="brand-name">Insight Hub</span> <small>Learning Futures</small></a>
     <nav class="nav" aria-label="Main">
-      <a href="#/" ${active === 'home' ? 'aria-current="page"' : ''}>Reports${S.user.role === 'admin' ? pending : ''}</a>
+      <a href="#/" ${active === 'home' ? 'aria-current="page"' : ''}>Reports${pending}</a>
       ${S.user.role === 'admin' ? `<a href="#/accounts" ${active === 'accounts' ? 'aria-current="page"' : ''}>Accounts</a>` : ''}
     </nav>
     <span class="spacer"></span>
@@ -233,7 +233,7 @@ function signInView(mode) {
           <label class="field"><span>Full name</span><input class="input" name="display_name" autocomplete="name" required></label>
           <label class="field"><span>Username</span><input class="input" name="username" autocomplete="username" required><small>Letters, numbers, dots or hyphens. You'll use it to sign in.</small></label>
           <label class="field"><span>Email</span><input class="input" name="email" type="email" autocomplete="email" required></label>
-          <label class="field"><span>Password</span><input class="input" name="password" type="password" autocomplete="new-password" minlength="8" required><small>At least 8 characters.</small></label>
+          <label class="field"><span>Password</span><div class="reveal"><input class="input" name="password" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="reveal-btn" aria-pressed="false">Show</button></div><small>At least 8 characters.</small></label>
           <button class="btn btn-primary btn-lg" style="width:100%">Request account</button>
           <div id="msg"></div>
         </form>
@@ -242,7 +242,7 @@ function signInView(mode) {
         <p class="sub">Sign in to your evaluation workspace.</p>
         <form id="form">
           <label class="field"><span>Username</span><input class="input" name="username" autocomplete="username" required autofocus></label>
-          <label class="field"><span>Password</span><input class="input" name="password" type="password" autocomplete="current-password" required></label>
+          <label class="field"><span>Password</span><div class="reveal"><input class="input" name="password" type="password" autocomplete="current-password" required><button type="button" class="reveal-btn" aria-pressed="false" aria-label="Show password">Show</button></div></label>
           <button class="btn btn-primary btn-lg" style="width:100%">Sign in</button>
           <div id="msg"></div>
         </form>
@@ -251,6 +251,7 @@ function signInView(mode) {
     </section>
   </div>`;
   $('#switch').onclick = () => { location.hash = register ? '#/sign-in' : '#/create-account'; };
+  bindReveal(app);
   const msg = (text, kind = 'bad') => { $('#msg').innerHTML = text ? `<div class="notice ${kind}" style="margin-top:16px">${esc(text)}</div>` : ''; };
   $('#form').onsubmit = async (e) => {
     e.preventDefault();
@@ -281,6 +282,18 @@ function signInView(mode) {
   }).then((shown) => shown && $('#google-area').classList.remove('hidden'));
 }
 
+function bindReveal(root) {
+  $$('.reveal-btn', root).forEach((b) => b.onclick = () => {
+    const input = b.previousElementSibling;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    b.textContent = show ? 'Hide' : 'Show';
+    b.setAttribute('aria-pressed', String(show));
+    b.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    input.focus();
+  });
+}
+
 function googleButton(target, onCredential) {
   return new Promise((resolve) => {
     const render = () => {
@@ -304,7 +317,7 @@ async function homeView() {
   let mine = [], pending = [], approved = [];
   try {
     [mine, pending, approved] = await Promise.all([
-      api('/reports?view=mine'), S.user.role === 'admin' ? api('/reports?view=pending') : [], api('/reports?view=approved')]);
+      api('/reports?view=mine'), api('/reports?view=pending'), api('/reports?view=approved')]);
   } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
   S.pendingCount = pending.length;
   const working = mine.filter((r) => r.status !== 'HUMAN REVIEWED');
@@ -316,7 +329,7 @@ async function homeView() {
   const row = (r, opts = {}) => `
     <div class="item" data-open="${esc(r.id)}" tabindex="0" role="link">
       <div><div class="title">${esc(r.title)}</div>
-        <div class="meta">${opts.owner ? `From ${esc(r.owner)}, ` : ''}updated ${esc(ago(r.updated))}</div>
+        <div class="meta">${rowMeta(r, opts)}</div>
         ${r.return_notes ? `<div class="note"><b>${esc(r.returned_by)} asked for changes:</b> ${esc(r.return_notes)}</div>` : ''}
       </div>
       ${pill(r.status)}
@@ -337,7 +350,7 @@ async function homeView() {
       </div>
       <button class="btn btn-primary btn-lg" id="start" disabled>Analyse survey</button>
     </form>
-    ${S.user.role === 'admin' ? `<div class="section-head"><h2>Waiting for your review</h2><span class="faint">${pending.length}</span></div>
+    ${S.user.role === 'admin' || pending.length ? `<div class="section-head"><h2>Waiting for your review</h2><span class="faint">${pending.length}</span></div>
       <div class="list">${pending.map((r) => row(r, { owner: true })).join('') || '<div class="empty">Nothing to review right now. Reports teammates submit appear here.</div>'}</div>` : ''}
     <div class="section-head"><h2>Your reports</h2><span class="faint">${working.length}</span></div>
     <div class="list">${working.map((r) => row(r, { delete: true })).join('') || '<div class="empty">No reports yet. Your drafts appear here, and only you can see them until you send them for review.</div>'}</div>
@@ -355,6 +368,20 @@ async function homeView() {
     await busy(b, async () => { await api(`/reports/${b.dataset.open || b.dataset.delete}?version=${b.dataset.version}`, { method: 'DELETE' }); toast('Draft deleted'); homeView(); });
   });
   bindUpload();
+}
+
+function person(name, username) {
+  return name && name !== username ? `${esc(name)} (${esc(username)})` : esc(username);
+}
+
+function rowMeta(r, opts) {
+  const parts = [];
+  if (opts.owner) parts.push(`From ${person(r.owner_name, r.owner)}`);
+  if (r.status === 'AWAITING HUMAN REVIEW' && !opts.owner) parts.push(r.reviewer ? `With ${esc(r.reviewer_name || r.reviewer)} for review` : 'With the administrators for review');
+  if (r.status === 'HUMAN REVIEWED' && r.reviewer) parts.push(`Approved by ${esc(r.reviewer_name || r.reviewer)}`);
+  parts.push(`updated ${esc(ago(r.updated))}`);
+  const text = parts.join(', ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function bindUpload() {
@@ -437,7 +464,7 @@ function renderWork(step) {
             <span class="dot">${done[key] ? icon.check : i + 1}</span><span class="label"><b>${label}</b><small>${hint}</small></span></a></li>`;
       }).join('')}
       ${ws.can_review || ['AWAITING HUMAN REVIEW', 'HUMAN REVIEWED'].includes(ws.workflow.status) ? `<li><a href="#/r/${report.id}/review" ${reviewing ? 'aria-current="step"' : ''}>
-        <span class="dot">${ws.workflow.status === 'HUMAN REVIEWED' ? icon.check : '6'}</span><span class="label"><b>${ws.workflow.status === 'HUMAN REVIEWED' ? 'Approved' : 'Review'}</b><small>${ws.can_review ? 'Your decision' : 'Reviewer’s decision'}</small></span></a></li>` : ''}
+        <span class="dot">${ws.workflow.status === 'HUMAN REVIEWED' ? icon.check : '6'}</span><span class="label"><b>${ws.workflow.status === 'HUMAN REVIEWED' ? 'Approved' : 'Review'}</b><small>${ws.can_review ? 'Your decision' : report.reviewer_name ? esc(report.reviewer_name) : 'Reviewer’s decision'}</small></span></a></li>` : ''}
       </ol>
     </aside>`;
   const views = { data: dataStep, themes: themesStep, draft: draftStep, check: checkStep, send: sendStep, review: reviewStep };
@@ -781,14 +808,37 @@ function sendStep(el, ws) {
   const ready = ws.blockers.length === 0;
   el.innerHTML = `${returnedBanner(ws)}
     <div class="stage-head"><div><h1>Send it for a second review</h1>
-      <p>An administrator reads the report, checks your decisions and either approves it or sends it back with notes. It's locked while they review it.</p></div></div>
+      <p>A second person reads the report, checks your decisions and either approves it or sends it back with notes. It's locked while they review it.</p></div></div>
     <ul class="checklist">${items.map(([text, ok]) => `<li class="${ok ? 'ok' : ''}"><span class="mark">${ok ? '✓' : '○'}</span>${esc(text)}</li>`).join('')}</ul>
     ${ready ? '' : `<div class="notice warn banner">${ws.blockers.map(esc).join('<br>')}</div>`}
-    <button class="btn btn-primary btn-lg" id="submit" ${ready && ws.can_edit ? '' : 'disabled'}>Send for review</button>`;
+    <label class="field narrow" id="reviewer-field"><span>Who should review it?</span>
+      <select class="input" id="reviewer" disabled><option>Loading reviewers…</option></select></label>
+    <button class="btn btn-primary btn-lg" id="submit" disabled>Send for review</button>`;
+  let people = [];
+  api('/api/reviewers').then((list) => {
+    people = list;
+    const select = $('#reviewer');
+    if (!select) return;
+    if (!list.length) {
+      $('#reviewer-field').innerHTML = `<div class="notice warn">${S.user.role === 'admin'
+        ? 'There is nobody else to review your report yet. Add or approve another account under Accounts.'
+        : 'There is no administrator to review this report yet. Ask an administrator to set one up.'}</div>`;
+      return;
+    }
+    const option = (p) => `<option value="${esc(p.username)}">${person(p.display_name, p.username)}</option>`;
+    const admins = list.filter((p) => p.role === 'admin'), members = list.filter((p) => p.role !== 'admin');
+    select.innerHTML = admins.length && members.length
+      ? `<optgroup label="Administrators">${admins.map(option).join('')}</optgroup><optgroup label="Team members">${members.map(option).join('')}</optgroup>`
+      : list.map(option).join('');
+    select.disabled = false;
+    $('#submit').disabled = !(ready && ws.can_edit);
+  }).catch((error) => toast(error.message, true));
   $('#submit').onclick = (e) => busy(e.currentTarget, async () => {
-    await api(`/reports/${id}/transition`, { method: 'POST', body: { version: S.work.report.version, action: 'submit' } });
+    const reviewer = $('#reviewer').value;
+    await api(`/reports/${id}/transition`, { method: 'POST', body: { version: S.work.report.version, action: 'submit', reviewer } });
     S.work = await api(`/api/reports/${id}`);
-    toast('Sent for review');
+    const chosen = people.find((p) => p.username === reviewer);
+    toast(`Sent to ${chosen?.display_name || reviewer} for review`);
     location.hash = `#/r/${id}/review`;
   });
 }
@@ -802,9 +852,10 @@ function reviewStep(el, ws) {
   const roles = S.config.approver_roles || [];
   const clientReport = ws.report?.audience === 'client';
   el.innerHTML = `${returnedBanner(ws)}
-    <div class="stage-head"><div><h1>${approved ? 'Approved' : ws.can_review ? 'Your review' : 'With the reviewer'}</h1>
-      <p>${approved ? `Approved by ${esc(ws.workflow.approver)} (${esc(ws.workflow.approver_role)}). The download includes a review record page.`
-        : ws.can_review ? `Written by ${esc(report.owner)}. Read it as the reader will, check the decisions on the right, then approve or send it back with notes.`
+    <div class="stage-head"><div><h1>${approved ? 'Approved' : ws.can_review ? 'Your review' : report.reviewer ? `With ${esc(report.reviewer_name || report.reviewer)}` : 'With the reviewer'}</h1>
+      <p>${approved ? `Approved by ${person(report.reviewer_name, ws.workflow.approver)} as ${esc(ws.workflow.approver_role)}. Written by ${person(report.owner_name, report.owner)}. The download includes a review record page.`
+        : ws.can_review ? `Written by ${person(report.owner_name, report.owner)} and sent to you for review. Read it as the reader will, check the decisions on the right, then approve or send it back with notes.`
+        : report.reviewer ? `${person(report.reviewer_name, report.reviewer)} is reviewing this report. You will see it here as approved, or back in your list with their notes.`
         : 'An administrator is reviewing this report. You will see it here as approved, or back in your list with notes.'}</p></div>
       ${approved ? `<div style="display:flex;gap:8px"><button class="btn btn-ghost" data-export="md">Markdown</button><button class="btn btn-primary" data-export="docx">Download Word</button></div>` : ''}</div>
     <div class="review-grid">
@@ -826,7 +877,7 @@ function reviewStep(el, ws) {
           <label class="confirm"><input type="checkbox" id="checked"><span>I checked the evidence, privacy and final wording.</span></label>
           <div style="display:grid;gap:10px"><button class="btn btn-good btn-lg" id="approve" disabled>Approve report</button>
           <button class="btn btn-bad" id="return">Send back with notes</button></div></div>` : ''}
-        <div class="panel"><h3>History</h3><ol class="timeline">${[...ws.workflow.events].reverse().map((e) => `<li><b>${esc(e.action)}</b>${e.actor ? ` by ${esc(e.actor)}` : ''}<small>${esc(ago(e.at))}</small>${e.action === 'Returned for changes' ? `<div class="muted">${esc(e.notes)}</div>` : ''}</li>`).join('') || '<li>No review activity yet.</li>'}</ol></div>
+        <div class="panel"><h3>History</h3><ol class="timeline">${[...ws.workflow.events].reverse().map((e) => `<li><b>${esc(e.action)}</b>${e.actor ? ` by ${esc(e.actor)}` : ''}${e.action === 'Submitted for review' && report.reviewer && status === 'AWAITING HUMAN REVIEW' ? `, sent to ${esc(report.reviewer_name || report.reviewer)}` : ''}<small>${esc(ago(e.at))}</small>${e.action === 'Returned for changes' ? `<div class="muted">${esc(e.notes)}</div>` : ''}</li>`).join('') || '<li>No review activity yet.</li>'}</ol></div>
       </aside>
     </div>`;
   $$('[data-export]').forEach((b) => b.onclick = () => download(`/api/reports/${report.id}/export?format=${b.dataset.export}`, `report.${b.dataset.export}`));
@@ -902,13 +953,14 @@ async function profileView() {
       <label class="field"><span>Username</span><input class="input" value="${esc(me.username)}" disabled><small>Usernames can't change because reports and the audit log record them.</small></label>
       <button class="btn btn-primary">Save details</button></form>
     <form id="password" class="form-section"><h2 style="margin-bottom:16px">${me.has_password ? 'Change password' : 'Set a password'}</h2>
-      ${me.has_password ? '<label class="field"><span>Current password</span><input class="input" name="current_password" type="password" autocomplete="current-password" required></label>' : ''}
-      <label class="field"><span>New password</span><input class="input" name="new_password" type="password" autocomplete="new-password" minlength="8" required><small>At least 8 characters.</small></label>
+      ${me.has_password ? '<label class="field"><span>Current password</span><div class="reveal"><input class="input" name="current_password" type="password" autocomplete="current-password" required><button type="button" class="reveal-btn" aria-pressed="false">Show</button></div></label>' : ''}
+      <label class="field"><span>New password</span><div class="reveal"><input class="input" name="new_password" type="password" autocomplete="new-password" minlength="8" required><button type="button" class="reveal-btn" aria-pressed="false">Show</button></div><small>At least 8 characters.</small></label>
       <button class="btn btn-primary">${me.has_password ? 'Change password' : 'Set password'}</button></form>
     <section class="form-section"><h2 style="margin-bottom:8px">Google</h2>
       <p class="muted" style="margin-bottom:14px">${me.google ? 'Connected. You can use Continue with Google to sign in.' : 'Not connected. Connect it to sign in with your Google account.'}</p>
       ${me.google ? '<button class="btn btn-ghost" id="unlink">Disconnect Google</button>' : S.config.google_web_client_id ? '<div id="link-google"></div>' : '<p class="faint">Google sign-in for the browser is not set up on this server yet.</p>'}
     </section></div>`;
+  bindReveal($('#main'));
   $('#details').onsubmit = (e) => { e.preventDefault(); const d = Object.fromEntries(new FormData(e.target));
     busy($('button', e.target), async () => { const r = await api('/auth/me', { method: 'PATCH', body: d }); S.user.display_name = r.display_name; toast('Details saved'); profileView(); }); };
   $('#password').onsubmit = (e) => { e.preventDefault(); const d = Object.fromEntries(new FormData(e.target));

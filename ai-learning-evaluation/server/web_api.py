@@ -27,19 +27,23 @@ def build_router(services, current_user):
     def permissions(row, state, user):
         status = state['workflow'].status
         can_edit = row['owner'] == user['username'] and status in workspace.EDITABLE
-        can_review = (user['role'] == 'admin' and row['owner'] != user['username']
-                      and status == 'AWAITING HUMAN REVIEW')
+        assigned_to_me = row['reviewer'] == user['username'] or (not row['reviewer'] and user['role'] == 'admin')
+        can_review = row['owner'] != user['username'] and status == 'AWAITING HUMAN REVIEW' and assigned_to_me
         return can_edit, can_review
 
     def open_report(report_id, user):
         row = services.reports.load(report_id, user['username'])
-        if row['owner'] != user['username'] and user['role'] != 'admin':
+        if row['owner'] != user['username'] and user['role'] != 'admin' and row['reviewer'] != user['username']:
             raise ValueError('This report is unavailable for this account.')
         return row, unpack(row['snapshot'])
 
     def payload(row, state, user, **extra):
         can_edit, can_review = permissions(row, state, user)
-        return {'report': meta(row), 'workspace': workspace.view(state, can_edit=can_edit, can_review=can_review), **extra}
+        names = {u['username']: u['display_name'] or u['username'] for u in services.users.list()}
+        report = meta(row)
+        report.update(owner_name=names.get(row['owner'], row['owner']),
+                      reviewer_name=names.get(row['reviewer'], row['reviewer']) if row['reviewer'] else '')
+        return {'report': report, 'workspace': workspace.view(state, can_edit=can_edit, can_review=can_review), **extra}
 
     def change(report_id, user, operation, audit_action=None, **audit_details):
         """Load, check ownership, apply `operation(state)`, save; returns the new workspace view."""

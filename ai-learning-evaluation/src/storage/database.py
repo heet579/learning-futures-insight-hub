@@ -60,6 +60,28 @@ class Row:
         return len(self._values)
 
 
+# Saved reports contain the whole survey dataset. Large values are stored zlib-compressed
+# (about 25 times smaller) so each save and load moves little data to and from the database.
+COMPRESSED = 'zlib:'
+COMPRESS_FROM = 64 * 1024
+
+
+def _pack_value(value):
+    if isinstance(value, str) and len(value) >= COMPRESS_FROM and not value.startswith(COMPRESSED):
+        import base64
+        import zlib
+        return COMPRESSED + base64.b64encode(zlib.compress(value.encode('utf-8'), 6)).decode('ascii')
+    return value
+
+
+def _unpack_value(value):
+    if isinstance(value, str) and value.startswith(COMPRESSED):
+        import base64
+        import zlib
+        return zlib.decompress(base64.b64decode(value[len(COMPRESSED):])).decode('utf-8')
+    return value
+
+
 class _Cursor:
     def __init__(self, cursor):
         self._cursor = cursor
@@ -68,10 +90,10 @@ class _Cursor:
 
     def fetchone(self):
         row = self._cursor.fetchone()
-        return None if row is None else Row(self._names, row)
+        return None if row is None else Row(self._names, [_unpack_value(v) for v in row])
 
     def fetchall(self):
-        return [Row(self._names, row) for row in self._cursor.fetchall()]
+        return [Row(self._names, [_unpack_value(v) for v in row]) for row in self._cursor.fetchall()]
 
     def __iter__(self):
         return iter(self.fetchall())
@@ -91,7 +113,7 @@ class PostgresConnection:
         elif stripped.upper().startswith('PRAGMA'):
             return _EmptyCursor()
         cursor = self._connection.cursor()
-        cursor.execute(sql.replace('?', '%s'), tuple(params))
+        cursor.execute(sql.replace('?', '%s'), tuple(_pack_value(p) for p in params))
         return _Cursor(cursor)
 
     def __enter__(self):
@@ -118,6 +140,14 @@ class _EmptyCursor:
         return iter(())
 
 
+def _pool_available():
+    try:
+        import psycopg_pool  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 class Database:
     """One storage location: a postgresql:// URL, or a SQLite file path for tests and local runs."""
 
@@ -138,8 +168,25 @@ class Database:
         parts = urlsplit(self.url)
         return f'Postgres {parts.hostname}{parts.path}'
 
+    def _pool(self):
+        """Reuse open connections instead of a new TLS handshake for every query."""
+        if getattr(self, '_connection_pool', None) is None:
+            import atexit
+            from psycopg_pool import ConnectionPool
+            # max_idle stays below Neon's 5-minute scale-to-zero; check() drops stale connections.
+            self._connection_pool = ConnectionPool(
+                self.url, min_size=0, max_size=6, max_idle=240, timeout=30, open=True,
+                check=ConnectionPool.check_connection,
+                kwargs={'connect_timeout': 20, 'prepare_threshold': None})
+            atexit.register(self._connection_pool.close)
+        return self._connection_pool
+
     @contextmanager
     def connect(self, direct=False):
+        if self.is_postgres and not direct and _pool_available():
+            with self._pool().connection() as raw:
+                yield PostgresConnection(raw)
+            return
         if self.is_postgres:
             import psycopg
             # prepare_threshold=None: no server-side prepared statements, which a
@@ -204,6 +251,12 @@ class DatabaseReportRepository(ReportRepository):
         with self.database.connect() as db:
             with db:
                 yield db
+
+    def assign_reviewer(self, report_id, version, reviewer):
+        """Record who a submitted report was sent to (the reviewer column until a decision)."""
+        with self.connect() as db:
+            db.execute("UPDATE reports SET reviewer=? WHERE id=? AND version=? AND status='AWAITING HUMAN REVIEW'",
+                       (reviewer, report_id, version))
 
 
 class DatabaseAuditTrail:
