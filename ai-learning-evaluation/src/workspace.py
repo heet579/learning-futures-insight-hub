@@ -119,18 +119,18 @@ def generate(state, audience, provider=None):
     context = review.reviewed_context(state['context'])
     notice = ''
     if provider is None:
-        from src.ai.gemini_provider import GeminiAIProvider
+        from src.ai.selection import ai_provider
         try:
-            provider = GeminiAIProvider()
+            provider = ai_provider()
         except ValueError:
-            provider, notice = LocalAnalysisProvider(), 'Gemini is not set up on the server, so this draft uses fixed local wording.'
+            provider, notice = LocalAnalysisProvider(), 'No AI service (Claude or Gemini) is set up, so this draft uses fixed local wording.'
     try:
         report = generate_report(context, audience, provider)
     except Exception:
         if isinstance(provider, LocalAnalysisProvider):
             raise
         report = generate_report(context, audience, LocalAnalysisProvider())
-        notice = 'Gemini was unavailable, so this draft uses fixed local wording.'
+        notice = 'The AI service was unavailable, so this draft uses fixed local wording.'
     state.update(report=report, content=report.content, audience=audience, claim_decisions={}, claim_history=[],
                  themes_changed_since_draft=False, pending_revision=None, revision_history=[],
                  revision_section_decisions={}, revision_section_snapshots={})

@@ -89,6 +89,36 @@ def gemini_call(key, model):
                    {'Content-Type': 'application/json', 'x-goog-api-key': key})
 
 
+def check_claude(values):
+    print('\nClaude')
+    key = values.get('ANTHROPIC_API_KEY', '')
+    model = values.get('ANTHROPIC_MODEL', '') or 'claude-haiku-5-5'
+    if not key:
+        print('         ANTHROPIC_API_KEY not set (optional; Gemini is used instead)')
+        return False
+    print(f'         key: {len(key)} characters, {"looks right (sk-ant-...)" if key.startswith("sk-ant-") else "unexpected format"}; model: {model}')
+    body = json.dumps({'model': model, 'max_tokens': 16, 'messages': [{'role': 'user', 'content': 'Reply with OK.'}]}).encode()
+    status, text = request('https://api.anthropic.com/v1/messages', body,
+                           {'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01'})
+    if status == 200:
+        say(OK, f'Claude answered using {model} (the app will use Claude)')
+        return True
+    if status == 0:
+        say(BAD, f'Could not reach Claude ({text})', 'Check the internet connection, VPN or firewall.')
+        return False
+    try:
+        detail = json.loads(text).get('error', {}).get('message', '')[:250]
+    except ValueError:
+        detail = text[:200]
+    fixes = {401: 'The key is wrong or deleted: create a new one in the Claude Console (API keys) and paste it into .env.',
+             403: 'The key is not allowed to use the API: check the workspace and that the account has credit.',
+             404: 'Unknown model: set ANTHROPIC_MODEL=claude-haiku-5-5 (or remove the line).',
+             429: 'Rate limit: wait a minute and try again.'}
+    fix = 'Add credit in the Claude Console (Settings > Billing).' if 'credit' in detail.lower() else fixes.get(status, '')
+    say(BAD, f'Claude refused the request: HTTP {status} {detail}', fix)
+    return False
+
+
 def check_gemini(values):
     print('\nGemini')
     key, model = values.get('GEMINI_API_KEY', ''), values.get('GEMINI_MODEL', '') or 'gemini-2.5-flash-lite'
@@ -181,7 +211,12 @@ def check_server(values):
 def main():
     print('Insight Hub setup check')
     values = check_env_file()
-    check_gemini(values)
+    claude_ok = check_claude(values)
+    choice = values.get('AI_PROVIDER', '').lower()
+    if claude_ok and choice != 'gemini':
+        print('\nGemini\n         skipped: Claude is set up and is used for drafts, insights and questions')
+    else:
+        check_gemini(values)
     check_database(values)
     check_server(values)
     print('\n' + ('Everything checked out.' if not problems else f'{len(problems)} thing(s) need attention (see above).'))

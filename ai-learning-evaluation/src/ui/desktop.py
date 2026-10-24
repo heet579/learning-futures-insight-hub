@@ -1561,10 +1561,10 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         context, audience = self.review_context(), self.audience.get()
 
         def work():
-            from src.ai.gemini_provider import GeminiAIProvider
+            from src.ai.selection import ai_provider
             from src.ai.local_provider import LocalAnalysisProvider
             try:
-                provider = GeminiAIProvider()
+                provider = ai_provider()
             except ValueError:
                 # Gemini is not set up on this computer: draft locally and say so.
                 return generate_report(context, audience, LocalAnalysisProvider()), 'not configured'

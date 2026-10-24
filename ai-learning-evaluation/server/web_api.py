@@ -153,11 +153,11 @@ def build_router(services, current_user):
 
     # ---- Gemini on the server ------------------------------------------------------------------
     def gemini():
-        from src.ai.gemini_provider import GeminiAIProvider
+        from src.ai.selection import ai_provider
         try:
-            return GeminiAIProvider()
+            return ai_provider()
         except ValueError:
-            raise ValueError('Gemini is not set up on the server yet (GEMINI_API_KEY).') from None
+            raise ValueError('No AI service is set up on the server yet (ANTHROPIC_API_KEY or GEMINI_API_KEY).') from None
 
     @router.post('/reports/{report_id}/insights')
     def insights(report_id: str, user=Depends(current_user)):
