@@ -5,6 +5,7 @@ services:
     name: insight-hub-api
     runtime: python
     plan: free
+    region: singapore    # same region as the Neon database (AWS ap-southeast-1)
     rootDir: ai-learning-evaluation
     buildCommand: pip install -r server/requirements.txt
     startCommand: uvicorn server.app:app --host 0.0.0.0 --port $PORT
