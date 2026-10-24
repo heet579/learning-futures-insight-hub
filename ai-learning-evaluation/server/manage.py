@@ -6,6 +6,7 @@ Point DATABASE_URL at the Neon database (in .env or the shell), then:
     python -m server.manage create-user gopi --password gop123
     python -m server.manage create-user heet --role admin --replace   # reset a password
     python -m server.manage list-users
+    python -m server.manage approve-user gopi          # approve a sign-up request
     python -m server.manage disable-user heet
     python -m server.manage enable-user heet
     python -m server.manage check          # prove the database connection works
@@ -35,7 +36,7 @@ def main(argv=None):
     create.add_argument('--password', help='Password without prompting (it stays in your shell history)')
     sub.add_parser('list-users')
     sub.add_parser('check', help='Connect, create tables if needed and verify the audit chain')
-    for name in ('disable-user', 'enable-user'):
+    for name in ('disable-user', 'enable-user', 'approve-user'):
         sub.add_parser(name).add_argument('username')
     args = parser.parse_args(argv)
 
@@ -55,7 +56,11 @@ def main(argv=None):
             check(database)
         elif args.command == 'list-users':
             for row in users.list():
-                print(f"{row['username']:<24} {row['role']:<8} {'active' if row['active'] else 'disabled'}")
+                status = 'waiting for approval' if not row['approved'] else 'active' if row['active'] else 'disabled'
+                print(f"{row['username']:<20} {row['role']:<7} {status:<21} {row['email']}")
+        elif args.command == 'approve-user':
+            users.approve(args.username)
+            print(f'Account {args.username} approved.')
         else:
             users.set_active(args.username, args.command == 'enable-user')
             print(f"Account {args.username} {'enabled' if args.command == 'enable-user' else 'disabled'}.")

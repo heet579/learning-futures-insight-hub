@@ -73,24 +73,43 @@ Restart the app and sign in with a server account. Leave `SERVER_URL` blank to g
 
 ## Accounts
 
-Accounts on the server have a role. A `member` creates drafts, saves them and submits them for review. Only an `admin` receives review requests (Pending review), returns or approves submitted reports, and manages accounts. An admin still cannot approve a report they wrote.
-Passwords are stored only as PBKDF2 hashes. `config/users.txt` is not used in shared mode.
+Accounts have a role. A `member` creates drafts, saves them and submits them for review. Only an
+`admin` receives review requests (Pending review), returns or approves submitted reports, and
+manages accounts. An admin still cannot approve a report they wrote. Passwords are stored only as
+PBKDF2 hashes: nobody, including administrators, can read them; an administrator can reset them.
+`config/users.txt` is not used in shared mode.
 
-From any PC with the project, put the Neon `DATABASE_URL` in your shell or `.env` (administrators
-only) and run, inside `ai-learning-evaluation`:
+**In the app (shared mode):**
+
+* **Create account** on the sign-in screen sends a request (name, username, email, password). It
+  appears under **Manage accounts** as *Waiting for approval*; the person can sign in once an admin
+  approves it.
+* **Continue with Google** opens the browser for Google sign-in. A new Google user becomes a
+  request waiting for approval; a Google address that matches an existing account is connected to it.
+* **Account menu → Profile settings**: change name, email (needs the current password), password,
+  and connect or disconnect Google. Usernames are fixed because reports and the audit log record them.
+* **Account menu → Manage accounts** (admins): approve or reject requests, make admin/member,
+  disable/enable, reset passwords.
+
+**From the command line** (administrators; needs the Neon `DATABASE_URL` in `.env`), inside
+`ai-learning-evaluation`:
 
 ```sh
-pip install -r server/requirements.txt
-python -m server.manage create-user lisa --role admin
-python -m server.manage create-user xinling
-python -m server.manage create-user esrat
 python -m server.manage list-users
-python -m server.manage disable-user someone      # takes effect immediately, even for open sessions
-python -m server.manage create-user xinling --replace   # reset a password
+python -m server.manage approve-user gopi
+python -m server.manage create-user gopi --password gop123               # create directly, already approved
+python -m server.manage create-user heet --role admin --replace           # reset a password (prompts)
+python -m server.manage disable-user someone
 ```
 
-Administrators can do the same through the API (`POST /users`, `GET /users`,
-`POST /users/{name}/active?active=false`) from `/docs` after signing in.
+## Sign in with Google (one-time setup)
+
+1. In Google Cloud Console create a project, then **Google Auth Platform**: app name, support
+   email, audience **External**, and add each team member's Gmail under **Audience → Test users**.
+2. **Clients → Create client → Desktop app**. Copy the client ID and secret (download the JSON).
+3. In Render, add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Desktops need nothing extra: the
+   app fetches the client details from the server. (Google documents that a desktop client's
+   secret is not confidential; the server still verifies every Google ID token.)
 
 ## Run the server on your own PC (development)
 

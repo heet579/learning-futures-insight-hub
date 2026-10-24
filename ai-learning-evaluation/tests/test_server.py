@@ -72,7 +72,8 @@ def test_health_login_and_admin_accounts(api):
     assert api.get('/reports').status_code == 401
     assert api.post('/auth/login', json={'username': 'lisa', 'password': 'wrong'}).status_code == 401
     admin = sign_in(api, 'lisa', 'admin-pass')
-    assert api.get('/auth/me', headers=admin).json() == {'username': 'lisa', 'role': 'admin'}
+    me = api.get('/auth/me', headers=admin).json()
+    assert (me['username'], me['role'], me['has_password'], me['google']) == ('lisa', 'admin', True, False)
     assert api.post('/users', headers=admin, json={'username': 'Alex', 'password': 'pw-alex'}).status_code == 200
     alex = sign_in(api, 'alex', 'pw-alex')
     assert api.get('/users', headers=alex).status_code == 403

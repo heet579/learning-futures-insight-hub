@@ -164,7 +164,21 @@ class Database:
                 db.execute(REPORTS_TABLE)
                 db.execute(USERS_TABLE)
                 db.execute(AUDIT_TABLE_PG if self.is_postgres else AUDIT_TABLE_SQLITE)
+                self._migrate_users(db)
         self._ready = True
+
+    def _migrate_users(self, db):
+        """Add the self-service account columns to databases created before them."""
+        added = [('approved', "INTEGER NOT NULL DEFAULT 1"), ('email', "TEXT NOT NULL DEFAULT ''"),
+                 ('display_name', "TEXT NOT NULL DEFAULT ''"), ('google_sub', "TEXT NOT NULL DEFAULT ''")]
+        if self.is_postgres:
+            for name, kind in added:
+                db.execute(f'ALTER TABLE users ADD COLUMN IF NOT EXISTS {name} {kind}')
+        else:
+            existing = {row[1] for row in db.execute('PRAGMA table_info(users)')}
+            for name, kind in added:
+                if name not in existing:
+                    db.execute(f'ALTER TABLE users ADD COLUMN {name} {kind}')
 
 
 class DatabaseReportRepository(ReportRepository):
@@ -240,58 +254,163 @@ def password_matches(password, stored):
 
 
 ROLES = ('member', 'admin')
+NO_PASSWORD = '!'          # Google-only accounts: no password sign-in until one is set
+USER_COLUMNS = 'username, password_hash, role, active, created, approved, email, display_name, google_sub'
+EMAIL_PATTERN = r'[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{2,63}'
+
+
+def normalize_email(email):
+    import re
+    email = (email or '').strip().lower()
+    if email and not re.fullmatch(EMAIL_PATTERN, email):
+        raise ValueError('Enter a valid email address.')
+    return email
+
+
+def clean_display_name(name):
+    name = ' '.join((name or '').split())
+    if len(name) > 80:
+        raise ValueError('Use a name of up to 80 characters.')
+    return name
 
 
 class UserStore:
-    """Accounts held in the server database. Passwords are stored only as PBKDF2 hashes."""
+    """Accounts held in the server database. Passwords are stored only as PBKDF2 hashes.
+
+    `approved` is 0 for self-registered accounts until an administrator approves them;
+    `active` is 0 for accounts an administrator has disabled."""
 
     def __init__(self, database):
         self.database = database
 
-    def create(self, username, password, role='member', replace=False):
+    def _check_unique(self, db, username, email='', google_sub=''):
+        if email and db.execute('SELECT 1 FROM users WHERE email=? AND username!=?', (email, username)).fetchone():
+            raise ValueError('An account already uses that email address.')
+        if google_sub and db.execute('SELECT 1 FROM users WHERE google_sub=? AND username!=?',
+                                     (google_sub, username)).fetchone():
+            raise ValueError('That Google account is already connected to another account.')
+
+    def create(self, username, password, role='member', replace=False, *, email='', display_name='',
+               approved=True, google_sub=''):
         from src.auth import normalize_username, validate_password
         username = normalize_username(username)
-        validate_password(password)
+        if password is not None:
+            validate_password(password)
         if role not in ROLES:
             raise ValueError(f'Role must be one of: {", ".join(ROLES)}.')
+        email, display_name = normalize_email(email), clean_display_name(display_name)
+        stored = password_hash(password) if password is not None else NO_PASSWORD
         self.database.initialise()
         now = datetime.now(timezone.utc).isoformat()
         with self.database.connect() as db:
             with db:
                 exists = db.execute('SELECT 1 FROM users WHERE username=?', (username,)).fetchone()
                 if exists and not replace:
-                    raise ValueError('That account exists. Use --replace to change its password or role.')
+                    raise ValueError('That username is taken. Choose another one.' if not approved else
+                                     'That account exists. Use --replace to change its password or role.')
+                self._check_unique(db, username, email, google_sub)
                 if exists:
-                    db.execute('UPDATE users SET password_hash=?, role=?, active=1 WHERE username=?',
-                               (password_hash(password), role, username))
+                    db.execute('UPDATE users SET password_hash=?, role=?, active=1, approved=1 WHERE username=?',
+                               (stored, role, username))
+                    if email or display_name:
+                        db.execute("UPDATE users SET email=CASE WHEN ?='' THEN email ELSE ? END, "
+                                   "display_name=CASE WHEN ?='' THEN display_name ELSE ? END WHERE username=?",
+                                   (email, email, display_name, display_name, username))
                 else:
-                    db.execute('INSERT INTO users (username, password_hash, role, active, created) VALUES (?,?,?,?,?)',
-                               (username, password_hash(password), role, 1, now))
+                    db.execute('INSERT INTO users (username, password_hash, role, active, created, approved, '
+                               'email, display_name, google_sub) VALUES (?,?,?,?,?,?,?,?,?)',
+                               (username, stored, role, 1, now, 1 if approved else 0, email, display_name, google_sub))
         return username
 
-    def set_active(self, username, active):
+    def _update(self, username, sql, params):
         self.database.initialise()
         with self.database.connect() as db:
             with db:
-                count = db.execute('UPDATE users SET active=? WHERE username=?',
-                                   (1 if active else 0, username.strip().lower())).rowcount
+                count = db.execute(f'UPDATE users SET {sql} WHERE username=?',
+                                   (*params, username.strip().lower())).rowcount
         if not count:
             raise ValueError('No such account.')
 
-    def get(self, username):
+    def set_active(self, username, active):
+        self._update(username, 'active=?', (1 if active else 0,))
+
+    def approve(self, username):
+        self._update(username, 'approved=1, active=1', ())
+
+    def set_role(self, username, role):
+        if role not in ROLES:
+            raise ValueError(f'Role must be one of: {", ".join(ROLES)}.')
+        self._update(username, 'role=?', (role,))
+
+    def set_password(self, username, password):
+        from src.auth import validate_password
+        validate_password(password)
+        self._update(username, 'password_hash=?', (password_hash(password),))
+
+    def update_profile(self, username, *, display_name=None, email=None):
         self.database.initialise()
         with self.database.connect() as db:
-            row = db.execute('SELECT username, password_hash, role, active, created FROM users WHERE username=?',
-                             (username.strip().lower(),)).fetchone()
+            with db:
+                if email is not None:
+                    email = normalize_email(email)
+                    self._check_unique(db, username, email)
+                    db.execute('UPDATE users SET email=? WHERE username=?', (email, username))
+                if display_name is not None:
+                    db.execute('UPDATE users SET display_name=? WHERE username=?',
+                               (clean_display_name(display_name), username))
+
+    def set_google(self, username, google_sub, email=''):
+        self.database.initialise()
+        with self.database.connect() as db:
+            with db:
+                self._check_unique(db, username, '', google_sub)
+                db.execute("UPDATE users SET google_sub=?, email=CASE WHEN email='' THEN ? ELSE email END "
+                           "WHERE username=?", (google_sub, email, username))
+
+    def delete_pending(self, username):
+        self.database.initialise()
+        with self.database.connect() as db:
+            with db:
+                count = db.execute('DELETE FROM users WHERE username=? AND approved=0', (username,)).rowcount
+        if not count:
+            raise ValueError('Only an account that is still waiting for approval can be rejected.')
+
+    def _one(self, column, value):
+        self.database.initialise()
+        with self.database.connect() as db:
+            row = db.execute(f'SELECT {USER_COLUMNS} FROM users WHERE {column}=?', (value,)).fetchone()
         return dict(row) if row else None
+
+    def get(self, username):
+        return self._one('username', (username or '').strip().lower())
+
+    def by_google(self, google_sub):
+        return self._one('google_sub', google_sub) if google_sub else None
+
+    def by_email(self, email):
+        return self._one('email', email.strip().lower()) if email else None
+
+    def free_username(self, email):
+        """Suggest an unused username from an email address (heet.patel@gmail.com -> heet.patel)."""
+        import re
+        base = re.sub(r'[^a-z0-9_.-]', '', email.split('@')[0].lower()).strip('.-_')[:40] or 'user'
+        name, number = base, 1
+        while self.get(name) is not None:
+            number += 1
+            name = f'{base}{number}'
+        return name
 
     def list(self):
         self.database.initialise()
         with self.database.connect() as db:
-            return [dict(row) for row in db.execute(
-                'SELECT username, role, active, created FROM users ORDER BY username')]
+            rows = [dict(row) for row in db.execute(f'SELECT {USER_COLUMNS} FROM users ORDER BY approved, username')]
+        for row in rows:
+            row['has_password'] = row.pop('password_hash') != NO_PASSWORD
+            row['google'] = bool(row.pop('google_sub'))
+        return rows
 
     def authenticate(self, username, password):
+        """Return the user for a correct password (approved or not), else None."""
         if not password or len(password) > 1024:
             return None
         user = self.get(username or '')

@@ -23,3 +23,7 @@ services:
         sync: false          # first administrator, created on startup if missing
       - key: ADMIN_PASSWORD
         sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false          # Google OAuth "Desktop app" client ID (enables Continue with Google)
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

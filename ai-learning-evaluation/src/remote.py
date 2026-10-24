@@ -71,12 +71,96 @@ def login(username, password):
         if 'incorrect' in str(exc).lower():
             return None
         raise
-    session.token, session.username, session.role = result['token'], result['username'], result['role']
-    return result['username']
+    return _start(result)
 
 
 def logout():
     session.token = session.username = session.role = ''
+
+
+def _start(result):
+    session.token, session.username, session.role = result['token'], result['username'], result['role']
+    return result['username']
+
+
+# ---- self-service accounts ---------------------------------------------------------------
+def register(*, username, password, email, display_name=''):
+    """Request an account. It can sign in after an administrator approves it."""
+    return request('POST', '/auth/register', {'username': username.strip(), 'password': password,
+                   'email': email.strip(), 'display_name': display_name.strip()}, token='')
+
+
+def google_enabled():
+    try:
+        return request('GET', '/auth/google/config', token='')['enabled']
+    except (ServerError, ServerUnavailable):
+        return False
+
+
+def google_id_token(open_browser=None):
+    """Run the browser sign-in and return a Google ID token (blocks until done or timed out)."""
+    from src import google_signin
+    config = request('GET', '/auth/google/config', token='')
+    kwargs = {'open_browser': open_browser} if open_browser else {}
+    return google_signin.get_id_token(config['client_id'], config['client_secret'], **kwargs)
+
+
+def google_login(id_token):
+    """Returns ('signed_in', username) or ('pending', message)."""
+    result = request('POST', '/auth/google', {'id_token': id_token}, token='')
+    if result.get('pending'):
+        return 'pending', result['detail']
+    return 'signed_in', _start(result)
+
+
+def me():
+    return request('GET', '/auth/me')
+
+
+def update_profile(*, display_name=None, email=None, current_password=''):
+    return request('PATCH', '/auth/me', {'display_name': display_name, 'email': email,
+                                         'current_password': current_password})
+
+
+def change_password(current_password, new_password):
+    return request('POST', '/auth/password', {'current_password': current_password, 'new_password': new_password})
+
+
+def link_google(id_token):
+    return request('POST', '/auth/google/link', {'id_token': id_token})
+
+
+def unlink_google():
+    return request('DELETE', '/auth/google/link')
+
+
+# ---- administration ----------------------------------------------------------------------
+def _user_path(username, action):
+    return f'/users/{urllib.parse.quote(username, safe="")}/{action}'
+
+
+def list_users():
+    return request('GET', '/users')
+
+
+def approve_user(username):
+    return request('POST', _user_path(username, 'approve'))
+
+
+def reject_user(username):
+    return request('POST', _user_path(username, 'reject'))
+
+
+def set_user_active(username, active):
+    return request('POST', _user_path(username, 'active') + f'?active={"true" if active else "false"}')
+
+
+def set_user_role(username, role):
+    return request('POST', _user_path(username, 'role'), {'role': role})
+
+
+def reset_user_password(username, new_password):
+    return request('POST', _user_path(username, 'password'), {'new_password': new_password})
 
 
 class RemoteReportRepository:
