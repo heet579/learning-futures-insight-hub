@@ -34,18 +34,7 @@ def panel(parent, **kwargs):
     return tk.Frame(parent, bg=WHITE, highlightbackground=BORDER, highlightthickness=1, **kwargs)
 
 
-def analyse(frame, name, scope):
-    validation = validate_dataframe(frame)
-    if not validation.valid:
-        raise ValueError("\n".join(validation.errors))
-    masked, count = mask_dataframe(frame)
-    courses = sorted(masked['CourseName'].dropna().astype(str).unique()) if 'CourseName' in masked else []
-    if scope != 'All courses (aggregate)':
-        masked = masked[masked['CourseName'].astype(str) == scope].copy()
-    if masked.empty:
-        raise ValueError('No responses in this course. Select another scope.')
-    context = AnalysisContext(calculate_metrics(masked), extract_themes(collect_comments(masked)), name, scope, validation.warnings)
-    return masked, context, count, courses
+from src.workspace import analyse  # noqa: E402  (shared with the browser app)
 
 
 class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):

@@ -21,6 +21,14 @@ from src.storage.database import (NO_PASSWORD, Database, DatabaseAuditTrail, Dat
 from server.security import issue_token, read_token
 
 log = logging.getLogger('insight_hub.server')
+APP_FOLDER = Path(__file__).resolve().parents[1]
+WEB_FOLDER = APP_FOLDER / 'web'
+
+try:  # Local runs read ai-learning-evaluation/.env; on Render the dashboard variables are used.
+    from dotenv import load_dotenv
+    load_dotenv(APP_FOLDER / '.env', override=False)
+except ImportError:
+    pass
 
 
 class Services:
@@ -41,13 +49,13 @@ def google_config():
 
 def verify_google_token(token):
     """Check a Google ID token's signature, expiry, issuer and audience. Returns its claims."""
-    client_id, _ = google_config()
-    if not client_id:
+    audiences = [a for a in (google_config()[0], os.getenv('GOOGLE_WEB_CLIENT_ID', '').strip()) if a]
+    if not audiences:
         raise ValueError('Google sign-in is not set up on this server.')
     from google.auth.transport import requests as google_requests
     from google.oauth2 import id_token
     try:
-        return id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+        return id_token.verify_oauth2_token(token, google_requests.Request(), audiences)
     except ValueError:
         raise ValueError('Google sign-in could not be verified. Please try again.') from None
 
@@ -293,18 +301,43 @@ def create_app(database_url=None):
         return {'username': username}
 
     # ---- report library --------------------------------------------------------------------
+    def reviewers(author):
+        """Who an author may send a report to: never themselves. Members send to administrators;
+        an administrator's own report can go to another administrator or to a team member."""
+        people = [u for u in services.users.list()
+                  if u['approved'] and u['active'] and u['username'] != author['username']
+                  and (u['role'] == 'admin' or author['role'] == 'admin')]
+        people.sort(key=lambda u: (u['role'] != 'admin', (u['display_name'] or u['username']).lower()))
+        return [{'username': u['username'], 'display_name': u['display_name'] or u['username'], 'role': u['role']}
+                for u in people]
+
+    def may_review(user, row):
+        """The person a report was sent to, or any administrator when it was sent to no one in particular."""
+        return row['reviewer'] == user['username'] or (not row['reviewer'] and user['role'] == 'admin')
+
+    def with_names(rows):
+        names = {u['username']: u['display_name'] or u['username'] for u in services.users.list()}
+        for row in rows:
+            row['owner_name'] = names.get(row['owner'], row['owner'])
+            row['reviewer_name'] = names.get(row['reviewer'], row['reviewer']) if row.get('reviewer') else ''
+        return rows
+
     @app.get('/reports')
     def list_reports(view: Literal['mine', 'pending', 'approved'] = 'mine', user=Depends(current_user)):
         actor = user['username']
-        if view == 'pending' and user['role'] != 'admin':
-            return []   # only administrators receive review requests
-        return {'mine': services.reports.list_owned, 'pending': services.reports.list_pending,
-                'approved': services.reports.list_approved}[view](actor)
+        if view == 'pending':
+            return with_names([r for r in services.reports.list_pending(actor) if may_review(user, r)])
+        return with_names({'mine': services.reports.list_owned,
+                           'approved': services.reports.list_approved}[view](actor))
+
+    @app.get('/api/reviewers')
+    def list_reviewers(user=Depends(current_user)):
+        return reviewers(user)
 
     @app.get('/reports/{report_id}')
     def load_report(report_id: str, user=Depends(current_user)):
         row = services.reports.load(report_id, user['username'])
-        if row['owner'] != user['username'] and user['role'] != 'admin':
+        if row['owner'] != user['username'] and user['role'] != 'admin' and row['reviewer'] != user['username']:
             raise ValueError('This report is unavailable for this account.')
         return row
 
@@ -350,16 +383,34 @@ def create_app(database_url=None):
         notes: str = Field(default='', max_length=5000)
         role: str = Field(default='', max_length=200)
         confirmed: bool = False
+        reviewer: str = Field(default='', max_length=64)   # submit: who should review it
 
     @app.post('/reports/{report_id}/transition')
     def transition(report_id: str, body: Transition, user=Depends(current_user)):
-        if body.action != 'submit' and user['role'] != 'admin':
-            raise HTTPException(403, 'Only an administrator can return or approve a submitted report.')
+        assigned = ''
+        if body.action == 'submit':
+            choices = {r['username']: r for r in reviewers(user)}
+            assigned = body.reviewer.strip().lower()
+            if assigned and assigned not in choices:
+                raise ValueError('Choose someone other than yourself to review this report'
+                                 + ('.' if user['role'] == 'admin' else ': members send reports to an administrator.'))
+            if not assigned and user['role'] != 'admin' and len(choices) == 1:
+                assigned = next(iter(choices))       # the only possible reviewer
+            if not assigned and user['role'] == 'admin':
+                raise ValueError('Choose who should review your report.')
+        else:
+            row = services.reports.load(report_id, user['username'])
+            if row['status'] == 'AWAITING HUMAN REVIEW' and not may_review(user, row):
+                raise HTTPException(403, f"This report was sent to {row['reviewer']} for review." if row['reviewer']
+                                    else 'Only an administrator can return or approve this report.')
         from src.storage.snapshot import pack
         version, state = services.reports.transition(actor=user['username'], report_id=report_id,
             version=body.version, action=body.action, notes=body.notes, role=body.role,
             confirmed=body.confirmed, audit=services.audit)
-        return {'version': version, 'snapshot': pack(state)}
+        if assigned:
+            services.reports.assign_reviewer(report_id, version, assigned)
+            services.audit.append('Review requested', user['username'], report_id=report_id, reviewer=assigned)
+        return {'version': version, 'snapshot': pack(state), 'reviewer': assigned}
 
     # ---- audit chain -----------------------------------------------------------------------
     class AuditEvent(BaseModel):
@@ -376,6 +427,14 @@ def create_app(database_url=None):
     @app.get('/audit/verify')
     def verify_audit(user=Depends(current_user)):
         return services.audit.verify()
+
+    from server.web_api import build_router
+    app.include_router(build_router(services, current_user))
+
+    if WEB_FOLDER.is_dir():
+        # The browser app. Registered last so every API route above takes precedence.
+        from fastapi.staticfiles import StaticFiles
+        app.mount('/', StaticFiles(directory=WEB_FOLDER, html=True), name='web')
 
     return app
 
