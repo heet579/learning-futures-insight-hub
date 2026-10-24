@@ -27,7 +27,7 @@ def main():
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parent / '.env', override=False)
     url = f'http://127.0.0.1:{args.port}'
-    print('Starting Insight Hub… (the first start can take up to a minute)')
+    print('Starting Insight Hub... (the first start can take up to a minute)')
 
     def open_when_ready():
         # Open the browser only once the server answers, so it never shows "refused to connect".
