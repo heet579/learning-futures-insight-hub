@@ -13,6 +13,17 @@ from src.reporting.report_generator import generate_report
 from test_account_session import session, tk_runtime
 from test_desktop import load_sample, decide_all_claims
 
+def docx_text(path):
+    """Paragraphs plus table rows (label: value) of the designed report."""
+    doc = Document(path)
+    lines = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells]
+            lines.append(': '.join(cells) if len(cells) == 2 and cells[0] and ':' not in cells[0] else ' '.join(cells))
+    return '\n'.join(lines)
+
+
 
 @contextmanager
 def another_account(session, name):
@@ -92,7 +103,7 @@ def test_submit_switch_approve_restart_and_repeat_export(session, monkeypatch, t
         docx = tmp_path / 'approved.docx'
         monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kw: str(docx))
         assert owner.export()
-        assert 'Approved by: sam' in '\n'.join(p.text for p in Document(docx).paragraphs)
+        assert 'Approved by: sam' in docx_text(docx)
         assert owner.repository.load(rid, 'alex')['version'] == 3
     assert session.repository.list_approved('outsider') == []
     with pytest.raises(ValueError):

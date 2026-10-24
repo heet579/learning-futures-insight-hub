@@ -1625,7 +1625,6 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         if self.username and reviewed:
             return self.export_approved() if self.workflow.status == 'HUMAN REVIEWED' else self.approve_persistent()
         from pathlib import Path
-        from src.reporting.exporter import docx_bytes, markdown_bytes
         from src.reporting.report_generator import approve_report
         from src.review.record import build_review_record, content_hash
         if not self.report or self.busy:
@@ -1641,11 +1640,11 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
             return False
         path = filedialog.asksaveasfilename(parent=self.root, initialdir=str(Path.cwd()), title='Export reviewed report' if reviewed else 'Save draft report',
             initialfile=f'learning_evaluation_{self.report.audience}_{"reviewed" if reviewed else "draft"}.docx',
-            defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('Markdown', '*.md')])
+            defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('PDF', '*.pdf'), ('Markdown', '*.md')])
         if not path:
             return False
-        if Path(path).suffix.lower() not in ('.docx', '.md'):
-            messagebox.showerror('Unsupported format', 'Choose a .docx or .md filename.', parent=self.root)
+        if Path(path).suffix.lower() not in ('.docx', '.pdf', '.md'):
+            messagebox.showerror('Unsupported format', 'Choose a .docx, .pdf or .md filename.', parent=self.root)
             return False
         if reviewed:
             approver, role = self.approver_entry.get().strip(), self.approver_role.get()
@@ -1667,8 +1666,12 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
                 report_hash=content_hash(approved_text), approval_hash=event['hash'], audit_entries=chain['entries'])
         else:
             final = '**DRAFT — REQUIRES HUMAN REVIEW**\n\n' + content
-        data = docx_bytes(final, os.getenv('UNIVERSITY_LOGO_PATH')) if Path(path).suffix.lower() == '.docx' else markdown_bytes(final)
         try:
+            from src.reporting.designed_report import export_bytes
+            state = {'report': self.report, 'workflow': self.workflow, 'frame': self.frame, 'context': self.context,
+                     'theme_decisions': self.theme_review.decisions, 'source': self.source,
+                     'loaded_file_label': self.loaded_file_label, 'charts': getattr(self, 'charts', None)}
+            data = export_bytes(state, final, Path(path).suffix.lower()[1:])
             Path(path).write_bytes(data)
         except Exception as exc:
             if reviewed:

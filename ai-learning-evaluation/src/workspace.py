@@ -21,6 +21,8 @@ from src.review.claims import ClaimLedger, ai_text_retained, extract_claims, rem
 from src.review.themes import CATEGORIES, ThemeReview, matched_keywords
 from src.workflow import ReviewWorkflow
 
+DEFAULT_CHART_SPECS = ({'kind': 'ratings_stacked'}, {'kind': 'ratings_box'}, {'kind': 'themes'}, {'kind': 'recommend'})
+
 ALL_COURSES = 'All courses (aggregate)'
 EDITABLE = ('DRAFT', 'CHANGES REQUESTED')
 
@@ -66,7 +68,56 @@ def new_state(raw, file_names):
         'revision_section_snapshots': {}, 'content': '', 'theme_decisions': {}, 'claim_decisions': {},
         'claim_history': [], 'revision_input': '', 'revision_method': 'Gemini', 'replacement_input': '',
         'revision_selection': [], 'audience': 'facilitator', 'approved_export': '',
+        'charts': [dict(spec) for spec in DEFAULT_CHART_SPECS],
     }
+
+
+# ---- charts in the designed report -----------------------------------------------------------
+def charts_of(state):
+    from src.reporting.charts import DEFAULT_CHARTS, chart_list
+    try:
+        return chart_list(state.get('charts') or DEFAULT_CHARTS)
+    except ValueError:
+        return chart_list(DEFAULT_CHARTS)
+
+
+def set_charts(state, specs):
+    """Replace the report's charts (at most four, in order)."""
+    from src.reporting.charts import MAX_CHARTS, chart_list
+    require_editable(state)
+    if not specs:
+        raise ValueError('Keep at least one chart in the report.')
+    if len(specs) > MAX_CHARTS:
+        raise ValueError(f'The two-page report has room for {MAX_CHARTS} charts.')
+    state['charts'] = chart_list(specs)
+    return state['charts']
+
+
+def describe_chart(state, text, replace=None):
+    """Add (or replace chart number `replace`) from a plain-English description."""
+    from src.reporting.charts import MAX_CHARTS, parse_request
+    require_editable(state)
+    spec, message = parse_request(text)
+    charts = charts_of(state)
+    if replace is not None:
+        if not 0 <= replace < len(charts):
+            raise ValueError('That chart is not in the report.')
+        charts[replace] = spec
+        message = message.replace('Added:', 'Changed to:')
+    elif len(charts) >= MAX_CHARTS:
+        raise ValueError(f'The report already has {MAX_CHARTS} charts. Remove or replace one first.')
+    else:
+        charts.append(spec)
+    state['charts'] = charts
+    return message
+
+
+def chart_png(state, index):
+    from src.reporting import charts
+    specs = charts_of(state)
+    if not 0 <= index < len(specs):
+        raise ValueError('That chart is not in the report.')
+    return charts.render(specs[index], state['frame'], reviewed_context(state), 3.55, 3.05)
 
 
 # ---- reconstruct review objects from a snapshot ------------------------------------------
@@ -308,8 +359,15 @@ def view(state, *, can_edit, can_review):
         'blockers': blockers(state) if workflow.status in EDITABLE else [],
         'summary': review_summary(state) if state['report'] is not None else None,
         'approved': bool(state.get('approved_export')),
+        'charts': charts_of(state), 'chart_kinds': _chart_catalogue(),
         'can_edit': can_edit, 'can_review': can_review,
     }
+
+
+def _chart_catalogue():
+    from src.reporting.charts import GROUPS, KINDS, MAX_CHARTS
+    from src.reporting.charts import LABELS, RATING_COLUMNS
+    return {'kinds': KINDS, 'groups': GROUPS, 'measures': {c: LABELS[c] for c in RATING_COLUMNS}, 'max': MAX_CHARTS}
 
 
 def _section(content, section):

@@ -202,3 +202,45 @@ def test_a_client_secret_is_never_offered_as_the_google_client_id(api, monkeypat
     assert api.get('/api/config').json()['google_web_client_id'] == ''
     monkeypatch.setenv('GOOGLE_WEB_CLIENT_ID', '123-abc.apps.googleusercontent.com')
     assert api.get('/api/config').json()['google_web_client_id'] == '123-abc.apps.googleusercontent.com'
+
+
+def test_report_charts_can_be_chosen_described_and_exported(api, people):
+    pytest.importorskip('matplotlib')
+    pytest.importorskip('reportlab')
+    _, gopi, esrat = people
+    rid = upload(api, gopi).json()['report']['id']
+    ws = api.get(f'/api/reports/{rid}', headers=gopi).json()['workspace']
+    assert [c['kind'] for c in ws['charts']] == ['ratings_stacked', 'ratings_box', 'themes', 'recommend']
+    assert ws['chart_kinds']['max'] == 4
+
+    image = api.get(f'/api/reports/{rid}/charts/1.png', headers=gopi)
+    assert image.status_code == 200 and image.content[:4] == b'\x89PNG'
+    assert api.get(f'/api/reports/{rid}/charts/1.png', headers=esrat).status_code == 400
+
+    # Four charts already: a description must replace one.
+    full = api.post(f'/api/reports/{rid}/charts/describe', headers=gopi, json={'text': 'satisfaction over time'})
+    assert full.status_code == 400 and 'Remove or replace' in full.json()['detail']
+    changed = api.post(f'/api/reports/{rid}/charts/describe', headers=gopi,
+                       json={'text': 'box plot of content quality per delivery mode', 'replace': 3}).json()
+    assert changed['result'].startswith('Changed to:')
+    assert changed['workspace']['charts'][3] == {'kind': 'group_box', 'measure': 'ContentQuality',
+                                                 'group': 'DeliveryMode', 'title': 'Spread of content quality by delivery mode'}
+    unclear = api.post(f'/api/reports/{rid}/charts/describe', headers=gopi, json={'text': 'something nice', 'replace': 0})
+    assert unclear.status_code == 400
+
+    ws = api.put(f'/api/reports/{rid}/charts', headers=gopi,
+                 json={'charts': [{'kind': 'ratings_bar'}, {'kind': 'group_bar', 'group': 'CourseName'}]}).json()['workspace']
+    assert [c['kind'] for c in ws['charts']] == ['ratings_bar', 'group_bar']
+    assert api.put(f'/api/reports/{rid}/charts', headers=gopi, json={'charts': []}).status_code == 400
+    assert api.put(f'/api/reports/{rid}/charts', headers=gopi, json={'charts': [{'kind': 'pie'}]}).status_code == 400
+
+    for theme in ws['themes']:
+        api.post(f'/api/reports/{rid}/themes', headers=gopi, json={'name': theme['name'], 'status': 'confirmed'})
+    api.post(f'/api/reports/{rid}/draft', headers=gopi, json={'audience': 'facilitator'})
+    pdf = api.get(f'/api/reports/{rid}/export?format=pdf', headers=gopi)
+    assert pdf.status_code == 200 and pdf.content[:5] == b'%PDF-' and pdf.headers['content-type'] == 'application/pdf'
+    from io import BytesIO
+    pypdf = pytest.importorskip('pypdf')
+    assert len(pypdf.PdfReader(BytesIO(pdf.content)).pages) == 2
+    word = api.get(f'/api/reports/{rid}/export?format=docx', headers=gopi)
+    assert word.status_code == 200 and word.content[:2] == b'PK'

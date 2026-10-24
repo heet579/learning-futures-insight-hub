@@ -11,6 +11,17 @@ from src.ui.desktop import DesktopApp, analyse, _setup_environment
 from src.synthetic import build_synthetic_responses
 from test_qualtrics_real_export import _fake_export_csv
 
+def docx_text(path):
+    """Paragraphs plus table rows (label: value) of the designed report."""
+    doc = Document(path)
+    lines = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells]
+            lines.append(': '.join(cells) if len(cells) == 2 and cells[0] and ':' not in cells[0] else ' '.join(cells))
+    return '\n'.join(lines)
+
+
 
 @pytest.fixture(scope='module')
 def tk_runtime():
@@ -200,8 +211,8 @@ def test_report_preview_and_full_human_review_export(desktop, monkeypatch, tmp_p
     desktop.approver_entry.delete(0, 'end')
     desktop.approver_entry.insert(0, 'Sam Approver')
     assert desktop.export()
-    text = '\n'.join(p.text for p in Document(path).paragraphs)
-    assert 'HUMAN REVIEWED' in text
+    text = docx_text(path)
+    assert 'Approved by Sam Approver' in text
     assert 'Review record' in text
     assert 'Approved by: Sam Approver, Learning Futures lead' in text
     assert 'Prepared and submitted by: Alex Author' in text
