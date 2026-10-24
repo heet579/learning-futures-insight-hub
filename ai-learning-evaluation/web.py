@@ -27,9 +27,26 @@ def main():
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parent / '.env', override=False)
     url = f'http://127.0.0.1:{args.port}'
-    print(f'Insight Hub is running at {url}  (press Ctrl+C to stop)')
-    if not args.no_browser:
-        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+    print('Starting Insight Hub… (the first start can take up to a minute)')
+
+    def open_when_ready():
+        # Open the browser only once the server answers, so it never shows "refused to connect".
+        import time
+        import urllib.request
+        for _ in range(240):
+            try:
+                urllib.request.urlopen(url + '/health', timeout=2)
+                break
+            except OSError:
+                time.sleep(0.5)
+        else:
+            print('The server did not start. Check the messages above.')
+            return
+        print(f'Insight Hub is running at {url}  (keep this window open; press Ctrl+C to stop)')
+        if not args.no_browser:
+            webbrowser.open(url)
+
+    threading.Thread(target=open_when_ready, daemon=True).start()
     uvicorn.run('server.app:app', host='127.0.0.1', port=args.port, log_level='warning')
 
 
