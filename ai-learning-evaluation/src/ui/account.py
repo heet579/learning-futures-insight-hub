@@ -47,6 +47,17 @@ class AccountUI:
                  fg=INK, wraplength=240, justify='left',
                  font=(self.font_family, 11, 'bold')).pack(anchor='w', pady=(4, 12))
         self.account_actions = []
+        from src import remote
+        if remote.server_url() and remote.session.username == self.username:
+            # Shared-server accounts: self-service profile, and account management for admins.
+            items = [('Profile settings', self.open_profile)]
+            if remote.session.role == 'admin':
+                items.append(('Manage accounts', self.open_accounts))
+            for caption, command in items:
+                button = ttk.Button(self.account_menu, text=caption, command=command)
+                button.pack(fill='x', pady=3)
+                self.account_actions.append(button)
+            ttk.Separator(self.account_menu).pack(fill='x', pady=6)
         for caption, switching in [('Switch account', True), ('Sign out', False)]:
             button = ttk.Button(self.account_menu, text=caption,
                                 command=lambda switch=switching: self.sign_out(switch))
@@ -84,6 +95,16 @@ class AccountUI:
             widget = getattr(widget, 'master', None)
         self.hide_account_menu()
 
+    def open_profile(self):
+        self.hide_account_menu()
+        from src.ui.accounts import ProfileDialog
+        return ProfileDialog(self.root)
+
+    def open_accounts(self):
+        self.hide_account_menu()
+        from src.ui.accounts import AccountsDialog
+        return AccountsDialog(self.root)
+
     def sign_out(self, switching=False):
         if self.disposed or self.busy or self.on_logout is None:
             return False
@@ -107,6 +128,8 @@ class AccountUI:
                 parent=self.root, default='no'):
                 return False
         callback = self.on_logout
+        from src.remote import logout
+        logout()
         self.dispose_workspace()
         callback()
         return True

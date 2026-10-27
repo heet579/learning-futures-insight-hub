@@ -7,6 +7,7 @@ __pycache__/
 .deepeval/
 .coverage
 htmlcov/
+test-results/
 
 # Credentials and local configuration
 .env
@@ -37,9 +38,8 @@ Thumbs.db
 .venv-*/
 .pytest_temp/
 
-# Teammate files shared with the Docker desktop
-/shared/*
-!/shared/README.txt
+# Development database of a locally run API server
+ai-learning-evaluation/reports/server_dev.sqlite3*
 
 # Real client data - never commit
 ai-learning-evaluation/data/client/
@@ -54,3 +54,5 @@ ai-learning-evaluation/data/*.xlsx
 # Local assistant settings and generated hand-outs
 .claude/
 Claude outputs/
+.neon
+node_modules/

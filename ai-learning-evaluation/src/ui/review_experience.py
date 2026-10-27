@@ -186,7 +186,7 @@ class ReviewExperienceUI:
             ('done' if checks_done else ('attention' if self.themes_changed_since_draft else 'active' if themes_done else 'pending'),
              'Check report & quotes', 'Checks complete.' if checks_done else
              ('Regenerate after theme changes, then check the new report.' if self.themes_changed_since_draft else
-              f'{len(self.ledger.pending)} claims still need a decision. Check figures and quotes.' if self.report else 'Generate a draft, then check every claim and quote.')),
+              f'{len(self.ledger.pending)} item(s) failed the automatic check. Fix or remove them.' if self.report else 'Generate a draft; the app then checks every fact.')),
             ('done' if submitted else 'attention' if returned else 'active' if checks_done else 'pending', 'First reviewer submits',
              f'{last_submit.actor} · {event_time(last_submit.timestamp)}' if submitted and last_submit else
              'Changes requested. Edit, check and resubmit.' if returned else 'Save draft is private. Submit when your checks are complete.'),

@@ -18,7 +18,8 @@ def _local(iso: str) -> str:
 
 def build_review_record(*, workflow, theme_counts: dict, claim_counts: dict, pace: dict,
                         ai_retained: float | None, source_mode: str, report_hash: str,
-                        approval_hash: str, audit_entries: int, authenticated: bool = False) -> str:
+                        approval_hash: str, audit_entries: int, authenticated: bool = False,
+                        clear_lines: list[str] | None = None) -> str:
     submitted = next((e for e in reversed(workflow.events) if e.action == "Submitted for review"), None)
     approved = next((e for e in reversed(workflow.events) if e.action == "Approved"), None)
     lines = [
@@ -29,17 +30,17 @@ def build_review_record(*, workflow, theme_counts: dict, claim_counts: dict, pac
         f"- First draft written by: {source_mode or 'Unknown'}",
         f"- Themes: {theme_counts.get('confirmed', 0)} confirmed, {theme_counts.get('rejected', 0)} rejected, "
         f"{theme_counts.get('recategorised', 0)} re-categorised by the reviewer",
-        f"- Claims: {claim_counts.get('accepted', 0)} accepted, {claim_counts.get('rejected', 0)} rejected; "
-        f"quotes: {claim_counts.get('cleared', 0)} cleared for privacy, {claim_counts.get('removed', 0)} removed",
-        f"- Claims written or changed by a person: {claim_counts.get('human_edited', 0)}",
+        f"- Facts: {claim_counts.get('total', 0)} statements and quotes checked automatically against the data; "
+        f"{claim_counts.get('needed_person', 0)} needed a person "
+        f"({claim_counts.get('rejected', 0) + claim_counts.get('removed', 0)} removed)",
+        f"- Statements written or changed by a person: {claim_counts.get('human_edited', 0)}",
     ]
+    lines += list(clear_lines or [])
     if ai_retained is not None:
         lines.append(f"- AI wording kept unchanged in the summary and recommendations: {ai_retained:.0f} percent")
     lines.append(f"- Times returned for changes: {workflow.times_returned()}")
     if pace.get("fast"):
         lines.append(f"- Review pace warning: {pace['message']}")
-    else:
-        lines.append(f"- Review pace: {pace.get('decisions', 0)} decisions over {pace.get('seconds', 0):.0f} seconds")
     lines += [
         f"- Report text SHA-256: {report_hash}",
         f"- Approval audit entry: {approval_hash} ({audit_entries} entries in a verified hash chain)",

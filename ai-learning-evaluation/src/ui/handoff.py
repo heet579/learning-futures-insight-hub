@@ -53,11 +53,32 @@ class HandoffUI(ReviewExperienceUI):
         self.select_report_tab(1)
         return True
 
+    def clear_material_state(self):
+        return {'frame': self.frame, 'content': self.editor.get('1.0', 'end-1c'), 'report': self.report,
+                'audience': self.report.audience if self.report else 'facilitator'}
+
+    def ask_clear_answers(self):
+        """The CLEAR questions; tests replace this with prepared answers."""
+        from src.ui.clear_dialog import ask_clear
+        return ask_clear(self.root, self.clear_material_state(), self.theme_review.reviewed_context(self.context))
+
     def approve_persistent(self):
         if self.busy or not self.can_review_workspace():
             return False
-        if not self.persist_review_action('approve', role=self.approver_role.get(), confirmed=self.confirmed.get()):
+        answers = self.ask_clear_answers()
+        if answers is None:
             return False
+        owner = self.library_owner
+        if not self.persist_review_action('approve', role=self.approver_role.get(), confirmed=True, clear=answers):
+            return False
+        if self.workflow.status != 'HUMAN REVIEWED':
+            # An answer said the report misses what learners said or is not fit for its audience.
+            messagebox.showinfo('Sent back', f'Your answers sent the report back to {owner} with your note.',
+                                parent=self.root)
+            self.reset_library_workspace(3)
+            self.select_library_view('pending')
+            self.update_review_panel()
+            return True
         self.status.set('Approval saved. Export approved to download the report; it also remains in Library → Approved.')
         return True
 
@@ -80,7 +101,7 @@ class HandoffUI(ReviewExperienceUI):
         if self.busy or self.workflow.status != 'HUMAN REVIEWED' or not self.library_id:
             return False
         from src.storage.snapshot import unpack
-        from src.reporting.exporter import docx_bytes, markdown_bytes
+        from src.reporting.designed_report import export_bytes
         try:
             # Export the immutable saved approval, never whatever is in the editor.
             state = unpack(self.repository.load(self.library_id, self.username)['snapshot'])
@@ -91,16 +112,16 @@ class HandoffUI(ReviewExperienceUI):
             messagebox.showerror('Cannot export report', str(exc), parent=self.root)
             return False
         path = filedialog.asksaveasfilename(parent=self.root, title='Export approved report',
-            initialdir=os.getenv('DEMO_SHARED_DIR', str(Path.cwd())),
+            initialdir=str(Path.cwd()),
             initialfile=f'learning_evaluation_{state["report"].audience}_reviewed.docx',
-            defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('Markdown', '*.md')])
+            defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('PDF', '*.pdf'), ('Markdown', '*.md')])
         if not path:
             return False
         try:
             suffix = Path(path).suffix.lower()
-            if suffix not in ('.docx', '.md'):
-                raise ValueError('Choose a .docx or .md filename.')
-            data = docx_bytes(final, os.getenv('UNIVERSITY_LOGO_PATH')) if suffix == '.docx' else markdown_bytes(final)
+            if suffix not in ('.docx', '.pdf', '.md'):
+                raise ValueError('Choose a .docx, .pdf or .md filename.')
+            data = export_bytes(state, final, suffix[1:])
             Path(path).write_bytes(data)
         except Exception as exc:
             messagebox.showerror('Export failed', f'{exc}\n\nThe approval is saved. You can try exporting again.', parent=self.root)

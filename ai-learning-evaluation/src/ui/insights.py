@@ -25,11 +25,11 @@ class InsightsUI:
 
     def generate_insights(self):
         import json
-        from src.ai.gemini_provider import GeminiAIProvider
+        from src.ai.selection import ai_provider
         if not self.context or self.busy:
             return
         try:
-            provider = GeminiAIProvider()
+            provider = ai_provider()
         except ValueError as exc:
             messagebox.showinfo('Service setup', service_message(exc), parent=self.root)
             return

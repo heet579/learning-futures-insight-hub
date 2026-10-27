@@ -16,8 +16,8 @@ def checked_review(state):
     ledger = ClaimLedger()
     ledger.decisions, ledger.history = state['claim_decisions'].copy(), state['claim_history'][:]
     ledger.sync(extract_claims(state['content'], report, context))
-    if not ledger.complete or any(ledger.status_of(c.key) != ledger.ACCEPT[c.kind] for c in ledger.claims):
-        raise ValueError('Check every claim and clear every quote before submitting.')
+    if ledger.pending:
+        raise ValueError(f'{len(ledger.pending)} item(s) failed the automatic check. Fix or remove them before submitting.')
     if unsupported_claims(state['content'], context):
         raise ValueError('Fix unsupported numbers and quotes before submitting.')
     return themes, ledger

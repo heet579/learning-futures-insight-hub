@@ -1,10 +1,12 @@
-"""Gates 2, 3 and 5 - the claim ledger.
+"""CLEAR step 1 (Check) - the claim ledger.
 
 The draft is split into claims (one per bullet or sentence) and every learner quote is a
-separate item. Each claim shows where it came from (calculated, AI-written or edited by a
-person) and the evidence behind it. A person must accept or reject every claim and clear or
-remove every quote before the report can be submitted. Decision timing is recorded so a
-very fast run of approvals is flagged as a possible rubber stamp.
+separate item. The application checks each one against the data: numbers must match the
+survey, quotes must be real analysed comments, and possible personal names are flagged.
+Claims that pass are verified automatically. Only the ones that fail, or that may contain a
+name, need a person: fix or remove them (a wrong number can never be accepted), or confirm
+that a flagged word is not a name. The human judgement itself happens in the CLEAR questions
+the reviewer answers before approval (src/review/clear.py).
 """
 from __future__ import annotations
 
@@ -60,6 +62,21 @@ class LedgerClaim:
     @property
     def needs_attention(self) -> bool:
         return bool(self.problems or self.possible_names)
+
+    @property
+    def blocking(self) -> bool:
+        """A number or quote that does not match the data: it must be fixed or removed."""
+        return any(p.startswith(("Unsupported", "Quote does not match")) for p in self.problems)
+
+    @property
+    def needs_person(self) -> bool:
+        """Only failed checks and possible personal names go to a person."""
+        return self.blocking or bool(self.possible_names)
+
+    @property
+    def verified(self) -> bool:
+        """Checked automatically: every number matches the data and nothing looks like a name."""
+        return not self.needs_person
 
 
 def _norm(text: str) -> str:
@@ -184,8 +201,6 @@ def _make(section, text, kind, line, original_body, ai_mode, report, context, al
         for key_text, facts in report.evidence.items():
             if clean and (clean in _norm(key_text) or _norm(key_text) in clean):
                 claim.evidence.extend(f for f in facts if f not in claim.evidence)
-    if origin == "AI-written" and not claim.evidence and not claim.checks:
-        claim.problems.append("AI wording with no cited evidence - check it against the metrics before accepting.")
     return claim
 
 
@@ -242,11 +257,18 @@ class ClaimLedger:
         return decision
 
     def status_of(self, key: str) -> str:
-        return self.decisions.get(key, "pending")
+        if key in self.decisions:
+            return self.decisions[key]
+        return "auto" if self.get(key).verified else "pending"
 
     @property
     def pending(self) -> list[LedgerClaim]:
-        return [c for c in self.claims if c.key not in self.decisions]
+        """Claims that still need a person (failed checks or possible names)."""
+        return [c for c in self.claims if c.needs_person and c.key not in self.decisions]
+
+    @property
+    def verified(self) -> list[LedgerClaim]:
+        return [c for c in self.claims if c.verified and c.key not in self.decisions]
 
     @property
     def complete(self) -> bool:
@@ -264,6 +286,8 @@ class ClaimLedger:
             "human_edited": sum(1 for c in self.claims if c.origin == "Human-edited"),
             "ai_written": sum(1 for c in self.claims if c.origin == "AI-written"),
             "attention": sum(1 for c in self.claims if c.needs_attention),
+            "auto": len(self.verified),
+            "needed_person": sum(1 for c in self.claims if c.needs_person),
         }
 
     def pace(self) -> dict:

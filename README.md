@@ -1,5 +1,17 @@
 # Learning Futures Insight Hub
 
+## Run the test suite
+
+From the repository root, run `./testsuit` in PowerShell or on macOS/Linux, or `testsuit.cmd`
+in Command Prompt. PowerShell also accepts the explicit `./testsuit.ps1` filename. The launcher prints progress and results by area, then saves
+JSON and JUnit reports in `test-results/latest/`. It uses temporary local data and does not
+load your app's `.env` settings. First install the packages with
+`python -m pip install -r ai-learning-evaluation/server/requirements.txt`.
+
+Use `--list` to see groups, `--suite data` to select one, or `--headless` to skip desktop
+windows explicitly. See the [test suite guide](ai-learning-evaluation/docs/testing_strategy.md)
+for examples, report fields, setup help, exit codes, and optional Postgres testing.
+
 A Python desktop application for analysing learner feedback, exploring survey insights, and generating human-reviewed evaluation reports.
 
 The application uses Tkinter and runs in its own desktop window. Imports, calculated metrics
@@ -24,9 +36,9 @@ next steps immediately. To enable Gemini interpretation:
 
 1. Get an API key from [Google AI Studio](https://aistudio.google.com/apikey).
 2. For native Python, copy `ai-learning-evaluation/.env.example` to
-   `ai-learning-evaluation/.env`; set `GEMINI_API_KEY`. For Docker, use the root `.env`.
+   `ai-learning-evaluation/.env`; set `GEMINI_API_KEY`.
 3. Keep `GEMINI_MODEL=gemini-2.5-flash-lite`, or set another supported model.
-4. Restart the app (Docker: `docker compose up -d --force-recreate`) and select **Get insights**.
+4. Restart the app and select **Get insights**.
 
 Gemini powers **Get insights**, **Ask** and **Get draft**, without mode selectors
 or repeated processing-approval prompts. Insights include
@@ -58,15 +70,22 @@ with billing enabled can incur charges. Google says free-tier content may be use
 improve its products. Use only data approved for this processing and keep the key in
 the ignored `.env` file. No key is bundled with the app.
 
-## Docker quick start (recommended for teammates)
+## Shared server: work from any computer
 
-Install and start Docker Desktop, then run from your cloned repository root:
+By default everything (accounts, Report library, audit log) stays on the computer running the app.
+To share one library between computers, the team runs a small API server on
+[Render](https://render.com) backed by a [Neon](https://neon.tech) Postgres database (both free plans),
+and each desktop points at it:
 
-```sh
-docker compose up --build -d --wait
+```text
+ai-learning-evaluation/.env
+SERVER_URL=https://<your-service>.onrender.com
 ```
 
-Open [the local desktop demo](http://localhost:6080/vnc.html?autoconnect=true&resize=scale). Python and Tk run inside the container, so teammates do not need a host Python installation. See [DOCKER.md](DOCKER.md) for cloning, file exchange through `shared`, updates, the Gemini key and troubleshooting.
+With `SERVER_URL` set, sign-in uses the server's accounts, drafts saved on one PC appear in
+**Pending review** on another, and every review action joins one shared audit chain. Desktops
+never hold database credentials. Setup, accounts and costs are in the
+[deployment guide](ai-learning-evaluation/docs/deployment.md).
 
 **Feedback & revisions** in Report studio lets you ask Gemini to rewrite a section ("write a three-sentence summary for a manager"), use offline edits (shorten, bullets, plain language) or paste your own wording. Every change is previewed before it is applied.
 
@@ -148,10 +167,12 @@ Replace `your-name-short-description` with your own branch name. Open a pull req
 learning-futures-insight-hub/
   README.md
   .gitignore
+  render.yaml              # Render blueprint for the API server
   ai-learning-evaluation/
-    app.py
+    app.py                 # desktop app (Tkinter)
     run_app.ps1
     requirements.txt
+    server/                # API server (FastAPI) for the shared library
     src/
     tests/
     data/
@@ -160,7 +181,7 @@ learning-futures-insight-hub/
 
 ## Data and test notes
 
-Use the included synthetic data for shared testing. Do not commit real learner records, credentials, local environments or generated private reports. Local copies and exported reports do not synchronise automatically.
+Use the included synthetic data for shared testing. Do not commit real learner records, credentials, local environments or generated private reports. Without `SERVER_URL`, local libraries and exported reports do not synchronise between computers.
 
 The desktop has been tested on Windows with Python 3.13.5, including the automated test suite (`python -m pytest -q`). Other operating systems require their own verification; see the application guide for setup.
 

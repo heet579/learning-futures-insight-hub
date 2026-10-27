@@ -11,8 +11,19 @@ from src.storage.snapshot import unpack
 from src.ai.local_provider import LocalAnalysisProvider
 from src.auth import authenticate, initialize_users
 from src.reporting.report_generator import generate_report
-from test_account_session import session, tk_runtime
+from test_account_session import session
 from test_desktop import load_sample, decide_all_claims
+
+def docx_text(path):
+    """Paragraphs plus table rows (label: value) of the designed report."""
+    doc = Document(path)
+    lines = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells]
+            lines.append(': '.join(cells) if len(cells) == 2 and cells[0] and ':' not in cells[0] else ' '.join(cells))
+    return '\n'.join(lines)
+
 
 
 @contextmanager
@@ -115,7 +126,7 @@ def test_submit_switch_approve_restart_and_repeat_export(session, monkeypatch, t
         docx = tmp_path / 'approved.docx'
         monkeypatch.setattr('tkinter.filedialog.asksaveasfilename', lambda **kw: str(docx))
         assert owner.export()
-        assert 'Approved by: sam' in '\n'.join(p.text for p in Document(docx).paragraphs)
+        assert 'Approved by: sam' in docx_text(docx)
         assert owner.repository.load(rid, 'alex')['version'] == 3
     assert session.repository.list_approved('outsider') == []
     with pytest.raises(ValueError):
@@ -147,9 +158,7 @@ def test_return_notes_survive_restart_and_resubmission(session, monkeypatch):
         assert 'Clarify the delivery recommendation.' in restarted.return_notes.get()
         restarted.set_editor_text(restarted.editor.get('1.0', 'end-1c') + '\n\nWe recommend reviewing delivery next term.')
         restarted.refresh_claims()
-        assert not restarted.submit_for_approval()  # New wording requires first-pass checking.
-        decide_all_claims(restarted)
-        assert restarted.submit_for_approval()
+        assert restarted.submit_for_approval()  # new wording is checked automatically
         assert restarted.workflow.times_returned() == 1
         assert len(restarted.repository.list_pending('sam')) == 1
     with another_account(session, 'sam') as reviewer:
@@ -199,8 +208,6 @@ def test_confirmation_role_audit_failure_and_export_failure(session, monkeypatch
     monkeypatch.setattr('tkinter.messagebox.showerror', lambda *a, **kw: errors.append(a))
     with another_account(session, 'sam') as reviewer:
         assert reviewer.open_library_report(rid)
-        assert not reviewer.approve_persistent()
-        reviewer.confirmed.set(True)
         reviewer.approver_role.set('Facilitator')
         assert not reviewer.approve_persistent()
         reviewer.approver_role.set('Learning Futures lead')

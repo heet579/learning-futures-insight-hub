@@ -34,18 +34,7 @@ def panel(parent, **kwargs):
     return tk.Frame(parent, bg=WHITE, highlightbackground=BORDER, highlightthickness=1, **kwargs)
 
 
-def analyse(frame, name, scope):
-    validation = validate_dataframe(frame)
-    if not validation.valid:
-        raise ValueError("\n".join(validation.errors))
-    masked, count = mask_dataframe(frame)
-    courses = sorted(masked['CourseName'].dropna().astype(str).unique()) if 'CourseName' in masked else []
-    if scope != 'All courses (aggregate)':
-        masked = masked[masked['CourseName'].astype(str) == scope].copy()
-    if masked.empty:
-        raise ValueError('No responses in this course. Select another scope.')
-    context = AnalysisContext(calculate_metrics(masked), extract_themes(collect_comments(masked)), name, scope, validation.warnings)
-    return masked, context, count, courses
+from src.workspace import analyse  # noqa: E402  (shared with the browser app)
 
 
 class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, InsightsUI, QuestionsUI):
@@ -111,7 +100,7 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
     def open_file(self):
         if self.busy:
             return
-        paths = filedialog.askopenfilenames(parent=self.root, title='Open evaluation data', initialdir=os.getenv('DEMO_SHARED_DIR', str(DATA_DIR)), filetypes=[('Survey files', '*.csv *.xlsx *.xls')])
+        paths = filedialog.askopenfilenames(parent=self.root, title='Open evaluation data', initialdir=str(DATA_DIR), filetypes=[('Survey files', '*.csv *.xlsx *.xls')])
         if paths:
             import pandas as pd
             from src.ingestion.qualtrics_loader import load_survey
@@ -252,7 +241,7 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
             'selected report section are submitted; raw survey comments stay on this device. '
             'Submitted summaries may be used by the service to improve its products. Avoid personal details in questions.\n\n'
             'Review actions (theme and claim decisions, submissions, approvals, exports) are recorded in a tamper-evident '
-            'audit log on this computer: ' + str(self.audit.path),
+            'audit log: ' + str(self.audit.path),
             parent=self.root)).pack(anchor='w', pady=(8, 0))
         label(bottom, 'Explore feedback.\nTurn insights into action.\nReports require human review.', 9, '#B8AED9', justify='left', wraplength=168).pack(anchor='w', pady=(8, 0))
         main = tk.Frame(self.root, bg=BG)
@@ -1572,10 +1561,10 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
         context, audience = self.review_context(), self.audience.get()
 
         def work():
-            from src.ai.gemini_provider import GeminiAIProvider
+            from src.ai.selection import ai_provider
             from src.ai.local_provider import LocalAnalysisProvider
             try:
-                provider = GeminiAIProvider()
+                provider = ai_provider()
             except ValueError:
                 # Gemini is not set up on this computer: draft locally and say so.
                 return generate_report(context, audience, LocalAnalysisProvider()), 'not configured'
@@ -1628,39 +1617,50 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
                     claims=len(self.ledger.claims))
         self.update_audit_status()
         self.report_tabs.select(1)
-        self.status.set(f'Draft ready ({report.source_mode}). Next: decide every claim in Check facts & quotes, '
-                        'then submit for approval.')
+        self.status.set(f'Draft ready ({report.source_mode}). The app checked every fact; fix anything it flagged in '
+                        'Check facts & quotes, then submit for approval.')
         self.sync_controls()
 
     def export(self, reviewed=True):
         if self.username and reviewed:
             return self.export_approved() if self.workflow.status == 'HUMAN REVIEWED' else self.approve_persistent()
         from pathlib import Path
-        from src.reporting.exporter import docx_bytes, markdown_bytes
         from src.reporting.report_generator import approve_report
         from src.review.record import build_review_record, content_hash
         if not self.report or self.busy:
             return False
+        answers = None
         if reviewed:
             problems = self.approval_problems()
             if problems:
                 messagebox.showinfo('Cannot approve yet', '\n'.join('• ' + p for p in problems), parent=self.root)
                 return False
+            from src.review import clear as clear_review
+            answers = self.ask_clear_answers()
+            if answers is None:
+                return False
+            verdict = clear_review.validate(self.clear_material_state(), self.theme_review.reviewed_context(self.context), answers)
+            if verdict['outcome'] == 'return':
+                messagebox.showinfo('Not approved', 'Your answers mean the report needs changes first: '
+                                    + verdict['notes'], parent=self.root)
+                return False
+            answers = verdict['answers']
         content = self.editor.get('1.0', 'end-1c').strip()
         if not content:
             messagebox.showerror('Empty report', 'Add report content before exporting.', parent=self.root)
             return False
-        path = filedialog.asksaveasfilename(parent=self.root, initialdir=os.getenv('DEMO_SHARED_DIR', str(Path.cwd())), title='Export reviewed report' if reviewed else 'Save draft report',
+        path = filedialog.asksaveasfilename(parent=self.root, initialdir=str(Path.cwd()), title='Export reviewed report' if reviewed else 'Save draft report',
             initialfile=f'learning_evaluation_{self.report.audience}_{"reviewed" if reviewed else "draft"}.docx',
-            defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('Markdown', '*.md')])
+            defaultextension='.docx', filetypes=[('Word document', '*.docx'), ('PDF', '*.pdf'), ('Markdown', '*.md')])
         if not path:
             return False
-        if Path(path).suffix.lower() not in ('.docx', '.md'):
-            messagebox.showerror('Unsupported format', 'Choose a .docx or .md filename.', parent=self.root)
+        if Path(path).suffix.lower() not in ('.docx', '.pdf', '.md'):
+            messagebox.showerror('Unsupported format', 'Choose a .docx, .pdf or .md filename.', parent=self.root)
             return False
         if reviewed:
             approver, role = self.approver_entry.get().strip(), self.approver_role.get()
-            approved_text = approve_report(self.report, content).content
+            approved_text = clear_review.insert_before_record(approve_report(self.report, content).content,
+                                                              clear_review.reviewer_section(answers, approver))
             # Approval must be on record before the file exists.
             event = self.record('Approved', approver, role=role, audience=self.report.audience,
                                 author=self.workflow.reviewer, report_sha256=content_hash(approved_text))
@@ -1675,11 +1675,17 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
             final = approved_text + '\n\n' + build_review_record(
                 workflow=self.workflow, theme_counts=summary['themes'], claim_counts=summary['claims'],
                 pace=summary['pace'], ai_retained=summary['ai_retained'], source_mode=self.report.source_mode,
-                report_hash=content_hash(approved_text), approval_hash=event['hash'], audit_entries=chain['entries'])
+                report_hash=content_hash(approved_text), approval_hash=event['hash'], audit_entries=chain['entries'],
+                clear_lines=clear_review.record_lines(answers))
         else:
             final = '**DRAFT — REQUIRES HUMAN REVIEW**\n\n' + content
-        data = docx_bytes(final, os.getenv('UNIVERSITY_LOGO_PATH')) if Path(path).suffix.lower() == '.docx' else markdown_bytes(final)
         try:
+            from src.reporting.designed_report import export_bytes
+            state = {'report': self.report, 'workflow': self.workflow, 'frame': self.frame, 'context': self.context,
+                     'theme_decisions': self.theme_review.decisions, 'source': self.source,
+                     'loaded_file_label': self.loaded_file_label, 'charts': getattr(self, 'charts', None),
+                     'charts_enabled': getattr(self, 'charts_enabled', True)}
+            data = export_bytes(state, final, Path(path).suffix.lower()[1:])
             Path(path).write_bytes(data)
         except Exception as exc:
             if reviewed:

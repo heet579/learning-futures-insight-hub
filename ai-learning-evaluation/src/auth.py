@@ -118,6 +118,13 @@ def read_users(path=None):
 
 
 def authenticate(username, password, path=None):
+    from src.remote import ServerError, ServerUnavailable, login, server_url
+    if server_url():
+        # Shared accounts on the Insight Hub server; users.txt is not used.
+        try:
+            return login(username, password)
+        except (ServerError, ServerUnavailable) as exc:
+            raise AccountFileError(str(exc)) from None
     # Reload on every attempt: file edits apply without restarting the app.
     accounts = read_users(path)
     try:

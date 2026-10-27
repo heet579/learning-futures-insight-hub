@@ -12,7 +12,7 @@ If setup fails, capture the full error message. Do not change your computer's se
 
 ## macOS / Linux
 
-The source is portable. Automated tests also run on Linux (Docker and CI). From a terminal in the extracted folder:
+The source is portable. Automated tests also run on Linux (GitHub Actions CI). From a terminal in the extracted folder:
 
 ```sh
 python3 -m venv .venv

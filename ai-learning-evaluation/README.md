@@ -34,7 +34,7 @@ Do not commit `config/users.txt`, copy it into source-controlled locations, or p
 
 An older plaintext `users.txt` is intentionally not migrated automatically. Move it out of the repository, initialise a new hashed file with the same usernames and new passwords, then securely remove the old copy. Reusing usernames preserves ownership of existing local reports. Any password that was previously committed must be rotated; removing this file now does not remove it from existing Git history.
 
-For Docker Compose, initialise the ignored host file after the container starts with `docker compose exec insight-hub python -m src.auth init demo-author demo-reviewer`. It is written to `shared/users.txt` through `LOGIN_USERS_FILE=/workspace/users.txt`. Other Docker launch methods must point `LOGIN_USERS_FILE` at a writable local location.
+When `SERVER_URL` is set, `config/users.txt` is not used: accounts live in the server database with hashed passwords and are managed with `python -m server.manage` (see [deployment guide](docs/deployment.md#accounts)).
 
 ## Application workflow
 
@@ -77,10 +77,10 @@ The top-right account menu supports **Switch account** and **Sign out**. Unsaved
 - Snapshots contain the imported dataset, masked analysis data, calculated context, report text, theme/claim decisions, workflow events and revision proposals/results. Source files need not remain at their original paths.
 - **Export draft** remains available in Human review and produces a document, not a restorable workspace.
 - Only the owner can edit, rename or delete an editable draft. Submission, approval and return use version checks inside a database transaction. A stale reviewer must reopen the report; they cannot overwrite another reviewer's decision.
-- The local library persists DRAFT, AWAITING HUMAN REVIEW, CHANGES REQUESTED and HUMAN REVIEWED states. Existing databases are migrated automatically without deleting saved drafts. Approved export text and its review record are stored with the approved version. This is a shared local database, not cross-computer cloud collaboration.
-- Default database: `~/.learning_futures_insight_hub/reports.sqlite3`. Set `REPORT_LIBRARY_PATH` for another persistent local location. In Docker, point it to `/workspace/reports.sqlite3` so the existing shared volume preserves it across container recreation.
+- The local library persists DRAFT, AWAITING HUMAN REVIEW, CHANGES REQUESTED and HUMAN REVIEWED states. Existing databases are migrated automatically without deleting saved drafts. Approved export text and its review record are stored with the approved version. Without `SERVER_URL` this is a local database on one computer; with `SERVER_URL` the same rules run on the shared server so reports move between computers.
+- Default database: `~/.learning_futures_insight_hub/reports.sqlite3`. Set `REPORT_LIBRARY_PATH` for another persistent local location. With `SERVER_URL` set, reports are stored in the server's Postgres database instead.
 - The SQLite file contains survey and review data. It is local application data; do not commit or share it as source code. This prototype does not encrypt the database or protect it from someone with filesystem access.
-- JSON snapshots are schema-versioned; SQLite access is isolated in `src/storage/reports.py` for future replacement with a cloud API.
+- JSON snapshots are schema-versioned; SQLite access is isolated in `src/storage/reports.py`; `src/remote.py` provides the same operations over the API server and `src/storage/database.py` runs them on Postgres.
 
 ## Calculation notes
 
@@ -127,8 +127,8 @@ For a grey or partially blank screen, use the [Mac recovery steps](TEAM_TESTING.
 
 Run `python app.py --diagnose` to print the Python, Tcl/Tk and window-system versions without loading data. This release's compatibility changes were verified with Windows tests; the affected Mac must still be retested.
 
-## Feedback and Docker distribution
+## Feedback and revisions
 
 Use the **Feedback & revisions** tab after generating a report. Preview before applying; every applied revision clears approval and can be undone. **Ask Gemini** rewrites the selected section from your request; **Edit from feedback** applies offline rules; **Manual replacement** uses wording you paste or write (for example from Microsoft Copilot). Rewritten sentences appear in **Check facts & quotes** and must be accepted like any other claim.
 
-The [Docker guide](../DOCKER.md) explains how teammates can clone the repository and run the same Python desktop in a local browser using Docker Compose, without host Python/Tk setup.
+To share the Report library between computers, see the [deployment guide](docs/deployment.md).

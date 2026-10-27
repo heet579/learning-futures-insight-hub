@@ -30,6 +30,15 @@ class ReportRepository:
         finally:
             db.close()
 
+    def titles(self, ids):
+        """{id: title} for the given report ids (no snapshots loaded)."""
+        ids = [i for i in dict.fromkeys(ids) if i]
+        if not ids:
+            return {}
+        with self.connect() as db:
+            marks = ','.join('?' * len(ids))
+            return {row['id']: row['title'] for row in db.execute(f'SELECT id,title FROM reports WHERE id IN ({marks})', ids)}
+
     def list_owned(self, actor):
         with self.connect() as db:
             rows = [dict(row) for row in db.execute(
@@ -110,8 +119,12 @@ class ReportRepository:
                 FROM reports WHERE status='HUMAN REVIEWED' AND (owner=? OR reviewer=?) AND ?!=''
                 ORDER BY updated DESC""", (actor, actor, actor))]
 
-    def transition(self, *, actor, report_id, version, action, notes='', role='', confirmed=False, audit=None):
-        """Change the stored version atomically; never trust a reviewer's editable UI snapshot."""
+    def transition(self, *, actor, report_id, version, action, notes='', role='', confirmed=False, audit=None,
+                   clear=None):
+        """Change the stored version atomically; never trust a reviewer's editable UI snapshot.
+
+        Approval needs the reviewer's CLEAR answers (src/review/clear.py). If an answer says the
+        report does not reflect learners or is not fit for its audience, it is sent back instead."""
         from src.storage.snapshot import unpack, pack
         from src.storage.review_state import checked_review
         from src.audit.logger import AuditTrail
@@ -138,27 +151,43 @@ class ReportRepository:
                 if workflow.reviewer != row['owner']:
                     raise ValueError('The submitted author does not match the report owner.')
                 reviewer = actor
-                if action == 'return':
-                    workflow.return_for_changes(actor, notes)
-                else:
-                    if not confirmed:
-                        raise ValueError('Confirm that you checked the evidence, privacy and final wording.')
+                trail = audit if audit is not None else AuditTrail()
+                answers = None
+                if action == 'approve':
+                    from src.review import clear as clear_review
                     themes, ledger = checked_review(state)
+                    verdict = clear_review.validate(state, themes.reviewed_context(state['context']), clear)
+                    answers = verdict['answers']
+                    if verdict['outcome'] == 'return':
+                        action, notes = 'return', 'CLEAR review: ' + verdict['notes']
+                if action == 'return':
+                    if not str(notes).strip():
+                        raise ValueError('Write what the author should change.')
+                    workflow.return_for_changes(actor, notes)
+                    trail.append('Returned for changes', actor, report_id=report_id, author=row['owner'],
+                                 **({'seconds': answers['seconds'], 'level': answers['level'],
+                                     'concerns': answers['concerns'], 'clear': True} if answers else {}))
+                else:
                     workflow.approve(actor, role=role, audience=state['report'].audience)
                     from src.reporting.report_generator import approve_report
                     from src.review.record import build_review_record, content_hash
                     from src.review.claims import ai_text_retained
-                    trail = audit if audit is not None else AuditTrail()
                     if not trail.verify()['ok']:
                         raise ValueError('The audit log could not be verified. Approval is blocked.')
-                    approved = approve_report(state['report'], state['content']).content
+                    approved = clear_review.insert_before_record(
+                        approve_report(state['report'], state['content']).content,
+                        clear_review.reviewer_section(answers, actor))
                     event = trail.append('Approved', actor, report_id=report_id, role=role,
-                        author=row['owner'], report_sha256=content_hash(approved))
+                        author=row['owner'], report_sha256=content_hash(approved), level=answers['level'],
+                        seconds=answers['seconds'], concerns=answers['concerns'], faithful=answers['faithful'],
+                        balanced=answers['balanced'], fair=answers.get('fair', ''), fit=answers.get('fit', ''))
+                    state['clear'] = answers
                     state['approved_export'] = approved + '\n\n' + build_review_record(
                         workflow=workflow, theme_counts=themes.counts(), claim_counts=ledger.counts(),
                         pace=ledger.pace(), ai_retained=ai_text_retained(state['report'], state['content']),
                         source_mode=state['report'].source_mode, report_hash=content_hash(approved),
-                        approval_hash=event['hash'], audit_entries=trail.verify()['entries'], authenticated=True)
+                        approval_hash=event['hash'], audit_entries=trail.verify()['entries'], authenticated=True,
+                        clear_lines=clear_review.record_lines(answers))
             payload = json.dumps(pack(state), ensure_ascii=False, allow_nan=False)
             db.execute("""UPDATE reports SET status=?, reviewer=?, updated=?, version=version+1,
                 snapshot=? WHERE id=? AND version=?""", (workflow.status, reviewer,

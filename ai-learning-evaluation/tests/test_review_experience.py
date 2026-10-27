@@ -1,10 +1,11 @@
 """Visible handoff outcomes must follow persisted state, including failed writes."""
-from test_account_session import session, tk_runtime
+from test_account_session import session
 from test_handoff import ready_report, another_account
 
 
 def assert_visible_inside(app, widget):
-    app.root.update_idletasks()
+    # Native map events must run before querying visibility on Windows.
+    app.root.update()
     assert widget.winfo_ismapped()
     assert widget.winfo_width() > 20
     assert widget.winfo_rootx() >= app.root.winfo_rootx()
@@ -112,14 +113,17 @@ def test_progress_reopens_checks_and_links_to_work(session, monkeypatch):
     from test_desktop import decide_all_claims
     ready_report(session)
     assert [step[0] for step in session.review_progress_steps()] == ['done', 'done', 'done', 'active', 'pending']
-    session.set_editor_text(session.editor.get('1.0', 'end-1c') + '\n\nWe recommend discussing delivery next term.')
+    session.set_editor_text(session.editor.get('1.0', 'end-1c') + '\n\nWe recommend discussing delivery: 99.9% asked for it.')
     session.refresh_claims()
     assert session.review_progress_steps()[2][0] != 'done'
     assert session.submit_button.instate(['disabled'])
     session.open_progress_step(2)
     assert session.current_page == 2
     assert session.report_tabs.index(session.report_tabs.select()) == 3
-    decide_all_claims(session)
+    for claim in list(session.ledger.pending):        # a number that does not match the data must go
+        session.claims_table.selection_set(claim.key)
+        session.reject_claim()
+    assert not session.ledger.pending
     assert session.submit_persistent()
     assert [s[0] for s in session.review_progress_steps()] == ['done', 'done', 'done', 'done', 'active']
     with another_account(session, 'sam') as reviewer:
