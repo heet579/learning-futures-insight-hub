@@ -426,6 +426,7 @@ def create_app(database_url=None):
         version, state = services.reports.transition(actor=user['username'], report_id=report_id,
             version=body.version, action=body.action, notes=body.notes, role=body.role,
             confirmed=body.confirmed, audit=services.audit, clear=clear)
+        services.reports.delete_clear_drafts(report_id)
         if assigned:
             services.reports.assign_reviewer(report_id, version, assigned)
         if body.action == 'submit':

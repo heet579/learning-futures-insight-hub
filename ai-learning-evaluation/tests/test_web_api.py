@@ -120,6 +120,8 @@ def test_browser_app_is_served(api):
     page = api.get('/')
     assert page.status_code == 200 and 'Insight Hub' in page.text
     assert api.get('/api/config').json()['approver_roles']
+    script = api.get('/app.js').text
+    assert '/review/draft' in script and "Save failed" in script and 'setTimeout' in script
 
 
 def submit_ready_report(api, headers):
@@ -135,6 +137,58 @@ def submit_ready_report(api, headers):
         decision = 'reject' if pending[0]['blocking'] else 'accept'
         ws = api.post(f'/api/reports/{rid}/claims/{pending[0]["key"]}', headers=headers, json={'decision': decision}).json()['workspace']
     return rid
+
+
+def test_clear_review_drafts_restore_isolate_and_clear_after_submission(api, people, monkeypatch):
+    admin, gopi, _ = people
+    api.post('/users', headers=admin, json={'username': 'heet', 'password': 'heet-pass', 'role': 'admin'})
+    heet = sign_in(api, 'heet', 'heet-pass')
+
+    rid = submit_ready_report(api, gopi)
+    version = api.get(f'/api/reports/{rid}', headers=gopi).json()['report']['version']
+    assert api.post(f'/reports/{rid}/transition', headers=gopi,
+                    json={'version': version, 'action': 'submit', 'reviewer': 'lisa'}).status_code == 200
+    review = api.get(f'/api/reports/{rid}', headers=admin).json()
+    report_version = review['report']['version']
+    draft = {'faithful': 'partly', 'faithful_note': 'Include the quieter learners.',
+             'owned': 'Compare the online and in-person groups next term.'}
+    saved = api.put(f'/api/reports/{rid}/review/draft', headers=admin, json={'answers': draft})
+    assert saved.status_code == 200 and saved.json() == {'saved': True}
+
+    # A fresh session for the same account restores the same report/version draft.
+    signed_in_again = sign_in(api, 'lisa', 'admin-pass')
+    restored = api.get(f'/api/reports/{rid}', headers=signed_in_again).json()['workspace']['clear']['draft']
+    assert restored == draft
+
+    # Neither another account nor another report can see this draft.
+    other_user = api.get(f'/api/reports/{rid}', headers=heet).json()['workspace']
+    assert not other_user['can_review'] and 'draft' not in other_user['clear']
+    assert api.put(f'/api/reports/{rid}/review/draft', headers=heet,
+                   json={'answers': {'owned': 'not mine'}}).status_code == 403
+    other_rid = submit_ready_report(api, gopi)
+    other_version = api.get(f'/api/reports/{other_rid}', headers=gopi).json()['report']['version']
+    api.post(f'/reports/{other_rid}/transition', headers=gopi,
+             json={'version': other_version, 'action': 'submit', 'reviewer': 'lisa'})
+    assert api.get(f'/api/reports/{other_rid}', headers=admin).json()['workspace']['clear']['draft'] == {}
+
+    # A failed write reports failure and leaves the last successfully saved value intact.
+    save = api.services.reports.save_clear_draft
+    monkeypatch.setattr(api.services.reports, 'save_clear_draft',
+                        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError('draft storage unavailable')))
+    failed = api.put(f'/api/reports/{rid}/review/draft', headers=admin,
+                     json={'answers': {'owned': 'must not replace the saved draft'}})
+    assert failed.status_code == 400 and failed.json()['detail'] == 'draft storage unavailable'
+    monkeypatch.setattr(api.services.reports, 'save_clear_draft', save)
+    assert api.get(f'/api/reports/{rid}', headers=admin).json()['workspace']['clear']['draft'] == draft
+
+    # Formal submission is still the existing workflow operation and removes the separate draft.
+    approved = api.post(f'/reports/{rid}/transition', headers=admin, json={
+        'version': report_version, 'action': 'approve', 'role': 'Program coordinator',
+        'confirmed': True, 'clear': CLEAR_OK})
+    assert approved.status_code == 200, approved.text
+    assert api.services.reports.load_clear_draft(rid, 'lisa', report_version) == {}
+    final_clear = api.get(f'/api/reports/{rid}', headers=admin).json()['workspace']['clear']
+    assert 'draft' not in final_clear and final_clear['answers']['owned'] == CLEAR_OK['owned']
 
 
 def test_author_chooses_the_reviewer_and_names_are_shown(api, people):

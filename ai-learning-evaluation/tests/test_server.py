@@ -32,6 +32,7 @@ def database_url(request, tmp_path):
     database.initialise()
     with database.connect() as db:
         with db:
+            db.execute('DELETE FROM clear_review_drafts')
             db.execute('DELETE FROM reports')
             db.execute('DELETE FROM users')
             db.execute('DELETE FROM audit_log')

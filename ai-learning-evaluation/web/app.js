@@ -940,6 +940,7 @@ function reviewStep(el, ws) {
   const clear = ws.clear || {};
   const ex = clear.examine;
   const answers = clear.answers;
+  const savedDraft = clear.draft || {};
   el.innerHTML = `${returnedBanner(ws)}
     <div class="stage-head"><div><h1>${approved ? 'Approved' : ws.can_review ? 'Your review' : report.reviewer ? `With ${esc(report.reviewer_name || report.reviewer)}` : 'With the reviewer'}</h1>
       <p>${approved ? `Approved by ${person(report.reviewer_name, ws.workflow.approver)} as ${esc(ws.workflow.approver_role)}. Written by ${person(report.owner_name, report.owner)}. The download includes the reviewer's notes and a review record.`
@@ -970,7 +971,8 @@ function reviewStep(el, ws) {
       </aside>
     </div>
     ${ws.can_review ? `<section class="clear-review" id="clear">
-      <div class="clear-head"><h2>Your judgement</h2><p class="muted">${ex.level.level === 'high' ? `High risk: ${ex.level.reasons.map(esc).join(' ')}` : 'Standard review.'} Your answers go into the report and the audit record.</p></div>
+      <div class="clear-head"><div><h2>Your judgement</h2><p class="muted">${ex.level.level === 'high' ? `High risk: ${ex.level.reasons.map(esc).join(' ')}` : 'Standard review.'} Your answers go into the report and the audit record.</p></div>
+        <span class="save-status" id="clear-save-status" aria-live="polite"></span></div>
       ${ex.questions.map((q, i) => clearQuestion(q, ex, i + 1)).join('')}
       <div class="question decide-row">
         <label class="field narrow"><span>Approving as</span><select class="input" id="role">${roles.map((r) => `<option ${clientReport && r === S.config.client_approver_role ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
@@ -986,14 +988,51 @@ function reviewStep(el, ws) {
     api(`/api/reports/${report.id}/review/start`, { method: 'POST' }).catch(() => {});
   }
   const picked = {};
-  $$('[data-q]').forEach((b) => b.onclick = () => {
-    picked[b.dataset.q] = b.dataset.v;
-    $$(`[data-q="${b.dataset.q}"]`).forEach((x) => x.setAttribute('aria-checked', String(x === b)));
-    $$(`.reveal-on[data-for="${b.dataset.q}"]`).forEach((f) => { f.hidden = !f.dataset.when.split(',').includes(b.dataset.v); });
+  const setChoice = (name, value) => {
+    picked[name] = value;
+    $$(`[data-q="${name}"]`).forEach((x) => x.setAttribute('aria-checked', String(x.dataset.v === value)));
+    $$(`.reveal-on[data-for="${name}"]`).forEach((f) => { f.hidden = !f.dataset.when.split(',').includes(value); });
+  };
+  ['faithful', 'balanced', 'fair', 'fit'].forEach((name) => {
+    if (savedDraft[name]) setChoice(name, savedDraft[name]);
   });
-  $$('[data-rec]').forEach((b) => b.onclick = () => { const t = $('#owned'); t.value = ex.recommendations[Number(b.dataset.rec)]; t.focus(); });
+  ['owned', 'faithful_note', 'caveat', 'fairness_note', 'fit_note'].forEach((name) => {
+    if (Object.hasOwn(savedDraft, name) && $(`#${name}`)) $(`#${name}`).value = savedDraft[name];
+  });
+  let saveTimer;
+  let saveSequence = 0;
+  const draftAnswers = () => {
+    const value = (id) => ($(`#${id}`)?.value || '').trim();
+    return { ...picked, owned: value('owned'), faithful_note: value('faithful_note'), caveat: value('caveat'),
+      fairness_note: value('fairness_note'), fit_note: value('fit_note') };
+  };
+  const scheduleSave = () => {
+    clearTimeout(saveTimer);
+    const ticket = ++saveSequence;
+    const status = $('#clear-save-status');
+    status.textContent = 'Saving';
+    status.dataset.state = 'saving';
+    saveTimer = setTimeout(async () => {
+      try {
+        await api(`/api/reports/${report.id}/review/draft`, { method: 'PUT', body: { answers: draftAnswers() } });
+        if (ticket === saveSequence) { status.textContent = 'Saved'; status.dataset.state = 'saved'; }
+      } catch {
+        if (ticket === saveSequence) { status.textContent = 'Save failed'; status.dataset.state = 'failed'; }
+      }
+    }, 700);
+  };
+  $$('[data-q]').forEach((b) => b.onclick = () => {
+    setChoice(b.dataset.q, b.dataset.v);
+    scheduleSave();
+  });
+  $$('.clear-review textarea').forEach((t) => t.addEventListener('input', scheduleSave));
+  $$('[data-rec]').forEach((b) => b.onclick = () => {
+    const t = $('#owned'); t.value = ex.recommendations[Number(b.dataset.rec)]; t.focus(); scheduleSave();
+  });
   const transition = async (body, button) => busy(button, async () => {
     await api(`/reports/${report.id}/transition`, { method: 'POST', body: { version: report.version, ...body } });
+    clearTimeout(saveTimer);
+    ++saveSequence;
     S.pendingCount = Math.max(0, (S.pendingCount || 1) - 1);
     S.work = await api(`/api/reports/${report.id}`);
     if (S.work.workspace.workflow.status === 'HUMAN REVIEWED') { toast('Report approved'); renderWork('review'); }
