@@ -382,7 +382,11 @@ td { padding: 10px 12px; border-top: 1px solid var(--line); vertical-align: top;
 .level-head h3 { margin: 0; }
 .panel.level ul { margin: 0 0 8px 18px; }
 .clear-review { margin-top: 28px; border-top: 1px solid var(--line); padding-top: 22px; display: grid; gap: 16px; }
+.clear-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .clear-head h2 { font-family: var(--display); margin-bottom: 4px; }
+.save-status { min-width: 72px; padding-top: 6px; color: #6B6382; font-size: 13px; text-align: right; }
+.save-status[data-state="saved"] { color: #2E7D5B; }
+.save-status[data-state="failed"] { color: #A3213A; }
 .question { border: 1px solid var(--line); border-radius: var(--radius-m); padding: 18px 20px; background: #fff; display: grid; gap: 12px; }
 .q-head { display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
 .q-num { width: 30px; height: 30px; border-radius: 50%; background: var(--plum-tint); color: var(--plum-deep); display: grid; place-items: center; font-weight: 700; font-family: var(--display); }

@@ -24,6 +24,10 @@ USERS_TABLE = '''CREATE TABLE IF NOT EXISTS users (
     active INTEGER NOT NULL DEFAULT 1, created TEXT NOT NULL)'''
 AUDIT_TABLE_PG = 'CREATE TABLE IF NOT EXISTS audit_log (seq BIGSERIAL PRIMARY KEY, line TEXT NOT NULL)'
 AUDIT_TABLE_SQLITE = 'CREATE TABLE IF NOT EXISTS audit_log (seq INTEGER PRIMARY KEY AUTOINCREMENT, line TEXT NOT NULL)'
+CLEAR_DRAFTS_TABLE = '''CREATE TABLE IF NOT EXISTS clear_review_drafts (
+    report_id TEXT NOT NULL, reviewer TEXT NOT NULL, report_version INTEGER NOT NULL,
+    answers TEXT NOT NULL, updated TEXT NOT NULL,
+    PRIMARY KEY (report_id, reviewer))'''
 
 
 def normalise_url(url):
@@ -222,6 +226,7 @@ class Database:
                 db.execute(REPORTS_TABLE)
                 db.execute(USERS_TABLE)
                 db.execute(AUDIT_TABLE_PG if self.is_postgres else AUDIT_TABLE_SQLITE)
+                db.execute(CLEAR_DRAFTS_TABLE)
                 self._migrate_users(db)
 
     def _migrate_users(self, db):
@@ -257,6 +262,36 @@ class DatabaseReportRepository(ReportRepository):
         with self.connect() as db:
             db.execute("UPDATE reports SET reviewer=? WHERE id=? AND version=? AND status='AWAITING HUMAN REVIEW'",
                        (reviewer, report_id, version))
+
+    def save_clear_draft(self, report_id, reviewer, report_version, answers):
+        """Save one reviewer's unfinished CLEAR answers without changing the report."""
+        now = datetime.now(timezone.utc).isoformat()
+        encoded = json.dumps(answers, ensure_ascii=False)
+        with self.connect() as db:
+            db.execute('INSERT INTO clear_review_drafts '
+                       '(report_id, reviewer, report_version, answers, updated) VALUES (?,?,?,?,?) '
+                       'ON CONFLICT(report_id, reviewer) DO UPDATE SET '
+                       'report_version=excluded.report_version, answers=excluded.answers, updated=excluded.updated',
+                       (report_id, reviewer, report_version, encoded, now))
+
+    def load_clear_draft(self, report_id, reviewer, report_version):
+        """Return only the draft for this reviewer and current report version."""
+        with self.connect() as db:
+            row = db.execute('SELECT answers FROM clear_review_drafts '
+                             'WHERE report_id=? AND reviewer=? AND report_version=?',
+                             (report_id, reviewer, report_version)).fetchone()
+        if not row:
+            return {}
+        try:
+            value = json.loads(row[0])
+            return value if isinstance(value, dict) else {}
+        except (TypeError, ValueError):
+            return {}
+
+    def delete_clear_drafts(self, report_id):
+        """Discard stale unfinished answers after a successful workflow transition."""
+        with self.connect() as db:
+            db.execute('DELETE FROM clear_review_drafts WHERE report_id=?', (report_id,))
 
 
 class DatabaseAuditTrail:

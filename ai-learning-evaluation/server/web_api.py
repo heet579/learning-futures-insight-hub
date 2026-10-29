@@ -43,7 +43,11 @@ def build_router(services, current_user):
         report = meta(row)
         report.update(owner_name=names.get(row['owner'], row['owner']),
                       reviewer_name=names.get(row['reviewer'], row['reviewer']) if row['reviewer'] else '')
-        return {'report': report, 'workspace': workspace.view(state, can_edit=can_edit, can_review=can_review), **extra}
+        view = workspace.view(state, can_edit=can_edit, can_review=can_review)
+        if can_review:
+            view.setdefault('clear', {})['draft'] = services.reports.load_clear_draft(
+                row['id'], user['username'], row['version'])
+        return {'report': report, 'workspace': view, **extra}
 
     def change(report_id, user, operation, audit_action=None, **audit_details):
         """Load, check ownership, apply `operation(state)`, save; returns the new workspace view."""
@@ -162,6 +166,29 @@ def build_router(services, current_user):
             raise HTTPException(403, 'This report is not waiting for your review.')
         services.audit.append('Review opened', user['username'], report_id=report_id)
         return {'started': True}
+
+    class ClearDraft(BaseModel):
+        answers: dict[str, str]
+
+    @router.put('/reports/{report_id}/review/draft')
+    def save_review_draft(report_id: str, body: ClearDraft, user=Depends(current_user)):
+        """Persist partial answers separately from the submitted CLEAR review."""
+        row, state = open_report(report_id, user)
+        _, can_review = permissions(row, state, user)
+        if not can_review:
+            raise HTTPException(403, 'This report is not waiting for your review.')
+        allowed = {'faithful', 'balanced', 'fair', 'fit', 'owned', 'faithful_note',
+                   'caveat', 'fairness_note', 'fit_note'}
+        unknown = set(body.answers) - allowed
+        if unknown:
+            raise ValueError('The review draft contains an unknown answer.')
+        answers = {}
+        for key, value in body.answers.items():
+            if len(value) > 600:
+                raise ValueError('Review draft answers must be 600 characters or fewer.')
+            answers[key] = value
+        services.reports.save_clear_draft(row['id'], user['username'], row['version'], answers)
+        return {'saved': True}
 
     @router.get('/oversight')
     def oversight(user=Depends(current_user)):
