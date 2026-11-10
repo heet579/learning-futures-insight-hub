@@ -24,6 +24,7 @@ def fake_google(token):
 @pytest.fixture
 def admin(api):
     api.services.verify_google = fake_google
+    api.services.users.set_role('lisa', 'superadmin')
     return sign_in(api, 'lisa', 'admin-pass')
 
 
@@ -36,7 +37,7 @@ def test_sign_up_waits_for_admin_approval(api, admin):
     response = register(api)
     assert response.status_code == 200 and response.json()['pending'] is True
     pending = api.post('/auth/login', json={'username': 'gopi', 'password': 'gopi-pass-1'})
-    assert pending.status_code == 403 and 'waiting for administrator approval' in pending.json()['detail']
+    assert pending.status_code == 403 and 'waiting for superadmin approval' in pending.json()['detail']
     assert api.post('/auth/login', json={'username': 'gopi', 'password': 'wrong'}).status_code == 401
     assert register(api).status_code == 400                                    # username taken
     assert register(api, name='gopi2').json()['detail'].startswith('An account already uses')
@@ -173,7 +174,7 @@ def test_desktop_sign_up_profile_and_admin_windows(live_server, tk_runtime, monk
     from src.ui.accounts import AccountsDialog, ProfileDialog
     from src.ui.desktop import DesktopApp
     monkeypatch.setattr('tkinter.messagebox.askyesno', lambda *a, **k: True)
-    live_server.users.set_role('sam', 'admin')
+    live_server.users.set_role('sam', 'superadmin')
 
     # Sign-in screen in shared mode offers Google and Create account.
     root = tk.Toplevel(tk_runtime)
@@ -199,7 +200,7 @@ def test_desktop_sign_up_profile_and_admin_windows(live_server, tk_runtime, monk
     root = tk.Toplevel(tk_runtime)
     app = DesktopApp(root, username='sam', on_logout=lambda: None)
     captions = [str(b.cget('text')) for b in app.account_actions]
-    assert captions[:2] == ['Profile settings', 'Manage accounts']
+    assert captions[:2] == ['Profile settings', 'Superadmin dashboard']
     accounts = app.open_accounts()
     assert isinstance(accounts, AccountsDialog)
     wait_for(root, lambda: 'esrat' in accounts.users)

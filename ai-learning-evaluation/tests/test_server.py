@@ -68,12 +68,13 @@ def test_passwords_are_hashed_and_tokens_are_signed(monkeypatch):
 
 
 def test_health_login_and_admin_accounts(api):
+    api.services.users.set_role('lisa', 'superadmin')
     assert api.get('/health').json()['ok'] is True
     assert api.get('/reports').status_code == 401
     assert api.post('/auth/login', json={'username': 'lisa', 'password': 'wrong'}).status_code == 401
     admin = sign_in(api, 'lisa', 'admin-pass')
     me = api.get('/auth/me', headers=admin).json()
-    assert (me['username'], me['role'], me['has_password'], me['google']) == ('lisa', 'admin', True, False)
+    assert (me['username'], me['role'], me['has_password'], me['google']) == ('lisa', 'superadmin', True, False)
     assert api.post('/users', headers=admin, json={'username': 'Alex', 'password': 'pw-alex'}).status_code == 200
     alex = sign_in(api, 'alex', 'pw-alex')
     assert api.get('/users', headers=alex).status_code == 403
@@ -88,6 +89,7 @@ def test_health_login_and_admin_accounts(api):
 
 
 def test_reports_are_private_and_snapshots_are_validated(api):
+    api.services.users.set_role('lisa', 'superadmin')
     admin = sign_in(api, 'lisa', 'admin-pass')
     api.post('/users', headers=admin, json={'username': 'alex', 'password': 'a'})
     api.post('/users', headers=admin, json={'username': 'sam', 'password': 's'})
