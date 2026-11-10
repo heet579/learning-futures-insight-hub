@@ -232,6 +232,13 @@ class DesktopApp(HandoffUI, LibraryUI, AccountUI, ReviewUI, RevisionUI, Insights
                            cursor='hand2', command=lambda index=i: self.navigate(index))
             b.pack(fill='x', padx=10, pady=3)
             self.nav_buttons[i] = b
+            if i == 3:
+                from src import remote
+                from src.roles import can_manage_users
+                if can_manage_users(remote.session.role) and remote.session.username == self.username:
+                    self.superadmin_button = ttk.Button(sidebar, text='Superadmin dashboard', style='Nav.TButton',
+                                                       command=self.open_accounts)
+                    self.superadmin_button.pack(fill='x', padx=10, pady=3)
         bottom = tk.Frame(sidebar, bg=NAVY)
         bottom.pack(side='bottom', fill='x', padx=20, pady=24)
         label(bottom, '●  WORKSPACE', 9, '#5EEAD4', True).pack(anchor='w')

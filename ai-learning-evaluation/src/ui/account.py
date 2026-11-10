@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from src.ui.theme import BG, WHITE, INK, MUTED, TEAL, BORDER
+from src.roles import can_manage_users
 
 
 class AccountUI:
@@ -49,10 +50,10 @@ class AccountUI:
         self.account_actions = []
         from src import remote
         if remote.server_url() and remote.session.username == self.username:
-            # Shared-server accounts: self-service profile, and account management for admins.
+            # User management is reserved for superadmins; other accounts retain their profile.
             items = [('Profile settings', self.open_profile)]
-            if remote.session.role == 'admin':
-                items.append(('Manage accounts', self.open_accounts))
+            if can_manage_users(remote.session.role):
+                items.append(('Superadmin dashboard', self.open_accounts))
             for caption, command in items:
                 button = ttk.Button(self.account_menu, text=caption, command=command)
                 button.pack(fill='x', pady=3)
@@ -101,6 +102,9 @@ class AccountUI:
         return ProfileDialog(self.root)
 
     def open_accounts(self):
+        from src import remote
+        if not can_manage_users(remote.session.role) or remote.session.username != self.username:
+            return messagebox.showerror('Access denied', 'Only a superadmin can manage users.', parent=self.root)
         self.hide_account_menu()
         from src.ui.accounts import AccountsDialog
         return AccountsDialog(self.root)
