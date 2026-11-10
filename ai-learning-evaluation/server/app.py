@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from src.storage.database import (NO_PASSWORD, Database, DatabaseAuditTrail, DatabaseReportRepository,
                                   UserStore, password_matches)
 from server.security import issue_token, read_token
-from src.roles import Role, can_manage_users
+from src.roles import Role, can_manage_users, can_review_reports
 
 log = logging.getLogger('insight_hub.server')
 APP_FOLDER = Path(__file__).resolve().parents[1]
@@ -330,14 +330,14 @@ def create_app(database_url=None):
         an administrator's own report can go to another administrator or to a team member."""
         people = [u for u in services.users.list()
                   if u['approved'] and u['active'] and u['username'] != author['username']
-                  and (u['role'] == 'admin' or author['role'] == 'admin')]
-        people.sort(key=lambda u: (u['role'] != 'admin', (u['display_name'] or u['username']).lower()))
+                  and (can_review_reports(u['role']) or can_review_reports(author['role']))]
+        people.sort(key=lambda u: (not can_review_reports(u['role']), (u['display_name'] or u['username']).lower()))
         return [{'username': u['username'], 'display_name': u['display_name'] or u['username'], 'role': u['role']}
                 for u in people]
 
     def may_review(user, row):
         """The person a report was sent to, or any administrator when it was sent to no one in particular."""
-        return row['reviewer'] == user['username'] or (not row['reviewer'] and user['role'] == 'admin')
+        return row['reviewer'] == user['username'] or (not row['reviewer'] and can_review_reports(user['role']))
 
     def with_names(rows):
         names = {u['username']: u['display_name'] or u['username'] for u in services.users.list()}
@@ -361,7 +361,7 @@ def create_app(database_url=None):
     @app.get('/reports/{report_id}')
     def load_report(report_id: str, user=Depends(current_user)):
         row = services.reports.load(report_id, user['username'])
-        if row['owner'] != user['username'] and user['role'] != 'admin' and row['reviewer'] != user['username']:
+        if row['owner'] != user['username'] and not can_review_reports(user['role']) and row['reviewer'] != user['username']:
             raise ValueError('This report is unavailable for this account.')
         return row
 
@@ -430,10 +430,10 @@ def create_app(database_url=None):
             assigned = body.reviewer.strip().lower()
             if assigned and assigned not in choices:
                 raise ValueError('Choose someone other than yourself to review this report'
-                                 + ('.' if user['role'] == 'admin' else ': members send reports to an administrator.'))
-            if not assigned and user['role'] != 'admin' and len(choices) == 1:
+                                 + ('.' if can_review_reports(user['role']) else ': members send reports to an administrator.'))
+            if not assigned and not can_review_reports(user['role']) and len(choices) == 1:
                 assigned = next(iter(choices))       # the only possible reviewer
-            if not assigned and user['role'] == 'admin':
+            if not assigned and can_review_reports(user['role']):
                 raise ValueError('Choose who should review your report.')
         else:
             row = services.reports.load(report_id, user['username'])

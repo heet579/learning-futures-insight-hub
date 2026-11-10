@@ -76,3 +76,16 @@ def test_user_management_api_is_superadmin_only(api):
     assert api.delete('/users/new-person', headers=owner).status_code == 200
     assert api.get('/auth/me', headers=person).status_code == 401
     assert api.delete('/users/owner', headers=owner).status_code == 400
+
+
+def test_superadmin_keeps_review_and_oversight_access(api):
+    api.services.users.create('owner', 'owner-password', 'superadmin')
+    owner = sign_in(api, 'owner', 'owner-password')
+    admin = sign_in(api, 'lisa', 'admin-pass')
+    api.services.users.create('person', 'person-password', 'member')
+    person = sign_in(api, 'person', 'person-password')
+    reviewers = api.get('/api/reviewers', headers=person).json()
+    assert {u['username'] for u in reviewers} == {'owner', 'lisa'}
+    assert api.get('/api/oversight', headers=owner).status_code == 200
+    assert api.get('/api/oversight', headers=admin).status_code == 200
+    assert api.get('/api/oversight', headers=person).status_code == 403
