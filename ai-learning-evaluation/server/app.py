@@ -70,11 +70,13 @@ def default_database_url():
 
 
 def bootstrap_admin(users):
-    """Render's free plan has no shell, so the first admin can come from environment variables."""
-    name, password = os.getenv('ADMIN_USERNAME', '').strip(), os.getenv('ADMIN_PASSWORD', '')
-    if name and password and users.get(name) is None:
-        users.create(name, password, role='admin')
-        log.warning('Created admin account %s from ADMIN_USERNAME.', name)
+    """Initial operator accounts; never silently promote or reset an existing account."""
+    for prefix, role in (('SUPERADMIN', 'superadmin'), ('ADMIN', 'admin')):
+        name = os.getenv(f'{prefix}_USERNAME', '').strip()
+        password = os.getenv(f'{prefix}_PASSWORD', '')
+        if name and password and users.get(name) is None:
+            users.create(name, password, role=role)
+            log.warning('Created %s account %s from %s_USERNAME.', role, name, prefix)
 
 
 def create_app(database_url=None):

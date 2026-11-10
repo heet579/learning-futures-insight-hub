@@ -331,7 +331,7 @@ def password_matches(password, stored):
         return False
 
 
-ROLES = ('member', 'admin')
+from src.roles import ROLES
 NO_PASSWORD = '!'          # Google-only accounts: no password sign-in until one is set
 USER_COLUMNS = 'username, password_hash, role, active, created, approved, email, display_name, google_sub'
 EMAIL_PATTERN = r'[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{2,63}'

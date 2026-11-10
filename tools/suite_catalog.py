@@ -6,7 +6,7 @@ SUITES = {
         'ingestion', 'qualtrics_real_export', 'excel_import', 'metrics', 'themes', 'privacy', 'data_boundaries')),
     'analysis': ('Insights, questions and evidence checks', ('gemini', 'copilot', 'prompts', 'grounding')),
     'reports': ('Reports, revisions, review gates and audit', ('reporting', 'revisions', 'workflow', 'review', 'audit')),
-    'accounts': ('Sign-in, accounts and session changes', ('auth', 'accounts', 'account_session', 'login')),
+    'accounts': ('Sign-in, accounts and session changes', ('auth', 'accounts', 'account_session', 'login', 'superadmin')),
     'desktop': ('Desktop navigation, library and handoff', ('desktop', 'review_experience', 'library', 'handoff', 'runtime')),
     'api': ('Server and browser workflow', ('server', 'web_api', 'api_boundaries')),
     'runner': ('Test launcher and reporting regressions', ()),
