@@ -1087,7 +1087,7 @@ async function accountsView() {
     const create = !u;
     const result = await dialog({ title: create ? 'Create user' : `Edit ${u.username}`, confirm: create ? 'Create user' : 'Save changes',
       body: create ? 'Set their first password and role. They can change their password after signing in.' : 'Usernames stay fixed to preserve report ownership.',
-      fields: `${create ? '<label class="field"><span>Username</span><input class="input" name="username" maxlength="64" autocomplete="off" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.@-]*"></label>' : ''}
+      fields: `${create ? '<label class="field"><span>Username</span><input class="input" name="username" maxlength="64" autocomplete="off" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.@\\-]*"></label>' : ''}
         <label class="field"><span>Full name</span><input class="input" name="display_name" maxlength="80" value="${esc(u?.display_name || '')}"></label>
         <label class="field"><span>Email (optional)</span><input class="input" name="email" type="email" maxlength="254" value="${esc(u?.email || '')}"></label>
         <label class="field"><span>Role</span><select class="input" name="role" ${u?.username === me ? 'disabled' : ''}>${roleOptions(u?.role || 'member')}</select>${u?.username === me ? '<small>Another superadmin must change your role.</small>' : ''}</label>

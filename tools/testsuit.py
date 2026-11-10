@@ -49,6 +49,7 @@ def isolated_environment(folder):
     for key in tuple(env):
         if key.startswith(('GEMINI_', 'ANTHROPIC_', 'AZURE_OPENAI_', 'GOOGLE_')) or key in {
             'SERVER_URL', 'DATABASE_URL', 'DATABASE_URL_UNPOOLED', 'ADMIN_USERNAME', 'ADMIN_PASSWORD',
+            'SUPERADMIN_USERNAME', 'SUPERADMIN_PASSWORD',
             'INSIGHT_HUB_TEST_DATABASE_URL', 'EVALUATION_DATA_PATH', 'UNIVERSITY_LOGO_PATH',
             'PYTEST_ADDOPTS', 'PYTEST_PLUGINS', 'REQUIRE_DESKTOP_TESTS',
         }:

@@ -68,6 +68,7 @@ class Dialog:
         self.fields = {}
         self.status = tk.StringVar(self.window, value='')
         self.busy = False
+        self.window.protocol('WM_DELETE_WINDOW', self.close)
 
     def section(self, text):
         tk.Label(self.card, text=text.upper(), font=(FONT, 8, 'bold'), bg=WHITE, fg=MUTED).pack(anchor='w', pady=(14, 4))
@@ -118,6 +119,10 @@ class Dialog:
 
     def close(self):
         self.window.destroy()
+        # Release Tcl variables while still on the UI thread. Closed editor cycles
+        # may otherwise be collected later by a background HTTP worker.
+        self.fields.clear()
+        self.status = None
 
 
 # ---- create account ----------------------------------------------------------------------
@@ -432,3 +437,10 @@ class AccountsDialog(Dialog):
         if len(password) < 8:
             return self.say('Use a password of at least 8 characters.')
         self.act(lambda user: remote.reset_user_password(user, password), 'Password for {} reset. Tell them the new password.')
+
+    def close(self):
+        if self.editor is not None and self.editor.window.winfo_exists():
+            self.editor.close()
+        self.editor = None
+        super().close()
+        self.search = self.summary = None
