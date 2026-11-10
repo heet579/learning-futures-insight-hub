@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from src.storage.database import (NO_PASSWORD, Database, DatabaseAuditTrail, DatabaseReportRepository,
                                   UserStore, password_matches)
 from server.security import issue_token, read_token
+from src.roles import Role, can_manage_users
 
 log = logging.getLogger('insight_hub.server')
 APP_FOLDER = Path(__file__).resolve().parents[1]
@@ -103,13 +104,13 @@ def create_app(database_url=None):
         if claims is None:
             raise HTTPException(401, 'Your session has expired. Sign out and sign in again.')
         user = services.users.get(claims['u'])
-        if user is None or not user['active'] or not user['approved']:
+        if user is None or user['deleted'] or not user['active'] or not user['approved']:
             raise HTTPException(401, 'This account is disabled. Contact your administrator.')
         return user
 
-    def admin_user(user=Depends(current_user)):
-        if user['role'] != 'admin':
-            raise HTTPException(403, 'Only an administrator can manage accounts.')
+    def superadmin_user(user=Depends(current_user)):
+        if not can_manage_users(user['role']):
+            raise HTTPException(403, 'Only a superadmin can manage users.')
         return user
 
     # ---- service ---------------------------------------------------------------------------
@@ -243,17 +244,19 @@ def create_app(database_url=None):
     class NewUser(BaseModel):
         username: str = Field(max_length=64)
         password: str = Field(max_length=1024)
-        role: Literal['member', 'admin'] = 'member'
+        role: Role = 'member'
         replace: bool = False
         email: str = Field(default='', max_length=254)
         display_name: str = Field(default='', max_length=80)
 
     @app.get('/users')
-    def list_users(admin=Depends(admin_user)):
+    def list_users(admin=Depends(superadmin_user)):
         return services.users.list()
 
     @app.post('/users')
-    def create_user(body: NewUser, admin=Depends(admin_user)):
+    def create_user(body: NewUser, admin=Depends(superadmin_user)):
+        if body.replace:
+            raise ValueError('Edit an existing account instead of replacing it through Create user.')
         name = services.users.create(body.username, body.password, body.role, replace=body.replace,
                                      email=body.email, display_name=body.display_name)
         services.audit.append('Account saved', admin['username'], account=name, role=body.role)
@@ -264,33 +267,31 @@ def create_app(database_url=None):
             raise ValueError(f'You cannot {what} your own account.')
 
     @app.post('/users/{username}/approve')
-    def approve_user(username: str, admin=Depends(admin_user)):
-        services.users.approve(username)
+    def approve_user(username: str, admin=Depends(superadmin_user)):
+        services.users.manage_account(admin['username'], username, approved=True, active=True)
         services.audit.append('Account approved', admin['username'], account=username)
         return {'username': username, 'approved': True}
 
     @app.post('/users/{username}/reject')
-    def reject_user(username: str, admin=Depends(admin_user)):
+    def reject_user(username: str, admin=Depends(superadmin_user)):
         services.users.delete_pending(username)
         services.audit.append('Account request rejected', admin['username'], account=username)
         return {'username': username, 'rejected': True}
 
     @app.post('/users/{username}/active')
-    def set_active(username: str, active: bool, admin=Depends(admin_user)):
+    def set_active(username: str, active: bool, admin=Depends(superadmin_user)):
         if not active:
             not_self(admin, username, 'disable')
-        services.users.set_active(username, active)
+        services.users.manage_account(admin['username'], username, active=active)
         services.audit.append('Account enabled' if active else 'Account disabled', admin['username'], account=username)
         return {'username': username, 'active': active}
 
     class RoleChange(BaseModel):
-        role: Literal['member', 'admin']
+        role: Role
 
     @app.post('/users/{username}/role')
-    def set_role(username: str, body: RoleChange, admin=Depends(admin_user)):
-        if body.role != 'admin':
-            not_self(admin, username, 'remove administrator rights from')
-        services.users.set_role(username, body.role)
+    def set_role(username: str, body: RoleChange, admin=Depends(superadmin_user)):
+        services.users.manage_account(admin['username'], username, role=body.role)
         services.audit.append('Role changed', admin['username'], account=username, role=body.role)
         return {'username': username, 'role': body.role}
 
@@ -298,10 +299,30 @@ def create_app(database_url=None):
         new_password: str = Field(max_length=1024)
 
     @app.post('/users/{username}/password')
-    def reset_password(username: str, body: PasswordReset, admin=Depends(admin_user)):
-        services.users.set_password(username, body.new_password)
+    def reset_password(username: str, body: PasswordReset, admin=Depends(superadmin_user)):
+        services.users.manage_account(admin['username'], username, password=body.new_password)
         services.audit.append('Password reset', admin['username'], account=username)
         return {'username': username}
+
+    class UserChange(BaseModel):
+        display_name: str | None = Field(default=None, max_length=80)
+        email: str | None = Field(default=None, max_length=254)
+        role: Role | None = None
+
+    @app.patch('/users/{username}')
+    def update_user(username: str, body: UserChange, admin=Depends(superadmin_user)):
+        changes = body.model_dump(exclude_unset=True, exclude_none=True)
+        if not changes:
+            raise ValueError('Choose at least one account detail to update.')
+        name = services.users.manage_account(admin['username'], username, **changes)
+        services.audit.append('Account updated', admin['username'], account=name, fields=list(changes))
+        return {'username': name}
+
+    @app.delete('/users/{username}')
+    def remove_user(username: str, admin=Depends(superadmin_user)):
+        name = services.users.manage_account(admin['username'], username, remove=True)
+        services.audit.append('Account removed', admin['username'], account=name)
+        return {'username': name, 'removed': True}
 
     # ---- report library --------------------------------------------------------------------
     def reviewers(author):
