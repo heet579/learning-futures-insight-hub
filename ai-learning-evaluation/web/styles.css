@@ -401,3 +401,17 @@ td { padding: 10px 12px; border-top: 1px solid var(--line); vertical-align: top;
 .oversight .table-wrap td .pill { margin: 2px 0; }
 @media (max-width: 720px) { .versus { grid-template-columns: 1fr; } }
 .reveal-on[hidden] { display: none !important; }
+.user-dashboard-heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.user-dashboard-heading .eyebrow { color: var(--plum); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.user-toolbar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px; margin: 28px 0 18px; }
+.user-toolbar .field { margin: 0; }
+.user-toolbar .field:first-child { flex: 1; min-width: 230px; }
+.user-toolbar select { min-width: 170px; }
+.user-table { max-height: none; }
+.user-table .actions { flex-wrap: wrap; min-width: 210px; }
+.user-note { margin-top: 18px; font-size: 13px; }
+@media (max-width: 700px) {
+  .user-dashboard-heading { align-items: flex-start; flex-direction: column; }
+  .user-stats { grid-template-columns: repeat(2, 1fr); }
+  .user-toolbar { align-items: stretch; flex-direction: column; }
+}
