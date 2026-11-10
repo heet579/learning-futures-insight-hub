@@ -89,3 +89,16 @@ def test_superadmin_keeps_review_and_oversight_access(api):
     assert api.get('/api/oversight', headers=owner).status_code == 200
     assert api.get('/api/oversight', headers=admin).status_code == 200
     assert api.get('/api/oversight', headers=person).status_code == 403
+
+
+def test_remote_account_operations_encode_names_and_limit_fields(monkeypatch):
+    from src import remote
+    calls = []
+    monkeypatch.setattr(remote, 'request', lambda *args: calls.append(args) or {'ok': True})
+    remote.create_user(username=' person ', password='private-password', role='admin', display_name=' Person ')
+    remote.update_user('person@example.com', display_name='Changed')
+    remote.remove_user('person@example.com')
+    assert calls[0] == ('POST', '/users', {'username': 'person', 'password': 'private-password',
+                                         'role': 'admin', 'display_name': 'Person', 'email': ''})
+    assert calls[1] == ('PATCH', '/users/person%40example.com', {'display_name': 'Changed'})
+    assert calls[2] == ('DELETE', '/users/person%40example.com')
