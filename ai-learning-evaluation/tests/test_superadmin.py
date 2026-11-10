@@ -27,3 +27,33 @@ def test_bootstrap_superadmin_preserves_existing_accounts(tmp_path, monkeypatch)
     monkeypatch.setenv('SUPERADMIN_USERNAME', 'existing')
     bootstrap_admin(users)
     assert users.get('existing')['role'] == 'member'
+
+
+def test_removed_account_is_reserved_and_cannot_sign_in(tmp_path):
+    import pytest
+    from src.storage.database import Database, UserStore
+    users = UserStore(Database(str(tmp_path / 'users.sqlite3')))
+    users.create('owner', 'owner-password', 'superadmin')
+    users.create('person', 'person-password', 'member')
+    users.manage_account('owner', 'person', remove=True)
+    assert users.get('person')['deleted'] == 1
+    assert users.authenticate('person', 'person-password') is None
+    assert 'person' not in {u['username'] for u in users.list()}
+    with pytest.raises(ValueError, match='removed account'):
+        users.create('person', 'replacement', replace=True)
+
+
+def test_account_changes_enforce_permissions_and_self_protection(tmp_path):
+    import pytest
+    from src.storage.database import Database, UserStore
+    users = UserStore(Database(str(tmp_path / 'users.sqlite3')))
+    users.create('owner', 'owner-password', 'superadmin')
+    users.create('reviewer', 'reviewer-password', 'admin')
+    with pytest.raises(ValueError, match='Only a signed-in superadmin'):
+        users.manage_account('reviewer', 'owner', role='member')
+    for change in ({'remove': True}, {'active': False}, {'role': 'member'}):
+        with pytest.raises(ValueError, match='your own account'):
+            users.manage_account('owner', 'owner', **change)
+    users.manage_account('owner', 'reviewer', role='superadmin', display_name=' New  Name ')
+    assert users.get('reviewer')['role'] == 'superadmin'
+    assert users.get('reviewer')['display_name'] == 'New Name'
