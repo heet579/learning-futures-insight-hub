@@ -36,6 +36,8 @@ def main(argv=None):
     create.add_argument('--password', help='Password without prompting (it stays in your shell history)')
     sub.add_parser('list-users')
     sub.add_parser('check', help='Connect, create tables if needed and verify the audit chain')
+    promote = sub.add_parser('promote-superadmin', help='Give an existing active account the first superadmin role without changing its password')
+    promote.add_argument('username')
     for name in ('disable-user', 'enable-user', 'approve-user'):
         sub.add_parser(name).add_argument('username')
     args = parser.parse_args(argv)
@@ -52,6 +54,12 @@ def main(argv=None):
                     raise ValueError('Passwords do not match.')
             name = users.create(args.username, password, args.role, replace=args.replace)
             print(f'Account {name} ({args.role}) saved in {database.describe()}')
+        elif args.command == 'promote-superadmin':
+            user = users.get(args.username)
+            if not user or user['deleted'] or not user['active'] or not user['approved']:
+                raise ValueError('Choose an existing active, approved account.')
+            users.set_role(args.username, 'superadmin')
+            print(f'Account {user["username"]} is now a superadmin. Sign in again to refresh its dashboard.')
         elif args.command == 'check':
             check(database)
         elif args.command == 'list-users':

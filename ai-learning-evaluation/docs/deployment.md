@@ -73,6 +73,14 @@ Restart the app and sign in with a server account. Leave `SERVER_URL` blank to g
 
 ## Accounts
 
+**User-management update:** only superadmins can manage accounts in the interfaces and
+API. Admins continue reviewing reports. Initialise a superadmin with `python -m server.manage
+create-user YOUR_USERNAME --role superadmin`, promote an existing active account with
+`python -m server.manage promote-superadmin USERNAME`, or configure the server's
+`SUPERADMIN_USERNAME` / `SUPERADMIN_PASSWORD` bootstrap pair. See [the current role and
+dashboard guide](superadmin.md). References to administrator account management below
+describe the earlier interface; those operations now belong to superadmins.
+
 Accounts have a role. A `member` creates drafts, saves them and submits them for review. Only an
 `admin` receives review requests (Pending review), returns or approves submitted reports, and
 manages accounts. An admin still cannot approve a report they wrote. Passwords are stored only as

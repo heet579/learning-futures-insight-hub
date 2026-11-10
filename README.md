@@ -72,6 +72,11 @@ the ignored `.env` file. No key is bundled with the app.
 
 ## Shared server: work from any computer
 
+Account management is available only to the new **superadmin** role, in both the desktop
+and browser interfaces. Administrators retain report-review access. Follow the
+[superadmin setup guide](ai-learning-evaluation/docs/superadmin.md) before deploying this
+update; existing accounts are not automatically promoted.
+
 By default everything (accounts, Report library, audit log) stays on the computer running the app.
 To share one library between computers, the team runs a small API server on
 [Render](https://render.com) backed by a [Neon](https://neon.tech) Postgres database (both free plans),

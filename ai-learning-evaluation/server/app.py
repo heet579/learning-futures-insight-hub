@@ -120,7 +120,7 @@ def create_app(database_url=None):
         return {'ok': True, 'database': 'postgres' if services.database.is_postgres else 'sqlite'}
 
     # ---- accounts --------------------------------------------------------------------------
-    PENDING = 'Your account is waiting for administrator approval. You can sign in once it is approved.'
+    PENDING = 'Your account is waiting for superadmin approval. You can sign in once it is approved.'
 
     def session(user):
         if not user['approved']:

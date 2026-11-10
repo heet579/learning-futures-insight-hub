@@ -124,7 +124,7 @@ class Dialog:
 class RegisterDialog(Dialog):
     def __init__(self, parent):
         super().__init__(parent, 'Create account', 'Create account',
-                         'An administrator approves new accounts before they can sign in.')
+                         'A superadmin approves new accounts before they can sign in.')
         self.field('display_name', 'Full name')
         self.field('username', 'Username')
         self.field('email', 'Email (Gmail)')
@@ -149,7 +149,7 @@ class RegisterDialog(Dialog):
 
         def done(result):
             self.submit_button.configure(state='disabled')
-            self.say(f'Request sent for “{result["username"]}”. You can sign in after an administrator approves it.', ok=True)
+            self.say(f'Request sent for “{result["username"]}”. You can sign in after a superadmin approves it.', ok=True)
         self.call(lambda: remote.register(username=username, password=password, email=email, display_name=name),
                   done, 'Sending request…')
 

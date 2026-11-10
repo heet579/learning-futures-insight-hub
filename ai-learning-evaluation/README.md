@@ -18,6 +18,11 @@ Windows setup launcher: `./run_app.ps1`. After dependencies are installed in you
 
 ## Sign in and manage accounts
 
+Shared deployments now have **member**, **admin** and **superadmin** roles. Only
+superadmins manage users; admins keep report-review and oversight access. Both the
+desktop and browser provide a Superadmin dashboard. See [superadmin setup and permissions](docs/superadmin.md)
+to initialise the first operator, create/edit/remove users and assign roles.
+
 The app opens on a sign-in screen. There is no signup, and the workspace is built only after a valid username and password. Local accounts live in `config/users.txt`, which is deliberately ignored by Git because it contains authentication data. The repository provides the comment-only `config/users.example.txt` template, but no active credentials.
 
 From the application folder, initialise at least two accounts so the author and second reviewer can sign in separately:
