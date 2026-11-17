@@ -49,6 +49,9 @@ Learning Futures Qualtrics Data Set/
 ai-learning-evaluation/data/*.csv
 ai-learning-evaluation/data/*.xlsx
 !ai-learning-evaluation/data/synthetic_*.csv
+!ai-learning-evaluation/data/synthetic_*.xlsx
+!ai-learning-evaluation/data/synthetic_qualtrics_exports/
+
 
 # Local assistant settings and generated hand-outs
 .claude/
