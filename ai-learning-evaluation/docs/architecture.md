@@ -4,7 +4,7 @@
 
 A Python desktop app (Tkinter). In local mode everything runs on the user's computer except requests to Gemini. In shared mode (`SERVER_URL` set) the desktop signs in to the Insight Hub API (FastAPI on Render), which stores accounts, the Report library and the audit chain in Postgres (Neon); see [deployment.md](deployment.md).
 
-Startup shows a sign-in screen before building the workspace. Local accounts are read from an editable UTF-8 `config/users.txt` file with readable plain-text passwords; the account file is reloaded on each login attempt. Accounts are maintained by an administrator, with no signup flow. Review names are still entered separately from the signed-in account.
+Startup shows a sign-in screen before building the workspace. Local accounts are read from an ignored UTF-8 `config/users.txt` file containing salted PBKDF2 password hashes; the account file is reloaded on each login attempt. Accounts are created by an administrator with `python -m src.auth init/add`, with no signup flow. Author and second-reviewer identities come from their signed-in accounts.
 
 ```mermaid
 flowchart TD
