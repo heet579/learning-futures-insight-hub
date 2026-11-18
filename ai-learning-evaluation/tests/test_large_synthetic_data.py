@@ -18,8 +18,25 @@ def data_directory():
     return Path(DATA_DIR)
 
 
-def test_large_canonical_csv_loads_and_validates(data_directory):
-    large_csv = data_directory / "synthetic_qualtrics_evaluation_large.csv"
+@pytest.fixture(scope="module")
+def large_canonical_files(tmp_path_factory, data_directory):
+    csv_path = data_directory / "synthetic_qualtrics_evaluation_large.csv"
+    xlsx_path = data_directory / "synthetic_qualtrics_evaluation_large.xlsx"
+    if csv_path.exists() and xlsx_path.exists():
+        return csv_path, xlsx_path
+
+    from scripts.generate_large_synthetic_data import generate_canonical_responses, write_dataframe_to_xlsx
+    temp_dir = tmp_path_factory.mktemp("large_synthetic")
+    csv_gen = temp_dir / "synthetic_qualtrics_evaluation_large.csv"
+    xlsx_gen = temp_dir / "synthetic_qualtrics_evaluation_large.xlsx"
+    df = generate_canonical_responses(5000, seed=2026)
+    df.to_csv(csv_gen, index=False)
+    write_dataframe_to_xlsx(xlsx_gen, df)
+    return csv_gen, xlsx_gen
+
+
+def test_large_canonical_csv_loads_and_validates(large_canonical_files):
+    large_csv, _ = large_canonical_files
     assert large_csv.exists(), f"Missing {large_csv}"
 
     df = load_survey(large_csv)
@@ -59,9 +76,8 @@ def test_large_canonical_csv_loads_and_validates(data_directory):
     assert post_counts == {"emails": 0, "phones": 0, "urls": 0}
 
 
-def test_large_canonical_xlsx_matches_csv(data_directory):
-    large_xlsx = data_directory / "synthetic_qualtrics_evaluation_large.xlsx"
-    large_csv = data_directory / "synthetic_qualtrics_evaluation_large.csv"
+def test_large_canonical_xlsx_matches_csv(large_canonical_files):
+    large_csv, large_xlsx = large_canonical_files
     assert large_xlsx.exists() and large_csv.exists()
 
     df_csv = load_survey(large_csv)
@@ -112,9 +128,10 @@ def test_qualtrics_course_exports_map_correctly(data_directory, course_stem, exp
 
 def test_qualtrics_client_folder_multi_load(data_directory):
     client_dir = data_directory / "client"
-    assert client_dir.is_dir()
+    folder = client_dir if client_dir.is_dir() else (data_directory / "synthetic_qualtrics_exports")
+    assert folder.is_dir()
 
-    combined = load_qualtrics_folder(client_dir)
+    combined = load_qualtrics_folder(folder)
     assert len(combined) == 5000  # 5 course files * 1000 responses
     assert combined["CourseCode"].nunique() == 5
 
