@@ -46,7 +46,7 @@ def test_word_and_pdf_are_built_with_the_logo(state):
     assert word.sections[0].header.tables[0].rows[0].cells[0].paragraphs[0].runs  # logo picture
     text = '\n'.join(p.text for p in word.paragraphs)
     assert 'At a glance' in text and 'About this report' in text and '**' not in text
-    pypdf = pytest.importorskip('pypdf')
+    import pypdf
     assert len(pypdf.PdfReader(BytesIO(d.build_pdf(data))).pages) == 2
 
 
@@ -114,5 +114,5 @@ def test_both_pages_are_full_and_never_spill(audience, with_charts):
         height = d._height(blocks, styles)
         assert d.FRAME_H * 0.95 <= height <= d.FRAME_H * d.FILL + 0.01
     assert any(b.kind == 'charts' for b in pages[0]) is with_charts
-    pypdf = pytest.importorskip('pypdf')
+    import pypdf
     assert len(pypdf.PdfReader(BytesIO(d.build_pdf(data, pages=pages))).pages) == 2

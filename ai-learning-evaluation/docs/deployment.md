@@ -73,31 +73,22 @@ Restart the app and sign in with a server account. Leave `SERVER_URL` blank to g
 
 ## Accounts
 
-**User-management update:** only superadmins can manage accounts in the interfaces and
-API. Admins continue reviewing reports. Initialise a superadmin with `python -m server.manage
-create-user YOUR_USERNAME --role superadmin`, promote an existing active account with
-`python -m server.manage promote-superadmin USERNAME`, or configure the server's
-`SUPERADMIN_USERNAME` / `SUPERADMIN_PASSWORD` bootstrap pair. See [the current role and
-dashboard guide](superadmin.md). References to administrator account management below
-describe the earlier interface; those operations now belong to superadmins.
+Only **superadmins** manage accounts through the interfaces and API. Existing **admins** retain report review and oversight access but no longer manage users. Set up a superadmin using `python -m server.manage create-user YOUR_USERNAME --role superadmin`, promote an existing active account with `python -m server.manage promote-superadmin USERNAME`, or configure the server's `SUPERADMIN_USERNAME` / `SUPERADMIN_PASSWORD` bootstrap pair. Existing accounts are not automatically promoted.
 
-Accounts have a role. A `member` creates drafts, saves them and submits them for review. Only an
-`admin` receives review requests (Pending review), returns or approves submitted reports, and
-manages accounts. An admin still cannot approve a report they wrote. Passwords are stored only as
-PBKDF2 hashes: nobody, including administrators, can read them; an administrator can reset them.
-`config/users.txt` is not used in shared mode.
+All five roles are supported: `member`, `admin`, `facilitator`, `client`, and `superadmin`. Existing facilitator and client accounts keep their roles and can still be selected in the user editor, role filters and management commands. They receive no user-management or global report-review privileges. Members, facilitators and clients can review reports explicitly assigned to them under the existing report-assignment rules. See [the role and dashboard guide](superadmin.md).
+
+Passwords are stored as PBKDF2 hashes and cannot be viewed. Superadmins can reset them. Usernames remain fixed because reports and audit history refer to them. `config/users.txt` is not used in shared mode.
 
 **In the app (shared mode):**
 
 * **Create account** on the sign-in screen sends a request (name, username, email, password). It
-  appears under **Manage accounts** as *Waiting for approval*; the person can sign in once an admin
+  appears under **Superadmin dashboard** as *Waiting for approval*; the person can sign in once a superadmin
   approves it.
 * **Continue with Google** opens the browser for Google sign-in. A new Google user becomes a
   request waiting for approval; a Google address that matches an existing account is connected to it.
 * **Account menu → Profile settings**: change name, email (needs the current password), password,
   and connect or disconnect Google. Usernames are fixed because reports and the audit log record them.
-* **Account menu → Manage accounts** (admins): approve or reject requests, make admin/member,
-  disable/enable, reset passwords.
+* **Superadmin dashboard**: create users, edit names/emails/roles, approve or reject requests, reset passwords and remove users. An active account shows **Disable**; after disabling it the control shows **Enable**, and enabling switches it back to **Disable**. The desktop controls are disabled while requests are running and become available after completion or a failure. Removal retains reports and review history and reserves the username; it does not erase the account's historical records.
 
 **From the command line** (administrators; needs the Neon `DATABASE_URL` in `.env`), inside
 `ai-learning-evaluation`:
@@ -106,6 +97,7 @@ PBKDF2 hashes: nobody, including administrators, can read them; an administrator
 python -m server.manage list-users
 python -m server.manage approve-user gopi
 python -m server.manage create-user gopi --password gop123               # create directly, already approved
+python -m server.manage set-role gopi --role facilitator                 # change role
 python -m server.manage create-user heet --role admin --replace           # reset a password (prompts)
 python -m server.manage disable-user someone
 ```

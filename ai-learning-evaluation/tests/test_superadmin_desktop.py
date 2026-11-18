@@ -19,7 +19,7 @@ def collect_tk_objects_on_main_thread():
     gc.collect()
 
 
-@pytest.mark.parametrize('role', ['member', 'admin', ''])
+@pytest.mark.parametrize('role', ['member', 'admin', 'facilitator', 'client', ''])
 def test_dashboard_constructor_rejects_other_roles(monkeypatch, role):
     monkeypatch.setattr(remote.session, 'role', role)
     with pytest.raises(ValueError, match='Only a superadmin'):

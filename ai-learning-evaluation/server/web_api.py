@@ -277,6 +277,7 @@ def build_router(services, current_user):
     @router.get('/config')
     def config():
         from src.workflow import APPROVER_ROLES, CLIENT_APPROVER_ROLE
+        from src.storage.database import ROLES
         from server.app import google_config
         import os
         web_id = os.getenv('GOOGLE_WEB_CLIENT_ID', '').strip().strip('"\'')
@@ -290,6 +291,7 @@ def build_router(services, current_user):
         return {'google_web_client_id': web_id,
                 'google_desktop': bool(google_config()[0]),
                 'approver_roles': list(APPROVER_ROLES), 'client_approver_role': CLIENT_APPROVER_ROLE,
+                'user_roles': list(ROLES),
                 'sections': list(__import__('src.reporting.revisions', fromlist=['SECTIONS']).SECTIONS)}
 
     return router

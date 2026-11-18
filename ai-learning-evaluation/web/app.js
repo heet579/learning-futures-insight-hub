@@ -2,7 +2,7 @@
 
 const app = document.getElementById('app');
 const S = { token: '', user: null, config: null, work: null, checkIndex: 0, improve: { sections: [], method: 'gemini' }, reopened: new Set() };
-const roleLabel = (role) => ({ member: 'Member', admin: 'Administrator', superadmin: 'Superadmin' }[role] || role);
+const roleLabel = (role) => ROLE_LABELS[role] || role;
 const canReview = (role) => ['admin', 'superadmin'].includes(role);
 const canManageUsers = () => S.user?.role === 'superadmin';
 
@@ -29,6 +29,13 @@ const STATUS = {
   'AWAITING HUMAN REVIEW': ['Waiting for review', 'waiting'], 'HUMAN REVIEWED': ['Approved', 'approved'],
 };
 const pill = (status) => { const [text, cls] = STATUS[status] || [status, 'draft']; return `<span class="pill ${cls}">${esc(text)}</span>`; };
+const ROLE_LABELS = {
+  admin: 'Administrator',
+  facilitator: 'Facilitator',
+  client: 'Client',
+  member: 'Member',
+  superadmin: 'Superadmin',
+};
 
 function toast(message, bad = false) {
   const el = document.createElement('div');
@@ -65,6 +72,17 @@ const icon = {
   markPlum: '<svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true"><path d="M7 25V9h4v16zm7 0V14h4v11zm7 0v-7h4v7z" fill="#5B2EA6"/></svg>',
 };
 
+const LEARNING_FUTURES_URL = 'https://adelaide.edu.au/study/short-courses/for-organisations/learning-futures/';
+// Brand lockup: University of Adelaide logo + name, with Learning Futures as a link below.
+// Replace web/assets/uofa-logo.svg with the official University of Adelaide logo on the host.
+const brandLockup = () => `<div class="brand">
+    <a class="brand-home" href="#/" aria-label="Adelaide University home">
+      <img class="brand-logo" src="assets/adelaide-university.png" alt="Adelaide University" height="44">
+    </a>
+    <a class="brand-sub" href="${LEARNING_FUTURES_URL}" target="_blank" rel="noopener">Learning Futures</a>
+  </div>`;
+
+
 // ---- API ----------------------------------------------------------------------------------
 class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
 
@@ -78,7 +96,7 @@ async function api(path, { method = 'GET', body, form, raw } = {}) {
   try {
     response = await fetch(path, { method, headers, body: payload });
   } catch {
-    throw new ApiError('Cannot reach the Insight Hub server. Check your connection and try again.', 0);
+    throw new ApiError('Cannot reach the server. Check your connection and try again.', 0);
   }
   if (raw && response.ok) return response;
   let data = null;
@@ -182,8 +200,12 @@ window.addEventListener('hashchange', route);
 function shell(active, content) {
   const pending = S.pendingCount ? `<span class="count">${S.pendingCount}</span>` : '';
   app.innerHTML = `
+  <div class="util-strip">
+    <a href="https://www.adelaide.edu.au/" target="_blank" rel="noopener">University site</a>
+    <a href="${LEARNING_FUTURES_URL}" target="_blank" rel="noopener">Learning Futures</a>
+  </div>
   <header class="topbar">
-    <a class="brand" href="#/"><span class="brand-mark">${icon.mark}</span><span class="brand-name">Insight Hub</span> <small>Learning Futures</small></a>
+    <a class="brand-home" href="#/" aria-label="Adelaide University home"><img class="brand-logo" src="assets/adelaide-university.png" alt="Adelaide University"></a>
     <nav class="nav" aria-label="Main">
       <a href="#/" ${active === 'home' ? 'aria-current="page"' : ''}>Reports${pending}</a>
       ${canReview(S.user.role) ? `<a href="#/oversight" ${active === 'oversight' ? 'aria-current="page"' : ''}>Oversight</a>` : ''}
@@ -227,17 +249,11 @@ function signInView(mode) {
   app.innerHTML = `
   <div class="auth">
     <section class="auth-story">
-      <a class="brand" href="#/"><span class="brand-mark">${icon.markPlum}</span>Insight Hub <small>Learning Futures</small></a>
-      <div>
-        <h1>Learner feedback, turned into reports people trust.</h1>
-        <p>Import a survey, check what it says, and send a report that a second person has reviewed before anyone reads it.</p>
+      <a class="auth-logo" href="#/" aria-label="Adelaide University home"><img src="assets/adelaide-university.png" alt="Adelaide University"></a>
+      <div class="auth-brand">
+        <a class="lf-link" href="${LEARNING_FUTURES_URL}" target="_blank" rel="noopener">Learning Futures</a>
+        <p class="lf-motto">Practical, flexible and industry-aligned education and training</p>
       </div>
-      <ol class="steps">
-        <li><b>1</b>Upload the survey export</li>
-        <li><b>2</b>Keep the themes that are real</li>
-        <li><b>3</b>Check every statement against the data</li>
-        <li><b>4</b>Send it for a second review</li>
-      </ol>
       <div class="bars" aria-hidden="true"><span style="height:120px"></span><span style="height:200px"></span><span style="height:160px"></span><span style="height:260px"></span></div>
     </section>
     <section class="auth-panel" id="main">
@@ -262,7 +278,7 @@ function signInView(mode) {
           <div id="msg"></div>
         </form>
         <div id="google-area" class="hidden"><div class="or">or</div><div class="google" id="google"></div></div>
-        <p class="switch">New to Insight Hub? <button id="switch">Create an account</button></p>`}
+        <p class="switch">New here? <button id="switch">Create an account</button></p>`}
     </section>
   </div>`;
   $('#switch').onclick = () => { location.hash = register ? '#/sign-in' : '#/create-account'; };
@@ -1066,6 +1082,7 @@ async function accountsView() {
   shell('accounts', '<div class="loading"><div class="spinner"></div>Loading accounts…</div>');
   let users;
   try { users = await api('/users'); } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
+  const userRoles = (S.config?.user_roles && S.config.user_roles.length) ? S.config.user_roles : ['member', 'admin', 'facilitator', 'client', 'superadmin'];
   const waiting = users.filter((u) => !u.approved);
   const state = (u) => !u.approved ? '<span class="pill waiting">Waiting for approval</span>' : u.active ? '<span class="pill approved">Active</span>' : '<span class="pill draft">Disabled</span>';
   const me = S.user.username;
@@ -1078,11 +1095,11 @@ async function accountsView() {
       <div class="stat"><b>${users.filter((u) => u.role === 'superadmin').length}</b><span>Superadmins</span></div>
     </div>
     <div class="user-toolbar"><label class="field"><span>Search users</span><input class="input" id="user-search" type="search" placeholder="Name, username, email or role"></label>
-      <label class="field"><span>Role</span><select class="input" id="user-role-filter"><option value="">All roles</option>${['member', 'admin', 'superadmin'].map((r) => `<option value="${r}">${roleLabel(r)}</option>`).join('')}</select></label>
+      <label class="field"><span>Role</span><select class="input" id="user-role-filter"><option value="">All roles</option>${['member', 'admin', 'superadmin'].map((r) => `<option value="${esc(r)}">${esc(roleLabel(r))}</option>`).join('')}</select></label>
       <button class="btn btn-ghost" id="refresh-users">Refresh</button></div>
     <div class="table-wrap user-table"><table><thead><tr><th>Person</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody id="user-rows"></tbody></table></div>
     <p class="faint user-note">Passwords are stored securely and cannot be viewed. Removing a user revokes access and preserves their report and review history.</p></div>`;
-  const roleOptions = (role) => ['member', 'admin', 'superadmin'].map((r) => `<option value="${r}" ${r === role ? 'selected' : ''}>${roleLabel(r)}</option>`).join('');
+  const roleOptions = (role) => ['member', 'admin', 'superadmin'].map((r) => `<option value="${esc(r)}" ${r === role ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('');
   const editUser = async (u, button) => {
     const create = !u;
     const result = await dialog({ title: create ? 'Create user' : `Edit ${u.username}`, confirm: create ? 'Create user' : 'Save changes',

@@ -43,6 +43,7 @@ ai-learning-evaluation/reports/server_dev.sqlite3*
 
 # Real client data - never commit
 ai-learning-evaluation/data/client/
+ai-learning-evaluation/data/generated/
 Learning Futures Qualtrics Data Set/
 
 # Real Qualtrics exports go in ai-learning-evaluation/data/client/ (ignored above).
@@ -50,6 +51,9 @@ Learning Futures Qualtrics Data Set/
 ai-learning-evaluation/data/*.csv
 ai-learning-evaluation/data/*.xlsx
 !ai-learning-evaluation/data/synthetic_*.csv
+!ai-learning-evaluation/data/synthetic_*.xlsx
+!ai-learning-evaluation/data/synthetic_qualtrics_exports/
+
 
 # Local assistant settings and generated hand-outs
 .claude/

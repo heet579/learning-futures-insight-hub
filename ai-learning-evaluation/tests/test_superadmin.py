@@ -5,11 +5,14 @@ import pytest
 
 
 def test_role_capabilities():
-    assert ROLES == ('member', 'admin', 'superadmin')
+    assert ROLES == ('member', 'admin', 'facilitator', 'client', 'superadmin')
     assert can_manage_users('superadmin')
     assert not can_manage_users('admin') and not can_manage_users('member')
     assert can_review_reports('superadmin') and can_review_reports('admin')
     assert not can_review_reports('member')
+    for role in ('facilitator', 'client'):
+        assert not can_manage_users(role)
+        assert not can_review_reports(role)
 
 
 def test_bootstrap_superadmin_preserves_existing_accounts(tmp_path, monkeypatch):
@@ -105,7 +108,7 @@ def test_remote_account_operations_encode_names_and_limit_fields(monkeypatch):
     assert calls[2] == ('DELETE', '/users/person%40example.com')
 
 
-@pytest.mark.parametrize('role', ['member', 'admin'])
+@pytest.mark.parametrize('role', ['member', 'admin', 'facilitator', 'client'])
 def test_every_management_route_rejects_non_superadmins(api, role):
     api.services.users.create('operator', 'operator-password', role)
     api.services.users.create('target', 'target-password')

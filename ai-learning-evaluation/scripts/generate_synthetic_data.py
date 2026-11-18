@@ -67,8 +67,9 @@ def build_history() -> pd.DataFrame:
     ])
 
 if __name__ == "__main__":
+    from scripts.generate_large_synthetic_data import generate_all_test_datasets
     (ROOT / "data").mkdir(exist_ok=True)
-    build_responses().to_csv(ROOT / "data" / "synthetic_qualtrics_evaluation.csv", index=False)
+    generate_all_test_datasets()
     build_history().to_csv(ROOT / "data" / "synthetic_course_history.csv", index=False)
-    print("Synthetic datasets generated.")
+    print("All synthetic datasets generated successfully.")
 

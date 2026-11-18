@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from src.storage.database import (NO_PASSWORD, Database, DatabaseAuditTrail, DatabaseReportRepository,
-                                  UserStore, password_matches)
+                                  ROLES, UserStore, password_matches)
 from server.security import issue_token, read_token
 from src.roles import Role, can_manage_users, can_review_reports
 
