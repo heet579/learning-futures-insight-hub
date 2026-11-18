@@ -1011,6 +1011,7 @@ def generate_all_test_datasets(
         client_dir.mkdir(parents=True, exist_ok=True)
 
     generated: dict[str, Path] = {}
+    formats = "CSV and XLSX" if include_excel else "CSV"
 
     print(f"Generating Canonical dataset ({canonical_count:,} responses)...")
     canonical_df = generate_canonical_responses(canonical_count, seed=seed)
@@ -1073,11 +1074,11 @@ def generate_all_test_datasets(
                 client_xlsx = client_dir / f"{name_stem}.xlsx"
                 write_dataframe_to_xlsx(client_xlsx, table)
 
-        print(f"  -> Wrote CSV and XLSX for {name_stem}")
+        print(f"  -> Wrote {formats} for {name_stem}")
 
     print("\nSummary of generated synthetic data:")
-    print(f"  - Large Canonical responses: {canonical_count:,} rows (CSV & XLSX)")
-    print(f"  - Standard Canonical responses: 3,000 rows (CSV & XLSX)")
+    print(f"  - Large Canonical responses: {canonical_count:,} rows ({formats})")
+    print(f"  - Standard Canonical responses: 3,000 rows ({formats})")
     print(f"  - Authentic Qualtrics exports: 5 courses, {total_qualtrics_responses:,} rows total")
     print(f"  - Location: {root}")
     print(f"  - Qualtrics folder: {exports_dir}")
