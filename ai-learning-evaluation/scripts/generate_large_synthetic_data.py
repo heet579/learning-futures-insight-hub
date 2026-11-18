@@ -316,8 +316,14 @@ def _sample_additional_comment(rng: random.Random, overall: int) -> str:
 # Canonical Dataset Generator
 # ---------------------------------------------------------------------------
 
+def _require_positive_count(count: int, label: str = "Response count") -> None:
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        raise ValueError(f"{label} must be a positive integer.")
+
+
 def generate_canonical_responses(count: int = 5000, seed: int = 2026) -> pd.DataFrame:
     """Generate high-volume canonical dataset matching REQUIRED_COLUMNS."""
+    _require_positive_count(count)
     rng = random.Random(seed)
     start_date = datetime(2024, 1, 15)
     rows = []
@@ -371,9 +377,14 @@ def generate_canonical_responses(count: int = 5000, seed: int = 2026) -> pd.Data
         })
 
     # Ensure deterministic PII coverage at known indexes for test assertions
-    rows[7]["AdditionalComments"] = "Please contact me directly: sarah.jenkins@adelaide.edu.au or 0412 345 678."
-    rows[23]["AdditionalComments"] = "Call David on 0401 223 889 if you hold the future leadership focus session."
-    rows[64]["AdditionalComments"] = "Reference notes and handouts available at https://pace.adelaide.edu.au/resources."
+    pii_examples = {
+        7: "Please contact me directly: sarah.jenkins@adelaide.edu.au or 0412 345 678.",
+        23: "Call David on 0401 223 889 if you hold the future leadership focus session.",
+        64: "Reference notes and handouts available at https://pace.adelaide.edu.au/resources.",
+    }
+    for index, comment in pii_examples.items():
+        if index < count:
+            rows[index]["AdditionalComments"] = comment
 
     df = pd.DataFrame(rows)
     return df[REQUIRED_COLUMNS]
@@ -391,6 +402,7 @@ def _generate_qualtrics_table(
     count: int,
     seed: int,
 ) -> list[list[Any]]:
+    _require_positive_count(count)
     rng = random.Random(seed)
     table = [h1, h2, h3]
     for idx in range(count):
@@ -986,6 +998,8 @@ def generate_all_test_datasets(
     populate_client_folder: bool = True,
 ) -> dict[str, Path]:
     """Generate canonical and authentic Qualtrics datasets for end-to-end testing."""
+    _require_positive_count(canonical_count, "Canonical response count")
+    _require_positive_count(qualtrics_course_count, "Qualtrics response count")
     root = Path(data_dir) if data_dir else Path(__file__).resolve().parents[1] / "data"
     root.mkdir(parents=True, exist_ok=True)
 
