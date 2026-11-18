@@ -1099,11 +1099,11 @@ async function accountsView() {
       <div class="stat"><b>${users.filter((u) => u.role === 'superadmin').length}</b><span>Superadmins</span></div>
     </div>
     <div class="user-toolbar"><label class="field"><span>Search users</span><input class="input" id="user-search" type="search" placeholder="Name, username, email or role"></label>
-      <label class="field"><span>Role</span><select class="input" id="user-role-filter"><option value="">All roles</option>${['member', 'admin', 'superadmin'].map((r) => `<option value="${esc(r)}">${esc(roleLabel(r))}</option>`).join('')}</select></label>
+      <label class="field"><span>Role</span><select class="input" id="user-role-filter"><option value="">All roles</option>${userRoles.map((r) => `<option value="${esc(r)}">${esc(roleLabel(r))}</option>`).join('')}</select></label>
       <button class="btn btn-ghost" id="refresh-users">Refresh</button></div>
     <div class="table-wrap user-table"><table><thead><tr><th>Person</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody id="user-rows"></tbody></table></div>
     <p class="faint user-note">Passwords are stored securely and cannot be viewed. Removing a user revokes access and preserves their report and review history.</p></div>`;
-  const roleOptions = (role) => ['member', 'admin', 'superadmin'].map((r) => `<option value="${esc(r)}" ${r === role ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('');
+  const roleOptions = (role) => userRoles.map((r) => `<option value="${esc(r)}" ${r === role ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('');
   const editUser = async (u, button) => {
     const create = !u;
     const result = await dialog({ title: create ? 'Create user' : `Edit ${u.username}`, confirm: create ? 'Create user' : 'Save changes',
