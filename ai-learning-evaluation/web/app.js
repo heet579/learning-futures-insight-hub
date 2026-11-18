@@ -915,10 +915,14 @@ function sendStep(el, ws) {
       return;
     }
     const option = (p) => `<option value="${esc(p.username)}">${person(p.display_name, p.username)}</option>`;
-    const admins = list.filter((p) => canReview(p.role)), members = list.filter((p) => !canReview(p.role));
-    select.innerHTML = admins.length && members.length
-      ? `<optgroup label="Administrators">${admins.map(option).join('')}</optgroup><optgroup label="Team members">${members.map(option).join('')}</optgroup>`
-      : list.map(option).join('');
+    const groups = [
+      ['Superadmins', list.filter((p) => p.role === 'superadmin')],
+      ['Administrators', list.filter((p) => p.role === 'admin')],
+      ['Facilitators', list.filter((p) => p.role === 'facilitator')],
+      ['Clients', list.filter((p) => p.role === 'client')],
+      ['Team members', list.filter((p) => !['superadmin', 'admin', 'facilitator', 'client'].includes(p.role))],
+    ].filter(([, people]) => people.length);
+    select.innerHTML = groups.map(([label, people]) => `<optgroup label="${label}">${people.map(option).join('')}</optgroup>`).join('');
     select.disabled = false;
     $('#submit').disabled = !(ready && ws.can_edit);
   }).catch((error) => toast(error.message, true));
