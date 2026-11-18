@@ -161,3 +161,31 @@ await check('Role filtering includes existing facilitator accounts', async () =>
   assert.ok(app.button('edit', 'target'));
   assert.equal(app.button('edit', 'owner'), undefined);
 });
+
+await check('Removing a user requires confirmation and refreshes the table', async () => {
+  const app = fixture();
+  await app.render();
+  app.answers.push(null);
+  await app.click('remove');
+  assert.equal(app.calls.filter((call) => call.method === 'DELETE').length, 0);
+  app.answers.push({});
+  await app.click('remove');
+  assert.equal(app.calls.filter((call) => call.method === 'DELETE').length, 1);
+  assert.equal(app.button('edit'), undefined);
+});
+
+for (const role of ['member', 'admin', 'facilitator', 'client']) {
+  await check(`${role} cannot open the user-management dashboard`, async () => {
+    const app = fixture(1, role);
+    await app.render();
+    assert.deepEqual(app.redirects, ['#/']);
+    assert.equal(app.calls.length, 0);
+  });
+}
+
+await check('The signed-in superadmin has no self-disable or self-remove controls', async () => {
+  const app = fixture();
+  await app.render();
+  assert.equal(app.button('active', 'owner'), undefined);
+  assert.equal(app.button('remove', 'owner'), undefined);
+});
