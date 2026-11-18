@@ -68,6 +68,17 @@ const icon = {
   markPlum: '<svg width="16" height="16" viewBox="0 0 32 32" aria-hidden="true"><path d="M7 25V9h4v16zm7 0V14h4v11zm7 0v-7h4v7z" fill="#5B2EA6"/></svg>',
 };
 
+const LEARNING_FUTURES_URL = 'https://adelaide.edu.au/study/short-courses/for-organisations/learning-futures/';
+// Brand lockup: University of Adelaide logo + name, with Learning Futures as a link below.
+// Replace web/assets/uofa-logo.svg with the official University of Adelaide logo on the host.
+const brandLockup = () => `<div class="brand">
+    <a class="brand-home" href="#/" aria-label="Adelaide University home">
+      <img class="brand-logo" src="assets/adelaide-university.png" alt="Adelaide University" height="44">
+    </a>
+    <a class="brand-sub" href="${LEARNING_FUTURES_URL}" target="_blank" rel="noopener">Learning Futures</a>
+  </div>`;
+
+
 // ---- API ----------------------------------------------------------------------------------
 class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
 
@@ -81,7 +92,7 @@ async function api(path, { method = 'GET', body, form, raw } = {}) {
   try {
     response = await fetch(path, { method, headers, body: payload });
   } catch {
-    throw new ApiError('Cannot reach the Insight Hub server. Check your connection and try again.', 0);
+    throw new ApiError('Cannot reach the server. Check your connection and try again.', 0);
   }
   if (raw && response.ok) return response;
   let data = null;
@@ -175,8 +186,12 @@ window.addEventListener('hashchange', route);
 function shell(active, content) {
   const pending = S.pendingCount ? `<span class="count">${S.pendingCount}</span>` : '';
   app.innerHTML = `
+  <div class="util-strip">
+    <a href="https://www.adelaide.edu.au/" target="_blank" rel="noopener">University site</a>
+    <a href="${LEARNING_FUTURES_URL}" target="_blank" rel="noopener">Learning Futures</a>
+  </div>
   <header class="topbar">
-    <a class="brand" href="#/"><span class="brand-mark">${icon.mark}</span><span class="brand-name">Insight Hub</span> <small>Learning Futures</small></a>
+    <a class="brand-home" href="#/" aria-label="Adelaide University home"><img class="brand-logo" src="assets/adelaide-university.png" alt="Adelaide University"></a>
     <nav class="nav" aria-label="Main">
       <a href="#/" ${active === 'home' ? 'aria-current="page"' : ''}>Reports${pending}</a>
       ${S.user.role === 'admin' ? `<a href="#/oversight" ${active === 'oversight' ? 'aria-current="page"' : ''}>Oversight</a><a href="#/accounts" ${active === 'accounts' ? 'aria-current="page"' : ''}>Accounts</a>` : ''}
@@ -219,17 +234,11 @@ function signInView(mode) {
   app.innerHTML = `
   <div class="auth">
     <section class="auth-story">
-      <a class="brand" href="#/"><span class="brand-mark">${icon.markPlum}</span>Insight Hub <small>Learning Futures</small></a>
-      <div>
-        <h1>Learner feedback, turned into reports people trust.</h1>
-        <p>Import a survey, check what it says, and send a report that a second person has reviewed before anyone reads it.</p>
+      <a class="auth-logo" href="#/" aria-label="Adelaide University home"><img src="assets/adelaide-university.png" alt="Adelaide University"></a>
+      <div class="auth-brand">
+        <a class="lf-link" href="${LEARNING_FUTURES_URL}" target="_blank" rel="noopener">Learning Futures</a>
+        <p class="lf-motto">Practical, flexible and industry-aligned education and training</p>
       </div>
-      <ol class="steps">
-        <li><b>1</b>Upload the survey export</li>
-        <li><b>2</b>Keep the themes that are real</li>
-        <li><b>3</b>Check every statement against the data</li>
-        <li><b>4</b>Send it for a second review</li>
-      </ol>
       <div class="bars" aria-hidden="true"><span style="height:120px"></span><span style="height:200px"></span><span style="height:160px"></span><span style="height:260px"></span></div>
     </section>
     <section class="auth-panel" id="main">
@@ -254,7 +263,7 @@ function signInView(mode) {
           <div id="msg"></div>
         </form>
         <div id="google-area" class="hidden"><div class="or">or</div><div class="google" id="google"></div></div>
-        <p class="switch">New to Insight Hub? <button id="switch">Create an account</button></p>`}
+        <p class="switch">New here? <button id="switch">Create an account</button></p>`}
     </section>
   </div>`;
   $('#switch').onclick = () => { location.hash = register ? '#/sign-in' : '#/create-account'; };
