@@ -8,9 +8,11 @@ import test from 'node:test';
 const source = await readFile(new URL('../../ai-learning-evaluation/web/app.js', import.meta.url), 'utf8');
 const view = source.slice(source.indexOf('async function accountsView()'), source.indexOf('// ---- profile'));
 const busy = source.slice(source.indexOf('async function busy('), source.indexOf('\nfunction dialog('));
+const home = source.slice(source.indexOf('async function homeView()'), source.indexOf('\nfunction person('));
+const router = source.slice(source.indexOf('async function route()'), source.indexOf("window.addEventListener('hashchange'"));
 const escape = source.split('\n').find((line) => line.startsWith('const esc ='));
 const roleLabels = source.slice(source.indexOf('const ROLE_LABELS ='), source.indexOf('\n};', source.indexOf('const ROLE_LABELS =')) + 3);
-const roleHelpers = source.split('\n').filter((line) => /^const (roleLabel|canManageUsers) =/.test(line)).join('\n');
+const roleHelpers = source.split('\n').filter((line) => /^const (roleLabel|canManageUsers|canReview) =/.test(line)).join('\n');
 export const results = [];
 
 async function check(name, work) {
@@ -30,6 +32,7 @@ function fixture(active = 1, operatorRole = 'superadmin', targetRole = 'member')
   ];
   const calls = [], messages = [], answers = [], dialogs = [], redirects = [];
   let buttons = [], rowButtons = [], html = '', rowsHtml = '', failActive = false, nodes = {};
+  let reportsGate, usersGate;
   const attributes = (text) => Object.fromEntries([...text.matchAll(/([\w-]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
   const element = (text, innerHTML) => {
     const attrs = attributes(text);
@@ -56,10 +59,13 @@ function fixture(active = 1, operatorRole = 'superadmin', targetRole = 'member')
     },
   };
   const context = vm.createContext({
-    S: { user: { username: 'owner', role: operatorRole }, config: { user_roles: roles } },
+    S: { user: { username: 'owner', role: operatorRole }, config: { user_roles: roles }, navigation: 0 },
+    location: { hash: '#/superadmin' },
     document: { body: { contains: (node) => [...buttons, ...rowButtons].includes(node) } },
     $: (selector) => selector === '#main' ? main : nodes[selector.slice(1)] || buttons.find((node) => '#' + node.id === selector),
-    shell: () => {}, go: (path) => redirects.push(path),
+    $$: () => [],
+    shell: (active, content) => { main.innerHTML = content; }, go: (path) => redirects.push(path),
+    greeting: () => 'Hello', firstName: () => 'Owner', bindUpload: () => {},
     toast: (message, bad) => messages.push({ message, bad: Boolean(bad) }),
     dialog: async (options) => {
       dialogs.push(options);
@@ -69,7 +75,11 @@ function fixture(active = 1, operatorRole = 'superadmin', targetRole = 'member')
     },
     api: async (path, options = {}) => {
       calls.push({ path, method: options.method || 'GET', body: options.body });
-      if (path === '/users' && !options.method) return structuredClone(users);
+      if (path.startsWith('/reports?view=')) return reportsGate ? await reportsGate.promise : [];
+      if (path === '/users' && !options.method) {
+        if (usersGate) await usersGate.promise;
+        return structuredClone(users);
+      }
       if (path === '/users' && options.method === 'POST') {
         users.push({ ...options.body, active: 1, approved: 1 });
         return { username: options.body.username, role: options.body.role };
@@ -87,15 +97,24 @@ function fixture(active = 1, operatorRole = 'superadmin', targetRole = 'member')
       return { username: user.username };
     },
   });
-  vm.runInContext(`${roleLabels}\n${roleHelpers}\n${escape}\n${busy}\n${view}`, context);
+  vm.runInContext(`${roleLabels}\n${roleHelpers}\n${escape}\n${busy}\n${view}\n${home}\n${router}`, context);
   const button = (action, username = 'target') => rowButtons.find((node) => node.dataset.act === action && node.dataset.user === username);
   return {
     users, calls, messages, answers, dialogs, redirects, main, button,
     render: () => context.accountsView(),
+    navigate: (hash) => { context.location.hash = hash; return context.route(); },
     byId: (id) => nodes[id] || buttons.find((node) => node.id === id),
     click: (action, username) => nodes['user-rows'].onclick({ target: button(action, username) }),
     failActive() { failActive = true; },
+    holdReports() { reportsGate = deferred(); return reportsGate; },
+    holdUsers() { usersGate = deferred(); return usersGate; },
   };
+}
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
 }
 
 for (const active of [1, true, 0, false]) {
@@ -188,4 +207,37 @@ await check('The signed-in superadmin has no self-disable or self-remove control
   await app.render();
   assert.equal(app.button('active', 'owner'), undefined);
   assert.equal(app.button('remove', 'owner'), undefined);
+});
+
+await check('A late report response cannot replace the superadmin dashboard', async () => {
+  const app = fixture();
+  const pending = app.holdReports();
+  const reports = app.navigate('#/');
+  await app.navigate('#/superadmin');
+  pending.resolve([]);
+  await reports;
+  assert.ok(app.main.innerHTML.includes('Superadmin dashboard'));
+  assert.ok(app.button('active'));
+});
+
+await check('A late report failure cannot overwrite a newer dashboard', async () => {
+  const app = fixture();
+  const pending = app.holdReports();
+  const reports = app.navigate('#/');
+  await app.navigate('#/superadmin');
+  pending.reject(new Error('Old report request failed'));
+  await reports;
+  assert.ok(app.main.innerHTML.includes('Superadmin dashboard'));
+  assert.ok(!app.main.innerHTML.includes('Old report request failed'));
+});
+
+await check('A late account response cannot replace the reports screen', async () => {
+  const app = fixture();
+  const pending = app.holdUsers();
+  const dashboard = app.navigate('#/superadmin');
+  await app.navigate('#/');
+  pending.resolve();
+  await dashboard;
+  assert.ok(app.main.innerHTML.includes('Start a new report'));
+  assert.ok(!app.main.innerHTML.includes('Superadmin dashboard'));
 });

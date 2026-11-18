@@ -1,7 +1,7 @@
 // Insight Hub in the browser. Plain ES module; talks to the same API as the desktop app.
 
 const app = document.getElementById('app');
-const S = { token: '', user: null, config: null, work: null, checkIndex: 0, improve: { sections: [], method: 'gemini' }, reopened: new Set() };
+const S = { token: '', user: null, config: null, work: null, checkIndex: 0, improve: { sections: [], method: 'gemini' }, reopened: new Set(), navigation: 0 };
 const roleLabel = (role) => ROLE_LABELS[role] || role;
 const canReview = (role) => ['admin', 'superadmin'].includes(role);
 const canManageUsers = () => S.user?.role === 'superadmin';
@@ -182,6 +182,7 @@ async function restore() {
 
 // ---- router ------------------------------------------------------------------------------------
 async function route() {
+  S.navigation += 1;
   const hash = location.hash.replace(/^#/, '') || '/';
   if (!S.user) return signInView(hash === '/create-account' ? 'register' : 'signin');
   const parts = hash.split('/').filter(Boolean);
@@ -343,13 +344,19 @@ function googleButton(target, onCredential) {
 
 // ---- home: reports ------------------------------------------------------------------------------
 async function homeView() {
+  const navigation = S.navigation;
   S.work = null;
   shell('home', '<div class="loading"><div class="spinner"></div>Loading your reports…</div>');
   let mine = [], pending = [], approved = [];
   try {
     [mine, pending, approved] = await Promise.all([
       api('/reports?view=mine'), api('/reports?view=pending'), api('/reports?view=approved')]);
-  } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
+  } catch (error) {
+    if (navigation !== S.navigation) return;
+    $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`;
+    return;
+  }
+  if (navigation !== S.navigation) return;
   S.pendingCount = pending.length;
   const working = mine.filter((r) => r.status !== 'HUMAN REVIEWED');
   const returned = mine.filter((r) => r.status === 'CHANGES REQUESTED').length;
@@ -1082,10 +1089,16 @@ async function oversightView() {
 
 // ---- superadmin dashboard -----------------------------------------------------------------------
 async function accountsView() {
+  const navigation = S.navigation;
   if (!canManageUsers()) return go('#/');
   shell('accounts', '<div class="loading"><div class="spinner"></div>Loading accounts…</div>');
   let users;
-  try { users = await api('/users'); } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
+  try { users = await api('/users'); } catch (error) {
+    if (navigation !== S.navigation) return;
+    $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`;
+    return;
+  }
+  if (navigation !== S.navigation) return;
   const userRoles = (S.config?.user_roles && S.config.user_roles.length) ? S.config.user_roles : ['member', 'admin', 'facilitator', 'client', 'superadmin'];
   const waiting = users.filter((u) => !u.approved);
   const state = (u) => !u.approved ? '<span class="pill waiting">Waiting for approval</span>' : u.active ? '<span class="pill approved">Active</span>' : '<span class="pill draft">Disabled</span>';
