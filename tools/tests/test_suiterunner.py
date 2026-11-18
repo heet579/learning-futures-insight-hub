@@ -130,10 +130,12 @@ def test_dotenv_and_external_network_are_disabled(project):
 
 
 def test_environment_clears_cloud_and_postgres_without_changing_parent(monkeypatch, tmp_path):
-    for key in ('GEMINI_API_KEY', 'DATABASE_URL', 'INSIGHT_HUB_TEST_DATABASE_URL', 'SERVER_URL', 'PYTEST_ADDOPTS'):
+    for key in ('GEMINI_API_KEY', 'DATABASE_URL', 'INSIGHT_HUB_TEST_DATABASE_URL', 'SERVER_URL', 'PYTEST_ADDOPTS',
+                'SUPERADMIN_USERNAME', 'SUPERADMIN_PASSWORD'):
         monkeypatch.setenv(key, 'private-value')
     env = isolated_environment(tmp_path)
     assert 'GEMINI_API_KEY' not in env and 'SERVER_URL' not in env
+    assert 'SUPERADMIN_USERNAME' not in env and 'SUPERADMIN_PASSWORD' not in env
     assert 'INSIGHT_HUB_TEST_DATABASE_URL' not in env and 'PYTEST_ADDOPTS' not in env
     assert env['DATABASE_URL'] == str(tmp_path / 'server.sqlite3')
     assert env['PYTHONUTF8'] == '1'

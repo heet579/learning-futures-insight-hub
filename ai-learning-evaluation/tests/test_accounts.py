@@ -24,6 +24,7 @@ def fake_google(token):
 @pytest.fixture
 def admin(api):
     api.services.verify_google = fake_google
+    api.services.users.set_role('lisa', 'superadmin')
     return sign_in(api, 'lisa', 'admin-pass')
 
 
@@ -36,7 +37,7 @@ def test_sign_up_waits_for_admin_approval(api, admin):
     response = register(api)
     assert response.status_code == 200 and response.json()['pending'] is True
     pending = api.post('/auth/login', json={'username': 'gopi', 'password': 'gopi-pass-1'})
-    assert pending.status_code == 403 and 'waiting for administrator approval' in pending.json()['detail']
+    assert pending.status_code == 403 and 'waiting for superadmin approval' in pending.json()['detail']
     assert api.post('/auth/login', json={'username': 'gopi', 'password': 'wrong'}).status_code == 401
     assert register(api).status_code == 400                                    # username taken
     assert register(api, name='gopi2').json()['detail'].startswith('An account already uses')
@@ -180,7 +181,7 @@ def test_desktop_sign_up_profile_and_admin_windows(live_server, tk_runtime, monk
     from src.ui.accounts import AccountsDialog, ProfileDialog
     from src.ui.desktop import DesktopApp
     monkeypatch.setattr('tkinter.messagebox.askyesno', lambda *a, **k: True)
-    live_server.users.set_role('sam', 'admin')
+    live_server.users.set_role('sam', 'superadmin')
 
     # Sign-in screen in shared mode offers Google and Create account.
     root = tk.Toplevel(tk_runtime)
@@ -206,7 +207,7 @@ def test_desktop_sign_up_profile_and_admin_windows(live_server, tk_runtime, monk
     root = tk.Toplevel(tk_runtime)
     app = DesktopApp(root, username='sam', on_logout=lambda: None)
     captions = [str(b.cget('text')) for b in app.account_actions]
-    assert captions[:2] == ['Profile settings', 'Manage accounts']
+    assert captions[:2] == ['Profile settings', 'Superadmin dashboard']
     accounts = app.open_accounts()
     assert isinstance(accounts, AccountsDialog)
     wait_for(root, lambda: 'esrat' in accounts.users)
@@ -245,14 +246,14 @@ def test_desktop_sign_up_profile_and_admin_windows(live_server, tk_runtime, monk
     remote.logout()
 
 
-def test_admin_can_select_and_change_user_roles(api, admin):
-    """Admin can configure accounts across member, admin, facilitator, client roles."""
+def test_superadmin_can_select_and_change_all_user_roles(api, admin):
+    """Superadmins retain facilitator/client assignment alongside the new privileged role."""
     from src.storage.database import ROLES
 
     # Verify config exposes user_roles
     cfg = api.get('/api/config').json()
     assert 'user_roles' in cfg
-    assert set(cfg['user_roles']) == {'member', 'admin', 'facilitator', 'client'}
+    assert set(cfg['user_roles']) == {'member', 'admin', 'facilitator', 'client', 'superadmin'}
 
     # Admin creates accounts with distinct roles
     res_fac = api.post('/users', headers=admin, json={'username': 'fiona', 'password': 'fiona-pass-1',
@@ -316,31 +317,41 @@ def test_manage_cli_set_role(tmp_path, monkeypatch, capsys):
     assert 'sarah' in list_out and 'client' in list_out
 
 
-def test_change_role_dialog(tk_runtime):
-    """ChangeRoleDialog allows modal role selection and callback submission."""
-    from src.ui.accounts import ChangeRoleDialog
+def test_user_editor_role_selection(tk_runtime, monkeypatch):
+    """The shared editor preserves all account roles when saving a role change."""
+    from src.ui.accounts import UserEditorDialog
+    from src import remote
+    monkeypatch.setattr(remote.session, 'role', 'superadmin')
+    monkeypatch.setattr(remote.session, 'username', 'owner')
     saved = []
-    user = {'username': 'testuser', 'display_name': 'Test User', 'role': 'member'}
-    dialog = ChangeRoleDialog(tk_runtime, user, on_save=lambda u, r: saved.append((u, r)))
-    assert dialog.selected_role.get() == 'member'
-    dialog.selected_role.set('facilitator')
+    monkeypatch.setattr(remote, 'update_user', lambda name, **details: saved.append((name, details)))
+    user = {'username': 'testuser', 'display_name': 'Test User', 'email': '', 'role': 'member'}
+    dialog = UserEditorDialog(tk_runtime, on_saved=lambda message: None, user=user)
+    assert dialog.fields['role'].get() == 'member'
+    assert {'facilitator', 'client', 'superadmin'} <= set(dialog.role_entry.cget('values'))
+    dialog.fields['role'].set('facilitator')
     dialog.submit()
-    assert saved == [('testuser', 'facilitator')]
+    wait_for(tk_runtime, lambda: not dialog.window.winfo_exists())
+    assert saved == [('testuser', {'display_name': 'Test User', 'email': '', 'role': 'facilitator'})]
 
 
 def test_accounts_dialog_change_role(tk_runtime, monkeypatch):
-    """AccountsDialog change_role updates user role through remote client."""
+    """The superadmin editor can change existing accounts to facilitator and client."""
     from src.ui.accounts import AccountsDialog
     from src import remote
 
-    calls = []
+    monkeypatch.setattr(remote.session, 'role', 'superadmin')
+    monkeypatch.setattr(remote.session, 'username', 'sam')
     fake_users = [
-        {'username': 'sam', 'display_name': 'Sam Admin', 'email': 'sam@example.com', 'role': 'admin', 'approved': 1, 'active': 1},
+        {'username': 'sam', 'display_name': 'Sam Owner', 'email': 'sam@example.com', 'role': 'superadmin', 'approved': 1, 'active': 1},
         {'username': 'alex', 'display_name': 'Alex Member', 'email': 'alex@example.com', 'role': 'member', 'approved': 1, 'active': 1}
     ]
 
     monkeypatch.setattr(remote, 'list_users', lambda: fake_users)
-    monkeypatch.setattr(remote, 'set_user_role', lambda name, role: calls.append((name, role)))
+    def update(name, **details):
+        next(user for user in fake_users if user['username'] == name).update(details)
+        return {'username': name}
+    monkeypatch.setattr(remote, 'update_user', update)
 
     root = tk.Toplevel(tk_runtime)
     accounts = AccountsDialog(root)
@@ -348,16 +359,11 @@ def test_accounts_dialog_change_role(tk_runtime, monkeypatch):
 
     accounts.tree.selection_set('alex')
     accounts.sync()
-    accounts.change_role('facilitator')
-    wait_for(root, lambda: ('alex', 'facilitator') in calls)
-    wait_for(root, lambda: not accounts.busy)
-
-    accounts.change_role('client')
-    wait_for(root, lambda: ('alex', 'client') in calls)
-    wait_for(root, lambda: not accounts.busy)
+    for role in ('facilitator', 'client'):
+        editor = accounts.edit_user()
+        editor.fields['role'].set(role)
+        editor.submit()
+        wait_for(root, lambda: not accounts.busy and accounts.users['alex']['role'] == role)
 
     accounts.close()
     root.destroy()
-
-
-

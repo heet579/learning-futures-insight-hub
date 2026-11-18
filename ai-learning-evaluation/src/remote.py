@@ -135,12 +135,28 @@ def unlink_google():
 
 
 # ---- administration ----------------------------------------------------------------------
-def _user_path(username, action):
-    return f'/users/{urllib.parse.quote(username, safe="")}/{action}'
+def _user_path(username, action=''):
+    path = f'/users/{urllib.parse.quote(username, safe="")}'
+    return path + ('/' + action if action else '')
 
 
 def list_users():
     return request('GET', '/users')
+
+
+def create_user(*, username, password, role='member', display_name='', email=''):
+    return request('POST', '/users', {'username': username.strip(), 'password': password,
+                   'role': role, 'display_name': display_name.strip(), 'email': email.strip()})
+
+
+def update_user(username, *, display_name=None, email=None, role=None):
+    body = {key: value for key, value in {'display_name': display_name, 'email': email,
+                                         'role': role}.items() if value is not None}
+    return request('PATCH', _user_path(username), body)
+
+
+def remove_user(username):
+    return request('DELETE', _user_path(username))
 
 
 def approve_user(username):

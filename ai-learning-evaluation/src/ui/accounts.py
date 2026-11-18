@@ -9,6 +9,7 @@ from tkinter import messagebox, simpledialog, ttk
 from src import remote
 from src.google_signin import GoogleSignInError
 from src.ui.theme import BG, WHITE, INK, MUTED, TEAL, BORDER
+from src.roles import ROLES, can_manage_users
 
 ERROR = '#9F254B'
 FONT = 'TkDefaultFont'
@@ -67,6 +68,7 @@ class Dialog:
         self.fields = {}
         self.status = tk.StringVar(self.window, value='')
         self.busy = False
+        self.window.protocol('WM_DELETE_WINDOW', self.close)
 
     def section(self, text):
         tk.Label(self.card, text=text.upper(), font=(FONT, 8, 'bold'), bg=WHITE, fg=MUTED).pack(anchor='w', pady=(14, 4))
@@ -105,25 +107,35 @@ class Dialog:
         if self.busy:
             return
         self.busy = True
+        self.busy_changed()
         self.say(waiting, ok=True)
 
         def finish(result, error):
             self.busy = False
+            self.busy_changed()
             if error is not None:
                 self.say(error_text(error))
             else:
                 done(result)
         run_in_background(self.window, work, finish)
 
+    def busy_changed(self):
+        """Allow account controls to reflect requests that are still running."""
+        pass
+
     def close(self):
         self.window.destroy()
+        # Release Tcl variables while still on the UI thread. Closed editor cycles
+        # may otherwise be collected later by a background HTTP worker.
+        self.fields.clear()
+        self.status = None
 
 
 # ---- create account ----------------------------------------------------------------------
 class RegisterDialog(Dialog):
     def __init__(self, parent):
         super().__init__(parent, 'Create account', 'Create account',
-                         'An administrator approves new accounts before they can sign in.')
+                         'A superadmin approves new accounts before they can sign in.')
         self.field('display_name', 'Full name')
         self.field('username', 'Username')
         self.field('email', 'Email (Gmail)')
@@ -148,7 +160,7 @@ class RegisterDialog(Dialog):
 
         def done(result):
             self.submit_button.configure(state='disabled')
-            self.say(f'Request sent for “{result["username"]}”. You can sign in after an administrator approves it.', ok=True)
+            self.say(f'Request sent for “{result["username"]}”. You can sign in after a superadmin approves it.', ok=True)
         self.call(lambda: remote.register(username=username, password=password, email=email, display_name=name),
                   done, 'Sending request…')
 
@@ -235,79 +247,113 @@ class ProfileDialog(Dialog):
                       'Finish signing in to Google in your browser…')
 
 
-# ---- administration ----------------------------------------------------------------------
-class ChangeRoleDialog(Dialog):
-    """A small modal window to select a role for an account."""
-
-    ROLE_OPTIONS = (
-        ('admin', 'Administrator', 'Can review reports, manage all accounts, and change settings.'),
-        ('facilitator', 'Facilitator', 'Can lead courses and prepare or review evaluation reports.'),
-        ('client', 'Client', 'Can view finalized reports, dashboards, and client insights.'),
-        ('member', 'Member', 'Standard team member. Can create and prepare evaluation drafts.')
-    )
-
-    def __init__(self, parent, user, on_save):
-        username = user['username']
-        current = user['role']
-        display = user['display_name'] or username
-        super().__init__(parent, f'Change role — {username}', f'Role for {display}',
-                         'Select an account role and permissions level.', wrap=400)
-        self.on_save = on_save
-        self.username = username
-        self.selected_role = tk.StringVar(self.window, value=current)
-
-        frame = tk.Frame(self.card, bg=WHITE)
-        frame.pack(fill='x', pady=(6, 12))
-
-        for code, name, desc in self.ROLE_OPTIONS:
-            item_frame = tk.Frame(frame, bg=WHITE)
-            item_frame.pack(fill='x', pady=4)
-            rb = tk.Radiobutton(item_frame, text=name, variable=self.selected_role, value=code,
-                                font=(FONT, 10, 'bold'), bg=WHITE, fg=INK, activebackground=WHITE,
-                                selectcolor=WHITE, highlightthickness=0)
-            rb.pack(anchor='w')
-            tk.Label(item_frame, text=desc, font=(FONT, 9), bg=WHITE, fg=MUTED,
-                     wraplength=360, justify='left').pack(anchor='w', padx=(24, 0))
-
-        btn_row = tk.Frame(self.card, bg=WHITE)
-        btn_row.pack(fill='x', pady=(8, 0))
-        self.button(btn_row, 'Save role', self.submit, primary=True).pack(side='right', padx=(6, 0))
-        self.button(btn_row, 'Cancel', self.close, primary=False).pack(side='right')
+# ---- superadmin dashboard ---------------------------------------------------------------
+class UserEditorDialog(Dialog):
+    def __init__(self, parent, on_saved, user=None):
+        if not can_manage_users(remote.session.role):
+            raise ValueError('Only a superadmin can manage users.')
+        self.user, self.on_saved = user, on_saved
+        super().__init__(parent, 'Edit user' if user else 'Create user',
+                         'Edit user' if user else 'Create user',
+                         'Usernames stay fixed so report ownership and review history remain intact.')
+        values = user or {}
+        self.field('username', 'Username', values.get('username', ''), readonly=bool(user))
+        self.field('display_name', 'Full name', values.get('display_name', ''))
+        self.field('email', 'Email (optional)', values.get('email', ''))
+        tk.Label(self.card, text='Role', font=(FONT, 10, 'bold'), bg=WHITE, fg=INK).pack(anchor='w')
+        self.fields['role'] = tk.StringVar(self.window, value=values.get('role', 'member'))
+        self.role_entry = ttk.Combobox(self.card, textvariable=self.fields['role'], values=ROLES,
+                                       state='disabled' if user and user['username'] == remote.session.username else 'readonly')
+        self.role_entry.pack(fill='x', pady=(4, 12))
+        if not user:
+            self.field('password', 'Password (at least 8 characters)', masked=True)
+            self.field('confirm', 'Confirm password', masked=True)
+        row = tk.Frame(self.card, bg=WHITE)
+        row.pack(fill='x', pady=(6, 0))
+        self.save_button = self.button(row, 'Save changes' if user else 'Create user', self.submit)
+        self.save_button.pack(side='left')
+        self.cancel_button = self.button(row, 'Cancel', self.close, primary=False)
+        self.cancel_button.pack(side='left', padx=(8, 0))
         self.status_line()
 
+    def busy_changed(self):
+        for button in (self.save_button, self.cancel_button):
+            button.configure(state='disabled' if self.busy else 'normal')
+
+    def close(self):
+        if not self.busy:
+            super().close()
+
     def submit(self):
-        new_role = self.selected_role.get()
-        self.close()
-        self.on_save(self.username, new_role)
+        if self.busy:
+            return
+        data = {key: self.value(key).strip() for key in ('username', 'display_name', 'email', 'role')}
+        if not data['username']:
+            return self.say('Enter a username.')
+        if not self.user:
+            password = self.value('password')
+            if len(password) < 8:
+                return self.say('Use a password of at least 8 characters.')
+            if password != self.value('confirm'):
+                return self.say('The passwords do not match.')
+            work = lambda: remote.create_user(password=password, **data)
+        else:
+            username = data.pop('username')
+            work = lambda: remote.update_user(username, **data)
+
+        def done(result):
+            self.on_saved('User updated.' if self.user else 'User created. They can sign in now.')
+            self.close()
+        self.call(work, done, 'Saving user…')
 
 
 class AccountsDialog(Dialog):
     COLUMNS = (('username', 'Username', 120), ('display_name', 'Name', 150), ('email', 'Email', 200),
-               ('role', 'Role', 90), ('state', 'Status', 170))
+               ('role', 'Role', 105), ('state', 'Status', 155))
 
     def __init__(self, parent):
-        super().__init__(parent, 'Manage accounts', 'Manage accounts',
-                         'Approve requests, change roles, disable accounts or reset passwords. '
-                         'Only administrators receive reports for review.', wrap=700)
+        if not can_manage_users(remote.session.role):
+            raise ValueError('Only a superadmin can manage users.')
+        super().__init__(parent, 'Superadmin dashboard', 'Superadmin dashboard',
+                         'Create users, assign roles, update details and manage access.', wrap=850)
         self.window.resizable(True, True)
+        self.window.geometry('1080x680')
+        self.window.minsize(900, 560)
+        self.summary = tk.StringVar(self.window, value='Loading account summary…')
+        tk.Label(self.card, textvariable=self.summary, font=(FONT, 11, 'bold'), bg=WHITE, fg=INK).pack(anchor='w', pady=(4, 14))
+        toolbar = tk.Frame(self.card, bg=WHITE)
+        toolbar.pack(fill='x', pady=(0, 12))
+        self.create_button = self.button(toolbar, '+ Create user', self.create_user)
+        self.create_button.pack(side='left')
+        tk.Label(toolbar, text='Search users', bg=WHITE, fg=MUTED).pack(side='left', padx=(20, 8))
+        self.search = tk.StringVar(self.window)
+        ttk.Entry(toolbar, textvariable=self.search, width=32).pack(side='left', fill='x', expand=True)
+        self.search.trace_add('write', lambda *args: self.render_users())
+        self.refresh_button = self.button(toolbar, 'Refresh', lambda: self.refresh(), primary=False)
+        self.refresh_button.pack(side='right', padx=(10, 0))
         self.tree = ttk.Treeview(self.card, columns=[c[0] for c in self.COLUMNS], show='headings', height=10)
         for key, caption, width in self.COLUMNS:
             self.tree.heading(key, text=caption)
             self.tree.column(key, width=width, anchor='w')
+        scroll = ttk.Scrollbar(self.card, orient='vertical', command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side='right', fill='y')
         self.tree.pack(fill='both', expand=True)
         self.tree.bind('<<TreeviewSelect>>', lambda event: self.sync())
+        self.tree.bind('<Double-1>', lambda event: self.edit_user())
         row = tk.Frame(self.card, bg=WHITE)
         row.pack(fill='x', pady=(10, 0))
         self.actions = {}
         for key, text, command in [('approve', 'Approve', self.approve), ('reject', 'Reject request', self.reject),
-                                   ('role', 'Change role…', self.change_role), ('active', 'Disable', self.toggle_active),
-                                   ('password', 'Reset password', self.reset_password)]:
+                                   ('edit', 'Edit user', self.edit_user), ('active', 'Disable', self.toggle_active),
+                                   ('password', 'Reset password', self.reset_password),
+                                   ('remove', 'Remove user', self.remove_user)]:
             button = self.button(row, text, command, primary=key == 'approve')
             button.pack(side='left', padx=(0, 6))
             self.actions[key] = button
-        self.button(row, 'Refresh', lambda: self.refresh(), primary=False).pack(side='right')
         self.status_line()
         self.users = {}
+        self.editor = None
         self.refresh()
 
     @staticmethod
@@ -318,18 +364,29 @@ class AccountsDialog(Dialog):
 
     def refresh(self, message=None):
         def done(users):
-            selected = self.selected_name()
             self.users = {u['username']: u for u in users}
-            self.tree.delete(*self.tree.get_children())
-            for user in users:
-                self.tree.insert('', 'end', iid=user['username'], values=(
-                    user['username'], user['display_name'], user['email'], user['role'], self.state(user)))
-            if selected in self.users:
-                self.tree.selection_set(selected)
             waiting = sum(not u['approved'] for u in users)
+            self.summary.set(f'{len(users)} users   ·   {sum(bool(u["active"] and u["approved"]) for u in users)} active   ·   '
+                             f'{waiting} waiting   ·   {sum(u["role"] == "superadmin" for u in users)} superadmins')
+            self.render_users()
             self.say(message or f'{len(users)} accounts · {waiting} waiting for approval.', ok=True)
             self.sync()
         self.call(remote.list_users, done, 'Loading accounts…')
+
+    def render_users(self):
+        if not hasattr(self, 'users'):
+            return
+        selected = self.selected_name()
+        query = self.search.get().strip().casefold()
+        self.tree.delete(*self.tree.get_children())
+        for user in self.users.values():
+            if query and query not in ' '.join(str(user.get(k, '')) for k in ('username', 'display_name', 'email', 'role')).casefold():
+                continue
+            self.tree.insert('', 'end', iid=user['username'], values=(user['username'], user['display_name'],
+                             user['email'], user['role'], self.state(user)))
+        if selected in self.tree.get_children():
+            self.tree.selection_set(selected)
+        self.sync()
 
     def selected_name(self):
         selection = self.tree.selection() if hasattr(self, 'tree') else ()
@@ -337,16 +394,25 @@ class AccountsDialog(Dialog):
 
     def sync(self):
         user = self.users.get(self.selected_name())
+        for button in (self.create_button, self.refresh_button):
+            button.configure(state='disabled' if self.busy else 'normal')
         for button in self.actions.values():
-            button.configure(state='normal' if user else 'disabled')
+            button.configure(state='normal' if user and not self.busy else 'disabled')
         if not user:
+            self.actions['active'].configure(text='Disable')
+            return
+        self.actions['active'].configure(text='Disable' if user['active'] else 'Enable')
+        if self.busy:
             return
         pending = not user['approved']
         self.actions['approve'].configure(state='normal' if pending else 'disabled')
         self.actions['reject'].configure(state='normal' if pending else 'disabled')
-        self.actions['role'].configure(text='Change role…', state='disabled' if pending else 'normal')
         self.actions['active'].configure(text='Disable' if user['active'] else 'Enable',
-                                         state='disabled' if pending else 'normal')
+                                         state='disabled' if pending or user['username'] == remote.session.username else 'normal')
+        self.actions['remove'].configure(state='disabled' if user['username'] == remote.session.username else 'normal')
+
+    def busy_changed(self):
+        self.sync()
 
     def act(self, work, message):
         name = self.selected_name()
@@ -362,21 +428,22 @@ class AccountsDialog(Dialog):
                                         parent=self.window):
             self.act(remote.reject_user, 'Request from {} rejected.')
 
-    def change_role(self, role=None):
-        user = self.users.get(self.selected_name())
-        if not user:
-            return
-        if role is not None:
-            self.act(lambda name: remote.set_user_role(name, role), '{} is now ' + role + '.')
-            return
-        ChangeRoleDialog(self.window, user, on_save=lambda name, new_role: self.act(
-            lambda n: remote.set_user_role(n, new_role), '{} is now ' + new_role + '.'))
+    def create_user(self):
+        self.editor = UserEditorDialog(self.window, self.refresh)
+        return self.editor
 
-    def toggle_role(self):
+    def edit_user(self):
         user = self.users.get(self.selected_name())
         if user:
-            role = 'member' if user['role'] == 'admin' else 'admin'
-            self.act(lambda name: remote.set_user_role(name, role), '{} is now ' + role + '.')
+            self.editor = UserEditorDialog(self.window, self.refresh, user)
+            return self.editor
+
+    def remove_user(self):
+        name = self.selected_name()
+        if name and name != remote.session.username and messagebox.askyesno(
+                'Remove user', f'Remove “{name}”? They will lose access. Reports and review history will be preserved.',
+                parent=self.window):
+            self.act(remote.remove_user, '{} removed. Report history preserved.')
 
     def toggle_active(self):
         user = self.users.get(self.selected_name())
@@ -395,3 +462,10 @@ class AccountsDialog(Dialog):
         if len(password) < 8:
             return self.say('Use a password of at least 8 characters.')
         self.act(lambda user: remote.reset_user_password(user, password), 'Password for {} reset. Tell them the new password.')
+
+    def close(self):
+        if self.editor is not None and self.editor.window.winfo_exists():
+            self.editor.close()
+        self.editor = None
+        super().close()
+        self.search = self.summary = None

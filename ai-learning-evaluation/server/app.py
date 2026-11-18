@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from src.storage.database import (NO_PASSWORD, Database, DatabaseAuditTrail, DatabaseReportRepository,
                                   ROLES, UserStore, password_matches)
 from server.security import issue_token, read_token
+from src.roles import Role, can_manage_users, can_review_reports
 
 log = logging.getLogger('insight_hub.server')
 APP_FOLDER = Path(__file__).resolve().parents[1]
@@ -70,11 +71,13 @@ def default_database_url():
 
 
 def bootstrap_admin(users):
-    """Render's free plan has no shell, so the first admin can come from environment variables."""
-    name, password = os.getenv('ADMIN_USERNAME', '').strip(), os.getenv('ADMIN_PASSWORD', '')
-    if name and password and users.get(name) is None:
-        users.create(name, password, role='admin')
-        log.warning('Created admin account %s from ADMIN_USERNAME.', name)
+    """Initial operator accounts; never silently promote or reset an existing account."""
+    for prefix, role in (('SUPERADMIN', 'superadmin'), ('ADMIN', 'admin')):
+        name = os.getenv(f'{prefix}_USERNAME', '').strip()
+        password = os.getenv(f'{prefix}_PASSWORD', '')
+        if name and password and users.get(name) is None:
+            users.create(name, password, role=role)
+            log.warning('Created %s account %s from %s_USERNAME.', role, name, prefix)
 
 
 def create_app(database_url=None):
@@ -101,13 +104,13 @@ def create_app(database_url=None):
         if claims is None:
             raise HTTPException(401, 'Your session has expired. Sign out and sign in again.')
         user = services.users.get(claims['u'])
-        if user is None or not user['active'] or not user['approved']:
+        if user is None or user['deleted'] or not user['active'] or not user['approved']:
             raise HTTPException(401, 'This account is disabled. Contact your administrator.')
         return user
 
-    def admin_user(user=Depends(current_user)):
-        if user['role'] != 'admin':
-            raise HTTPException(403, 'Only an administrator can manage accounts.')
+    def superadmin_user(user=Depends(current_user)):
+        if not can_manage_users(user['role']):
+            raise HTTPException(403, 'Only a superadmin can manage users.')
         return user
 
     # ---- service ---------------------------------------------------------------------------
@@ -117,7 +120,7 @@ def create_app(database_url=None):
         return {'ok': True, 'database': 'postgres' if services.database.is_postgres else 'sqlite'}
 
     # ---- accounts --------------------------------------------------------------------------
-    PENDING = 'Your account is waiting for administrator approval. You can sign in once it is approved.'
+    PENDING = 'Your account is waiting for superadmin approval. You can sign in once it is approved.'
 
     def session(user):
         if not user['approved']:
@@ -238,22 +241,22 @@ def create_app(database_url=None):
         return profile(services.users.get(user['username']))
 
     # ---- administration ------------------------------------------------------------------
-    RoleType = Literal['member', 'admin', 'facilitator', 'client']
-
     class NewUser(BaseModel):
         username: str = Field(max_length=64)
         password: str = Field(max_length=1024)
-        role: RoleType = 'member'
+        role: Role = 'member'
         replace: bool = False
         email: str = Field(default='', max_length=254)
         display_name: str = Field(default='', max_length=80)
 
     @app.get('/users')
-    def list_users(admin=Depends(admin_user)):
+    def list_users(admin=Depends(superadmin_user)):
         return services.users.list()
 
     @app.post('/users')
-    def create_user(body: NewUser, admin=Depends(admin_user)):
+    def create_user(body: NewUser, admin=Depends(superadmin_user)):
+        if body.replace:
+            raise ValueError('Edit an existing account instead of replacing it through Create user.')
         name = services.users.create(body.username, body.password, body.role, replace=body.replace,
                                      email=body.email, display_name=body.display_name)
         services.audit.append('Account saved', admin['username'], account=name, role=body.role)
@@ -264,33 +267,31 @@ def create_app(database_url=None):
             raise ValueError(f'You cannot {what} your own account.')
 
     @app.post('/users/{username}/approve')
-    def approve_user(username: str, admin=Depends(admin_user)):
-        services.users.approve(username)
+    def approve_user(username: str, admin=Depends(superadmin_user)):
+        services.users.manage_account(admin['username'], username, approved=True, active=True)
         services.audit.append('Account approved', admin['username'], account=username)
         return {'username': username, 'approved': True}
 
     @app.post('/users/{username}/reject')
-    def reject_user(username: str, admin=Depends(admin_user)):
+    def reject_user(username: str, admin=Depends(superadmin_user)):
         services.users.delete_pending(username)
         services.audit.append('Account request rejected', admin['username'], account=username)
         return {'username': username, 'rejected': True}
 
     @app.post('/users/{username}/active')
-    def set_active(username: str, active: bool, admin=Depends(admin_user)):
+    def set_active(username: str, active: bool, admin=Depends(superadmin_user)):
         if not active:
             not_self(admin, username, 'disable')
-        services.users.set_active(username, active)
+        services.users.manage_account(admin['username'], username, active=active)
         services.audit.append('Account enabled' if active else 'Account disabled', admin['username'], account=username)
         return {'username': username, 'active': active}
 
     class RoleChange(BaseModel):
-        role: RoleType
+        role: Role
 
     @app.post('/users/{username}/role')
-    def set_role(username: str, body: RoleChange, admin=Depends(admin_user)):
-        if body.role != 'admin':
-            not_self(admin, username, 'remove administrator rights from')
-        services.users.set_role(username, body.role)
+    def set_role(username: str, body: RoleChange, admin=Depends(superadmin_user)):
+        services.users.manage_account(admin['username'], username, role=body.role)
         services.audit.append('Role changed', admin['username'], account=username, role=body.role)
         return {'username': username, 'role': body.role}
 
@@ -298,10 +299,30 @@ def create_app(database_url=None):
         new_password: str = Field(max_length=1024)
 
     @app.post('/users/{username}/password')
-    def reset_password(username: str, body: PasswordReset, admin=Depends(admin_user)):
-        services.users.set_password(username, body.new_password)
+    def reset_password(username: str, body: PasswordReset, admin=Depends(superadmin_user)):
+        services.users.manage_account(admin['username'], username, password=body.new_password)
         services.audit.append('Password reset', admin['username'], account=username)
         return {'username': username}
+
+    class UserChange(BaseModel):
+        display_name: str | None = Field(default=None, max_length=80)
+        email: str | None = Field(default=None, max_length=254)
+        role: Role | None = None
+
+    @app.patch('/users/{username}')
+    def update_user(username: str, body: UserChange, admin=Depends(superadmin_user)):
+        changes = body.model_dump(exclude_unset=True, exclude_none=True)
+        if not changes:
+            raise ValueError('Choose at least one account detail to update.')
+        name = services.users.manage_account(admin['username'], username, **changes)
+        services.audit.append('Account updated', admin['username'], account=name, fields=list(changes))
+        return {'username': name}
+
+    @app.delete('/users/{username}')
+    def remove_user(username: str, admin=Depends(superadmin_user)):
+        name = services.users.manage_account(admin['username'], username, remove=True)
+        services.audit.append('Account removed', admin['username'], account=name)
+        return {'username': name, 'removed': True}
 
     # ---- report library --------------------------------------------------------------------
     def reviewers(author):
@@ -309,14 +330,14 @@ def create_app(database_url=None):
         an administrator's own report can go to another administrator or to a team member."""
         people = [u for u in services.users.list()
                   if u['approved'] and u['active'] and u['username'] != author['username']
-                  and (u['role'] == 'admin' or author['role'] == 'admin')]
-        people.sort(key=lambda u: (u['role'] != 'admin', (u['display_name'] or u['username']).lower()))
+                  and (can_review_reports(u['role']) or can_review_reports(author['role']))]
+        people.sort(key=lambda u: (not can_review_reports(u['role']), (u['display_name'] or u['username']).lower()))
         return [{'username': u['username'], 'display_name': u['display_name'] or u['username'], 'role': u['role']}
                 for u in people]
 
     def may_review(user, row):
         """The person a report was sent to, or any administrator when it was sent to no one in particular."""
-        return row['reviewer'] == user['username'] or (not row['reviewer'] and user['role'] == 'admin')
+        return row['reviewer'] == user['username'] or (not row['reviewer'] and can_review_reports(user['role']))
 
     def with_names(rows):
         names = {u['username']: u['display_name'] or u['username'] for u in services.users.list()}
@@ -340,7 +361,7 @@ def create_app(database_url=None):
     @app.get('/reports/{report_id}')
     def load_report(report_id: str, user=Depends(current_user)):
         row = services.reports.load(report_id, user['username'])
-        if row['owner'] != user['username'] and user['role'] != 'admin' and row['reviewer'] != user['username']:
+        if row['owner'] != user['username'] and not can_review_reports(user['role']) and row['reviewer'] != user['username']:
             raise ValueError('This report is unavailable for this account.')
         return row
 
@@ -409,10 +430,10 @@ def create_app(database_url=None):
             assigned = body.reviewer.strip().lower()
             if assigned and assigned not in choices:
                 raise ValueError('Choose someone other than yourself to review this report'
-                                 + ('.' if user['role'] == 'admin' else ': members send reports to an administrator.'))
-            if not assigned and user['role'] != 'admin' and len(choices) == 1:
+                                 + ('.' if can_review_reports(user['role']) else ': members send reports to an administrator.'))
+            if not assigned and not can_review_reports(user['role']) and len(choices) == 1:
                 assigned = next(iter(choices))       # the only possible reviewer
-            if not assigned and user['role'] == 'admin':
+            if not assigned and can_review_reports(user['role']):
                 raise ValueError('Choose who should review your report.')
         else:
             row = services.reports.load(report_id, user['username'])

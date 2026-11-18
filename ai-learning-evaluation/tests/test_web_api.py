@@ -16,6 +16,7 @@ SAMPLE = Path(DATA_DIR) / 'synthetic_qualtrics_evaluation.csv'
 @pytest.fixture
 def people(api, monkeypatch):
     monkeypatch.delenv('GEMINI_API_KEY', raising=False)     # drafts use local wording in tests
+    api.services.users.set_role('lisa', 'superadmin')       # creates test accounts, then reviews
     admin = sign_in(api, 'lisa', 'admin-pass')
     api.post('/users', headers=admin, json={'username': 'gopi', 'password': 'gopi-pass'})
     api.post('/users', headers=admin, json={'username': 'esrat', 'password': 'esrat-pass'})

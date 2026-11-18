@@ -227,7 +227,8 @@ class Database:
     def _migrate_users(self, db):
         """Add the self-service account columns to databases created before them."""
         added = [('approved', "INTEGER NOT NULL DEFAULT 1"), ('email', "TEXT NOT NULL DEFAULT ''"),
-                 ('display_name', "TEXT NOT NULL DEFAULT ''"), ('google_sub', "TEXT NOT NULL DEFAULT ''")]
+                 ('display_name', "TEXT NOT NULL DEFAULT ''"), ('google_sub', "TEXT NOT NULL DEFAULT ''"),
+                 ('deleted', 'INTEGER NOT NULL DEFAULT 0')]
         if self.is_postgres:
             for name, kind in added:
                 db.execute(f'ALTER TABLE users ADD COLUMN IF NOT EXISTS {name} {kind}')
@@ -331,9 +332,9 @@ def password_matches(password, stored):
         return False
 
 
-ROLES = ('member', 'admin', 'facilitator', 'client')
+from src.roles import ROLES
 NO_PASSWORD = '!'          # Google-only accounts: no password sign-in until one is set
-USER_COLUMNS = 'username, password_hash, role, active, created, approved, email, display_name, google_sub'
+USER_COLUMNS = 'username, password_hash, role, active, created, approved, email, display_name, google_sub, deleted'
 EMAIL_PATTERN = r'[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{2,63}'
 
 
@@ -382,7 +383,9 @@ class UserStore:
         now = datetime.now(timezone.utc).isoformat()
         with self.database.connect() as db:
             with db:
-                exists = db.execute('SELECT 1 FROM users WHERE username=?', (username,)).fetchone()
+                exists = db.execute('SELECT deleted FROM users WHERE username=?', (username,)).fetchone()
+                if exists and exists['deleted']:
+                    raise ValueError('That username belongs to a removed account. Choose another one.')
                 if exists and not replace:
                     raise ValueError('That username is taken. Choose another one.' if not approved else
                                      'That account exists. Use --replace to change its password or role.')
@@ -404,7 +407,7 @@ class UserStore:
         self.database.initialise()
         with self.database.connect() as db:
             with db:
-                count = db.execute(f'UPDATE users SET {sql} WHERE username=?',
+                count = db.execute(f'UPDATE users SET {sql} WHERE username=? AND deleted=0',
                                    (*params, username.strip().lower())).rowcount
         if not count:
             raise ValueError('No such account.')
@@ -424,6 +427,59 @@ class UserStore:
         from src.auth import validate_password
         validate_password(password)
         self._update(username, 'password_hash=?', (password_hash(password),))
+
+    def manage_account(self, actor, username, *, remove=False, **changes):
+        """Apply a superadmin action atomically, preserving report/audit ownership on removal."""
+        from src.auth import normalize_username, validate_password
+        allowed = {'display_name', 'email', 'role', 'active', 'approved', 'password'}
+        if set(changes) - allowed:
+            raise ValueError('Unsupported account changes.')
+        actor, username = normalize_username(actor), normalize_username(username)
+        values = {}
+        for key, value in changes.items():
+            if value is None:
+                continue
+            if key == 'role' and value not in ROLES:
+                raise ValueError('Choose member, admin or superadmin.')
+            if key == 'password':
+                validate_password(value)
+                values['password_hash'] = password_hash(value)
+            elif key == 'display_name':
+                values[key] = clean_display_name(value)
+            elif key == 'email':
+                values[key] = normalize_email(value)
+            else:
+                values[key] = int(value) if key in ('active', 'approved') else value
+        self.database.initialise()
+        with self.database.connect() as db:
+            with db:
+                if self.database.is_postgres:
+                    # All role/removal actions take the same locks, including concurrent demotions.
+                    db.execute("SELECT username FROM users WHERE role='superadmin' ORDER BY username FOR UPDATE").fetchall()
+                else:
+                    db.execute('BEGIN IMMEDIATE')
+                operator = db.execute(f'SELECT {USER_COLUMNS} FROM users WHERE username=?', (actor,)).fetchone()
+                if not operator or operator['deleted'] or not operator['active'] or not operator['approved'] or operator['role'] != 'superadmin':
+                    raise ValueError('Only a signed-in superadmin can manage users.')
+                target = db.execute(f'SELECT {USER_COLUMNS} FROM users WHERE username=? AND deleted=0', (username,)).fetchone()
+                if not target:
+                    raise ValueError('No such account.')
+                loses_access = remove or values.get('active') == 0 or values.get('approved') == 0 or (
+                    'role' in values and values['role'] != 'superadmin')
+                if actor == username and loses_access:
+                    raise ValueError('You cannot remove, disable or demote your own account.')
+                if target['role'] == 'superadmin' and target['active'] and target['approved'] and loses_access:
+                    count = db.execute("SELECT COUNT(*) FROM users WHERE role='superadmin' AND active=1 AND approved=1 AND deleted=0").fetchone()[0]
+                    if count <= 1:
+                        raise ValueError('Keep at least one active superadmin.')
+                if 'email' in values:
+                    self._check_unique(db, username, values['email'])
+                if remove:
+                    values.update(active=0, deleted=1)
+                if values:
+                    columns = ', '.join(f'{key}=?' for key in values)
+                    db.execute(f'UPDATE users SET {columns} WHERE username=?', (*values.values(), username))
+        return username
 
     def update_profile(self, username, *, display_name=None, email=None):
         self.database.initialise()
@@ -481,7 +537,7 @@ class UserStore:
     def list(self):
         self.database.initialise()
         with self.database.connect() as db:
-            rows = [dict(row) for row in db.execute(f'SELECT {USER_COLUMNS} FROM users ORDER BY approved, username')]
+            rows = [dict(row) for row in db.execute(f'SELECT {USER_COLUMNS} FROM users WHERE deleted=0 ORDER BY approved, username')]
         for row in rows:
             row['has_password'] = row.pop('password_hash') != NO_PASSWORD
             row['google'] = bool(row.pop('google_sub'))
@@ -494,6 +550,6 @@ class UserStore:
         user = self.get(username or '')
         # Hash even for unknown users so timing does not reveal which names exist.
         stored = user['password_hash'] if user else password_hash('x', salt='0' * 32)
-        if password_matches(password, stored) and user and user['active']:
+        if password_matches(password, stored) and user and user['active'] and not user['deleted']:
             return user
         return None

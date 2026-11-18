@@ -1,7 +1,10 @@
 // Insight Hub in the browser. Plain ES module; talks to the same API as the desktop app.
 
 const app = document.getElementById('app');
-const S = { token: '', user: null, config: null, work: null, checkIndex: 0, improve: { sections: [], method: 'gemini' }, reopened: new Set() };
+const S = { token: '', user: null, config: null, work: null, checkIndex: 0, improve: { sections: [], method: 'gemini' }, reopened: new Set(), navigation: 0 };
+const roleLabel = (role) => ROLE_LABELS[role] || role;
+const canReview = (role) => ['admin', 'superadmin'].includes(role);
+const canManageUsers = () => S.user?.role === 'superadmin';
 
 // ---- small helpers ------------------------------------------------------------------------
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,6 +34,7 @@ const ROLE_LABELS = {
   facilitator: 'Facilitator',
   client: 'Client',
   member: 'Member',
+  superadmin: 'Superadmin',
 };
 
 function toast(message, bad = false) {
@@ -114,13 +118,13 @@ async function busy(button, work) {
   finally { if (button && document.body.contains(button)) { button.disabled = false; button.innerHTML = label; } }
 }
 
-function dialog({ title, body = '', confirm = 'Confirm', danger = false, fields = '' }) {
+function dialog({ title, body = '', confirm = 'Confirm', danger = false, fields = '', validate }) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'overlay';
     overlay.innerHTML = `<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
       <h2 id="dlg-title">${esc(title)}</h2>${body ? `<p class="muted">${body}</p>` : ''}
-      <form>${fields}<div class="buttons"><button type="button" class="btn btn-ghost" data-cancel>Cancel</button>
+      <form>${fields}<div class="dialog-error notice bad hidden" role="alert"></div><div class="buttons"><button type="button" class="btn btn-ghost" data-cancel>Cancel</button>
       <button class="btn ${danger ? 'btn-bad' : 'btn-primary'}">${esc(confirm)}</button></div></form></div>`;
     document.body.append(overlay);
     const done = (value) => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(value); };
@@ -128,7 +132,13 @@ function dialog({ title, body = '', confirm = 'Confirm', danger = false, fields 
     document.addEventListener('keydown', onKey);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) done(null); });
     $('[data-cancel]', overlay).onclick = () => done(null);
-    $('form', overlay).onsubmit = (e) => { e.preventDefault(); done(Object.fromEntries(new FormData(e.target))); };
+    $('form', overlay).onsubmit = (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(e.target));
+      const error = validate?.(data);
+      if (error) { const el = $('.dialog-error', overlay); el.textContent = error; el.classList.remove('hidden'); return; }
+      done(data);
+    };
     ($('input, textarea, select', overlay) || $('.btn-primary, .btn-bad', overlay)).focus();
   });
 }
@@ -149,7 +159,7 @@ function startSession(result) {
   S.token = result.token;
   S.user = { username: result.username, role: result.role, display_name: result.display_name || '' };
   store.set('hub.token', S.token);
-  go('#/');
+  go(S.user.role === 'superadmin' ? '#/superadmin' : '#/');
 }
 
 function go(hash) {
@@ -172,12 +182,17 @@ async function restore() {
 
 // ---- router ------------------------------------------------------------------------------------
 async function route() {
+  S.navigation += 1;
   const hash = location.hash.replace(/^#/, '') || '/';
   if (!S.user) return signInView(hash === '/create-account' ? 'register' : 'signin');
   const parts = hash.split('/').filter(Boolean);
   if (parts[0] === 'r' && parts[1]) return workView(parts[1], parts[2] || '');
-  if (parts[0] === 'accounts' && S.user.role === 'admin') return accountsView();
-  if (parts[0] === 'oversight' && S.user.role === 'admin') return oversightView();
+  if (['accounts', 'superadmin'].includes(parts[0])) {
+    if (canManageUsers()) return accountsView();
+    shell('', '<div class="page"><h1>Access denied</h1><p>Only a superadmin can manage users.</p><a class="btn btn-primary" href="#/">Back to reports</a></div>');
+    return;
+  }
+  if (parts[0] === 'oversight' && canReview(S.user.role)) return oversightView();
   if (parts[0] === 'profile') return profileView();
   return homeView();
 }
@@ -194,7 +209,8 @@ function shell(active, content) {
     <a class="brand-home" href="#/" aria-label="Adelaide University home"><img class="brand-logo" src="assets/adelaide-university.png" alt="Adelaide University"></a>
     <nav class="nav" aria-label="Main">
       <a href="#/" ${active === 'home' ? 'aria-current="page"' : ''}>Reports${pending}</a>
-      ${S.user.role === 'admin' ? `<a href="#/oversight" ${active === 'oversight' ? 'aria-current="page"' : ''}>Oversight</a><a href="#/accounts" ${active === 'accounts' ? 'aria-current="page"' : ''}>Accounts</a>` : ''}
+      ${canReview(S.user.role) ? `<a href="#/oversight" ${active === 'oversight' ? 'aria-current="page"' : ''}>Oversight</a>` : ''}
+      ${canManageUsers() ? `<a href="#/superadmin" ${active === 'accounts' ? 'aria-current="page"' : ''}>Superadmin dashboard</a>` : ''}
     </nav>
     <span class="spacer"></span>
     <button class="icon-btn" id="fullscreen" title="Full screen" aria-label="Full screen">${document.fullscreenElement ? icon.shrink : icon.expand}</button>
@@ -216,9 +232,9 @@ function toggleMenu() {
   if (open) { open.remove(); $('#me')?.setAttribute('aria-expanded', 'false'); return; }
   const menu = document.createElement('div');
   menu.className = 'menu';
-  menu.innerHTML = `<div class="who"><b>${esc(S.user.display_name || S.user.username)}</b><div class="faint">${esc(S.user.username)} · ${esc(ROLE_LABELS[S.user.role] || S.user.role)}</div></div>
+  menu.innerHTML = `<div class="who"><b>${esc(S.user.display_name || S.user.username)}</b><div class="faint">${esc(S.user.username)} · ${esc(roleLabel(S.user.role))}</div></div>
     <a href="#/profile">Profile and password</a>
-    ${S.user.role === 'admin' ? '<a href="#/accounts">Manage accounts</a>' : ''}
+    ${canManageUsers() ? '<a href="#/superadmin">Manage users</a>' : ''}
     <button id="signout">Sign out</button>`;
   document.body.append(menu);
   $('#me').setAttribute('aria-expanded', 'true');
@@ -244,7 +260,7 @@ function signInView(mode) {
     <section class="auth-panel" id="main">
       ${register ? `
         <h2>Create your account</h2>
-        <p class="sub">An administrator approves new accounts before they can sign in.</p>
+        <p class="sub">A superadmin approves new accounts before they can sign in.</p>
         <form id="form">
           <label class="field"><span>Full name</span><input class="input" name="display_name" autocomplete="name" required></label>
           <label class="field"><span>Username</span><input class="input" name="username" autocomplete="username" required><small>Letters, numbers, dots or hyphens. You'll use it to sign in.</small></label>
@@ -279,7 +295,7 @@ function signInView(mode) {
         try {
           const r = await api('/auth/register', { method: 'POST', body: data });
           e.target.reset();
-          msg(`Request sent for “${r.username}”. You can sign in once an administrator approves it.`, 'good');
+          msg(`Request sent for “${r.username}”. You can sign in once a superadmin approves it.`, 'good');
         } catch (error) { msg(error.message); }
       });
     } else {
@@ -328,13 +344,19 @@ function googleButton(target, onCredential) {
 
 // ---- home: reports ------------------------------------------------------------------------------
 async function homeView() {
+  const navigation = S.navigation;
   S.work = null;
   shell('home', '<div class="loading"><div class="spinner"></div>Loading your reports…</div>');
   let mine = [], pending = [], approved = [];
   try {
     [mine, pending, approved] = await Promise.all([
       api('/reports?view=mine'), api('/reports?view=pending'), api('/reports?view=approved')]);
-  } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
+  } catch (error) {
+    if (navigation !== S.navigation) return;
+    $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`;
+    return;
+  }
+  if (navigation !== S.navigation) return;
   S.pendingCount = pending.length;
   const working = mine.filter((r) => r.status !== 'HUMAN REVIEWED');
   const returned = mine.filter((r) => r.status === 'CHANGES REQUESTED').length;
@@ -366,7 +388,7 @@ async function homeView() {
       </div>
       <button class="btn btn-primary btn-lg" id="start" disabled>Analyse survey</button>
     </form>
-    ${S.user.role === 'admin' || pending.length ? `<div class="section-head"><h2>Waiting for your review</h2><span class="faint">${pending.length}</span></div>
+    ${canReview(S.user.role) || pending.length ? `<div class="section-head"><h2>Waiting for your review</h2><span class="faint">${pending.length}</span></div>
       <div class="list">${pending.map((r) => row(r, { owner: true })).join('') || '<div class="empty">Nothing to review right now. Reports teammates submit appear here.</div>'}</div>` : ''}
     <div class="section-head"><h2>Your reports</h2><span class="faint">${working.length}</span></div>
     <div class="list">${working.map((r) => row(r, { delete: true })).join('') || '<div class="empty">No reports yet. Your drafts appear here, and only you can see them until you send them for review.</div>'}</div>
@@ -894,21 +916,20 @@ function sendStep(el, ws) {
     const select = $('#reviewer');
     if (!select) return;
     if (!list.length) {
-      $('#reviewer-field').innerHTML = `<div class="notice warn">${S.user.role === 'admin'
-        ? 'There is nobody else to review your report yet. Add or approve another account under Accounts.'
-        : 'There is no administrator to review this report yet. Ask an administrator to set one up.'}</div>`;
+      $('#reviewer-field').innerHTML = `<div class="notice warn">${canManageUsers()
+        ? 'There is nobody else to review your report yet. Create or approve another user in the Superadmin dashboard.'
+        : 'There is nobody available to review this report yet. Ask a superadmin to set up a reviewer.'}</div>`;
       return;
     }
     const option = (p) => `<option value="${esc(p.username)}">${person(p.display_name, p.username)}</option>`;
     const groups = [
+      ['Superadmins', list.filter((p) => p.role === 'superadmin')],
       ['Administrators', list.filter((p) => p.role === 'admin')],
       ['Facilitators', list.filter((p) => p.role === 'facilitator')],
       ['Clients', list.filter((p) => p.role === 'client')],
-      ['Team members', list.filter((p) => p.role === 'member' || (!['admin', 'facilitator', 'client'].includes(p.role)))],
-    ].filter(([, members]) => members.length > 0);
-    select.innerHTML = groups.length > 1
-      ? groups.map(([label, members]) => `<optgroup label="${label}">${members.map(option).join('')}</optgroup>`).join('')
-      : list.map(option).join('');
+      ['Team members', list.filter((p) => !['superadmin', 'admin', 'facilitator', 'client'].includes(p.role))],
+    ].filter(([, people]) => people.length);
+    select.innerHTML = groups.map(([label, people]) => `<optgroup label="${label}">${people.map(option).join('')}</optgroup>`).join('');
     select.disabled = false;
     $('#submit').disabled = !(ready && ws.can_edit);
   }).catch((error) => toast(error.message, true));
@@ -1066,76 +1087,89 @@ async function oversightView() {
   </div>`;
 }
 
-// ---- accounts (administrators) -----------------------------------------------------------------
+// ---- superadmin dashboard -----------------------------------------------------------------------
 async function accountsView() {
+  const navigation = S.navigation;
+  if (!canManageUsers()) return go('#/');
   shell('accounts', '<div class="loading"><div class="spinner"></div>Loading accounts…</div>');
   let users;
-  try { users = await api('/users'); } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
-  const userRoles = (S.config?.user_roles && S.config.user_roles.length) ? S.config.user_roles : ['admin', 'facilitator', 'client', 'member'];
+  try { users = await api('/users'); } catch (error) {
+    if (navigation !== S.navigation) return;
+    $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`;
+    return;
+  }
+  if (navigation !== S.navigation) return;
+  const userRoles = (S.config?.user_roles && S.config.user_roles.length) ? S.config.user_roles : ['member', 'admin', 'facilitator', 'client', 'superadmin'];
   const waiting = users.filter((u) => !u.approved);
   const state = (u) => !u.approved ? '<span class="pill waiting">Waiting for approval</span>' : u.active ? '<span class="pill approved">Active</span>' : '<span class="pill draft">Disabled</span>';
   const me = S.user.username;
   $('#main').innerHTML = `<div class="page accounts">
-    <div class="hello"><h1>Accounts</h1><p>${waiting.length ? `${waiting.length} ${waiting.length === 1 ? 'person is' : 'people are'} waiting for approval.` : 'Approve new people, change roles and reset passwords. Nobody, including you, can see passwords.'}</p></div>
-    <div class="table-wrap" style="max-height:none"><table><thead><tr><th>Person</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-    ${users.map((u) => `<tr><td><b>${esc(u.display_name || u.username)}</b><div class="faint">${esc(u.username)}${u.google ? ' · Google connected' : ''}</div></td>
-      <td>${esc(u.email || '—')}</td>
-      <td>${!u.approved || u.username === me
-        ? `<span>${esc(ROLE_LABELS[u.role] || u.role)}</span>${u.username === me ? ' <small class="faint">(you)</small>' : ''}`
-        : `<select class="input input-sm role-select" data-user="${esc(u.username)}" data-current="${esc(u.role)}" aria-label="Role for ${esc(u.username)}">
-            ${userRoles.map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${esc(ROLE_LABELS[r] || r)}</option>`).join('')}
-          </select>`}</td>
-      <td>${state(u)}</td>
-      <td><div class="actions">${!u.approved
-        ? `<button class="btn btn-good btn-sm" data-act="approve" data-user="${esc(u.username)}">Approve</button><button class="btn btn-bad btn-sm" data-act="reject" data-user="${esc(u.username)}">Reject</button>`
-        : `${u.username !== me ? `<button class="btn btn-ghost btn-sm" data-act="role" data-user="${esc(u.username)}" data-role="${u.role}">Change role</button>
-           <button class="btn btn-ghost btn-sm" data-act="active" data-user="${esc(u.username)}" data-active="${u.active}">${u.active ? 'Disable' : 'Enable'}</button>` : ''}
-           <button class="btn btn-quiet btn-sm" data-act="password" data-user="${esc(u.username)}">Reset password</button>`}</div></td></tr>`).join('')}
-    </tbody></table></div></div>`;
-  $$('.role-select').forEach((sel) => sel.onchange = async () => {
-    const user = encodeURIComponent(sel.dataset.user);
-    const newRole = sel.value;
-    try {
-      await api(`/users/${user}/role`, { method: 'POST', body: { role: newRole } });
-      toast(`${sel.dataset.user} is now ${ROLE_LABELS[newRole] || newRole}`);
-      accountsView();
-    } catch (error) {
-      toast(error.message, true);
-      sel.value = sel.dataset.current;
-    }
-  });
-  $$('[data-act]').forEach((b) => b.onclick = async () => {
+    <div class="hello user-dashboard-heading"><div><span class="eyebrow">Access management</span><h1>Superadmin dashboard</h1><p>Create users, assign roles and keep account access up to date.</p></div><button class="btn btn-primary" id="create-user">+ Create user</button></div>
+    <div class="stats user-stats" aria-label="Account summary">
+      <div class="stat lead"><b>${users.length}</b><span>Total users</span></div>
+      <div class="stat"><b>${users.filter((u) => u.approved && u.active).length}</b><span>Active</span></div>
+      <div class="stat"><b>${waiting.length}</b><span>Waiting for approval</span></div>
+      <div class="stat"><b>${users.filter((u) => u.role === 'superadmin').length}</b><span>Superadmins</span></div>
+    </div>
+    <div class="user-toolbar"><label class="field"><span>Search users</span><input class="input" id="user-search" type="search" placeholder="Name, username, email or role"></label>
+      <label class="field"><span>Role</span><select class="input" id="user-role-filter"><option value="">All roles</option>${userRoles.map((r) => `<option value="${esc(r)}">${esc(roleLabel(r))}</option>`).join('')}</select></label>
+      <button class="btn btn-ghost" id="refresh-users">Refresh</button></div>
+    <div class="table-wrap user-table"><table><thead><tr><th>Person</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody id="user-rows"></tbody></table></div>
+    <p class="faint user-note">Passwords are stored securely and cannot be viewed. Removing a user revokes access and preserves their report and review history.</p></div>`;
+  const roleOptions = (role) => userRoles.map((r) => `<option value="${esc(r)}" ${r === role ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('');
+  const editUser = async (u, button) => {
+    const create = !u;
+    const result = await dialog({ title: create ? 'Create user' : `Edit ${u.username}`, confirm: create ? 'Create user' : 'Save changes',
+      body: create ? 'Set their first password and role. They can change their password after signing in.' : 'Usernames stay fixed to preserve report ownership.',
+      fields: `${create ? '<label class="field"><span>Username</span><input class="input" name="username" maxlength="64" autocomplete="off" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.@\\-]*"></label>' : ''}
+        <label class="field"><span>Full name</span><input class="input" name="display_name" maxlength="80" value="${esc(u?.display_name || '')}"></label>
+        <label class="field"><span>Email (optional)</span><input class="input" name="email" type="email" maxlength="254" value="${esc(u?.email || '')}"></label>
+        <label class="field"><span>Role</span><select class="input" name="role" ${u?.username === me ? 'disabled' : ''}>${roleOptions(u?.role || 'member')}</select>${u?.username === me ? '<small>Another superadmin must change your role.</small>' : ''}</label>
+        ${create ? '<label class="field"><span>Password</span><input class="input" name="password" type="password" minlength="8" required autocomplete="new-password"></label><label class="field"><span>Confirm password</span><input class="input" name="confirm" type="password" minlength="8" required autocomplete="new-password"></label>' : ''}`,
+      validate: (r) => create && r.password !== r.confirm ? 'The passwords do not match.' : '' });
+    if (!result) return;
+    delete result.confirm;
+    await busy(button, async () => { await api(create ? '/users' : `/users/${encodeURIComponent(u.username)}`, { method: create ? 'POST' : 'PATCH', body: result }); toast(create ? 'User created. They can sign in now.' : 'User updated'); await accountsView(); });
+  };
+  $('#create-user').onclick = (e) => editUser(null, e.currentTarget);
+  $('#refresh-users').onclick = () => accountsView();
+  const renderUsers = () => {
+    const query = $('#user-search').value.trim().toLowerCase(), role = $('#user-role-filter').value;
+    const filtered = users.filter((u) => (!role || u.role === role) && [u.username, u.display_name, u.email, roleLabel(u.role)].join(' ').toLowerCase().includes(query));
+    $('#user-rows').innerHTML = filtered.length ? filtered.map((u) => `<tr><td><b>${esc(u.display_name || u.username)}</b><div class="faint">${esc(u.username)}${u.username === me ? ' · You' : ''}${u.google ? ' · Google connected' : ''}</div></td>
+      <td>${esc(u.email || '—')}</td><td><span class="pill ${u.role === 'superadmin' ? 'reviewed' : 'draft'}">${roleLabel(u.role)}</span></td><td>${state(u)}</td>
+      <td><div class="actions"><button class="btn btn-ghost btn-sm" data-act="edit" data-user="${esc(u.username)}">Edit</button>
+        ${!u.approved ? `<button class="btn btn-good btn-sm" data-act="approve" data-user="${esc(u.username)}">Approve</button><button class="btn btn-bad btn-sm" data-act="reject" data-user="${esc(u.username)}">Reject</button>` : `<button class="btn btn-quiet btn-sm" data-act="password" data-user="${esc(u.username)}">Reset password</button>${u.username !== me ? `<button class="btn btn-ghost btn-sm" data-act="active" data-user="${esc(u.username)}" data-active="${Boolean(u.active)}">${u.active ? 'Disable' : 'Enable'}</button>` : ''}`}
+        ${u.username !== me ? `<button class="btn btn-bad btn-sm" data-act="remove" data-user="${esc(u.username)}">Remove</button>` : ''}</div></td></tr>`).join('') : '<tr><td colspan="5" class="faint">No users match your search.</td></tr>';
+  };
+  $('#user-search').oninput = renderUsers;
+  $('#user-role-filter').onchange = renderUsers;
+  $('#user-rows').onclick = async (event) => {
+    const b = event.target.closest('[data-act]');
+    if (!b) return;
     const user = encodeURIComponent(b.dataset.user);
     const act = b.dataset.act;
+    if (act === 'edit') return editUser(users.find((u) => u.username === b.dataset.user), b);
     let call, message;
     if (act === 'approve') { call = () => api(`/users/${user}/approve`, { method: 'POST' }); message = `${b.dataset.user} approved`; }
     if (act === 'reject') {
       if (!await dialog({ title: 'Reject this request?', body: `The account request from ${esc(b.dataset.user)} will be removed.`, confirm: 'Reject', danger: true })) return;
       call = () => api(`/users/${user}/reject`, { method: 'POST' }); message = 'Request rejected';
     }
-    if (act === 'role') {
-      const currentRole = b.dataset.role;
-      const r = await dialog({
-        title: `Change role for ${esc(b.dataset.user)}`,
-        body: 'Select the role and access level for this user.',
-        confirm: 'Change role',
-        fields: `<label class="field"><span>Role</span><select class="input" name="role">
-          ${userRoles.map((k) => `<option value="${k}" ${k === currentRole ? 'selected' : ''}>${esc(ROLE_LABELS[k] || k)}</option>`).join('')}
-        </select></label>`
-      });
-      if (!r || r.role === currentRole) return;
-      call = () => api(`/users/${user}/role`, { method: 'POST', body: { role: r.role } });
-      message = `${b.dataset.user} is now ${ROLE_LABELS[r.role] || r.role}`;
+    if (act === 'remove') {
+      if (!await dialog({ title: `Remove ${b.dataset.user}?`, body: 'They will lose access. Reports and review history will be preserved.', confirm: 'Remove user', danger: true })) return;
+      call = () => api(`/users/${user}`, { method: 'DELETE' }); message = 'User removed';
     }
     if (act === 'active') { const active = b.dataset.active !== 'true'; call = () => api(`/users/${user}/active?active=${active}`, { method: 'POST' }); message = `${b.dataset.user} ${active ? 'enabled' : 'disabled'}`; }
     if (act === 'password') {
       const r = await dialog({ title: `Reset password for ${esc(b.dataset.user)}`, body: 'Tell them the new password; they can change it in their profile.', confirm: 'Reset password',
-        fields: '<label class="field"><span>New password</span><input class="input" name="password" type="text" minlength="8" required autocomplete="off"><small>At least 8 characters.</small></label>' });
+        fields: '<label class="field"><span>New password</span><input class="input" name="password" type="password" minlength="8" required autocomplete="new-password"><small>At least 8 characters.</small></label>' });
       if (!r) return;
       call = () => api(`/users/${user}/password`, { method: 'POST', body: { new_password: r.password } }); message = 'Password reset';
     }
-    await busy(b, async () => { await call(); toast(message); accountsView(); });
-  });
+    if (call) await busy(b, async () => { await call(); toast(message); await accountsView(); });
+  };
+  renderUsers();
 }
 
 // ---- profile -------------------------------------------------------------------------------------
@@ -1144,7 +1178,7 @@ async function profileView() {
   let me;
   try { me = await api('/auth/me'); } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
   $('#main').innerHTML = `<div class="page narrow">
-    <div class="hello"><h1>Your profile</h1><p>Signed in as ${esc(me.username)}${me.role ? `, ${esc((ROLE_LABELS[me.role] || me.role).toLowerCase())}` : ''}.</p></div>
+    <div class="hello"><h1>Your profile</h1><p>Signed in as ${esc(me.username)}, ${esc(roleLabel(me.role))}.</p></div>
     <form id="details"><h2 style="margin-bottom:16px">Details</h2>
       <label class="field"><span>Full name</span><input class="input" name="display_name" value="${esc(me.display_name)}" maxlength="80"></label>
       <label class="field"><span>Email</span><input class="input" name="email" type="email" value="${esc(me.email)}"></label>

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from src import workspace
 from src.storage.snapshot import pack, unpack
+from src.roles import can_review_reports
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 SUFFIXES = {'.csv', '.xlsx', '.xls'}
@@ -27,13 +28,13 @@ def build_router(services, current_user):
     def permissions(row, state, user):
         status = state['workflow'].status
         can_edit = row['owner'] == user['username'] and status in workspace.EDITABLE
-        assigned_to_me = row['reviewer'] == user['username'] or (not row['reviewer'] and user['role'] == 'admin')
+        assigned_to_me = row['reviewer'] == user['username'] or (not row['reviewer'] and can_review_reports(user['role']))
         can_review = row['owner'] != user['username'] and status == 'AWAITING HUMAN REVIEW' and assigned_to_me
         return can_edit, can_review
 
     def open_report(report_id, user):
         row = services.reports.load(report_id, user['username'])
-        if row['owner'] != user['username'] and user['role'] != 'admin' and row['reviewer'] != user['username']:
+        if row['owner'] != user['username'] and not can_review_reports(user['role']) and row['reviewer'] != user['username']:
             raise ValueError('This report is unavailable for this account.')
         return row, unpack(row['snapshot'])
 
@@ -165,7 +166,7 @@ def build_router(services, current_user):
 
     @router.get('/oversight')
     def oversight(user=Depends(current_user)):
-        if user['role'] != 'admin':
+        if not can_review_reports(user['role']):
             raise HTTPException(403, 'Only an administrator can see the oversight panel.')
         from server.oversight import summarise
         names = {u['username']: u['display_name'] or u['username'] for u in services.users.list()}
