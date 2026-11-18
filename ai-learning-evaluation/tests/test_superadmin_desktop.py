@@ -121,3 +121,37 @@ def test_admin_desktop_has_no_user_management(live_server, tk_runtime, monkeypat
         app.dispose_workspace()
         root.update()
         root.destroy()
+
+
+def test_access_button_follows_confirmed_status_and_remains_selected(super_dashboard):
+    app, dashboard, users = super_dashboard
+    select(dashboard, 'alex')
+    for enabled in (False, True, False, True):
+        assert dashboard.actions['active'].cget('text') == ('Disable' if not enabled else 'Enable')
+        dashboard.toggle_active()
+        assert str(dashboard.actions['active'].cget('state')) == 'disabled'
+        assert str(dashboard.create_button.cget('state')) == 'disabled'
+        wait_for(app.root, lambda: not dashboard.busy and bool(dashboard.users['alex']['active']) is enabled)
+        assert dashboard.selected_name() == 'alex'
+        assert dashboard.actions['active'].cget('text') == ('Disable' if enabled else 'Enable')
+        assert str(dashboard.actions['active'].cget('state')) == 'normal'
+        assert bool(users.get('alex')['active']) is enabled
+
+
+def test_failed_access_change_restores_retry_without_changing_label(super_dashboard, monkeypatch):
+    app, dashboard, users = super_dashboard
+    select(dashboard, 'alex')
+    original = remote.set_user_active
+    def failed(*args):
+        raise remote.ServerError('The account could not be updated.')
+    monkeypatch.setattr(remote, 'set_user_active', failed)
+    dashboard.toggle_active()
+    wait_for(app.root, lambda: not dashboard.busy)
+    assert dashboard.actions['active'].cget('text') == 'Disable'
+    assert str(dashboard.actions['active'].cget('state')) == 'normal'
+    assert users.get('alex')['active']
+    assert 'could not be updated' in dashboard.status.get()
+    monkeypatch.setattr(remote, 'set_user_active', original)
+    dashboard.toggle_active()
+    wait_for(app.root, lambda: not dashboard.busy and not dashboard.users['alex']['active'])
+    assert dashboard.actions['active'].cget('text') == 'Enable'

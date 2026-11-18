@@ -329,7 +329,8 @@ class AccountsDialog(Dialog):
         self.search = tk.StringVar(self.window)
         ttk.Entry(toolbar, textvariable=self.search, width=32).pack(side='left', fill='x', expand=True)
         self.search.trace_add('write', lambda *args: self.render_users())
-        self.button(toolbar, 'Refresh', lambda: self.refresh(), primary=False).pack(side='right', padx=(10, 0))
+        self.refresh_button = self.button(toolbar, 'Refresh', lambda: self.refresh(), primary=False)
+        self.refresh_button.pack(side='right', padx=(10, 0))
         self.tree = ttk.Treeview(self.card, columns=[c[0] for c in self.COLUMNS], show='headings', height=10)
         for key, caption, width in self.COLUMNS:
             self.tree.heading(key, text=caption)
@@ -393,9 +394,15 @@ class AccountsDialog(Dialog):
 
     def sync(self):
         user = self.users.get(self.selected_name())
+        for button in (self.create_button, self.refresh_button):
+            button.configure(state='disabled' if self.busy else 'normal')
         for button in self.actions.values():
-            button.configure(state='normal' if user else 'disabled')
+            button.configure(state='normal' if user and not self.busy else 'disabled')
         if not user:
+            self.actions['active'].configure(text='Disable')
+            return
+        self.actions['active'].configure(text='Disable' if user['active'] else 'Enable')
+        if self.busy:
             return
         pending = not user['approved']
         self.actions['approve'].configure(state='normal' if pending else 'disabled')
@@ -403,6 +410,9 @@ class AccountsDialog(Dialog):
         self.actions['active'].configure(text='Disable' if user['active'] else 'Enable',
                                          state='disabled' if pending or user['username'] == remote.session.username else 'normal')
         self.actions['remove'].configure(state='disabled' if user['username'] == remote.session.username else 'normal')
+
+    def busy_changed(self):
+        self.sync()
 
     def act(self, work, message):
         name = self.selected_name()
