@@ -292,12 +292,13 @@ def test_manage_cli_set_role(tmp_path, monkeypatch, capsys):
     from src.storage.database import Database, UserStore
 
     db_file = tmp_path / 'test_manage.sqlite3'
-    db_url = f'sqlite:///{db_file}'
+    db_url = str(db_file)
     monkeypatch.setenv('DATABASE_URL', db_url)
     monkeypatch.delenv('DATABASE_URL_UNPOOLED', raising=False)
 
     store = UserStore(Database(db_url))
     store.create('sarah', 'sarah-pass-1', role='member')
+    assert db_file.is_file()
 
     # Change role to facilitator
     manage.main(['set-role', 'sarah', '--role', 'facilitator'])
