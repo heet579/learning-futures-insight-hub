@@ -1087,19 +1087,30 @@ def generate_all_test_datasets(
     return generated
 
 
-def main() -> None:
+def _positive_count_argument(value: str) -> int:
+    try:
+        count = int(value)
+        _require_positive_count(count)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Response count must be a positive integer.") from exc
+    return count
+
+
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Generate large synthetic survey datasets.")
-    parser.add_argument("--canonical-count", type=int, default=5000, help="Responses for large canonical file (default 5000)")
-    parser.add_argument("--qualtrics-count", type=int, default=1000, help="Responses per Qualtrics course file (default 1000)")
+    parser.add_argument("--canonical-count", type=_positive_count_argument, default=5000, help="Responses for large canonical file (default 5000)")
+    parser.add_argument("--qualtrics-count", type=_positive_count_argument, default=1000, help="Responses per Qualtrics course file (default 1000)")
+    parser.add_argument("--output-dir", type=Path, help="Write generated files into this folder instead of the application's data folder")
     parser.add_argument("--seed", type=int, default=2026, help="Random seed for deterministic generation (default 2026)")
     parser.add_argument("--no-excel", action="store_true", help="Skip generating .xlsx versions")
     parser.add_argument("--no-client", action="store_true", help="Skip copying to data/client/ folder")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     generate_all_test_datasets(
         canonical_count=args.canonical_count,
         qualtrics_course_count=args.qualtrics_count,
         seed=args.seed,
+        data_dir=args.output_dir,
         include_excel=not args.no_excel,
         populate_client_folder=not args.no_client,
     )
