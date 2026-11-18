@@ -1,13 +1,12 @@
 """Validation and integration tests for the generated large synthetic datasets."""
 from pathlib import Path
 import pytest
-import pandas as pd
 
 from src.analytics.qualitative import collect_comments
 from src.analytics.quantitative import calculate_metrics
 from src.analytics.themes import extract_themes
 from src.config import DATA_DIR, REQUIRED_COLUMNS
-from src.ingestion.qualtrics_loader import load_qualtrics_export, load_qualtrics_folder, load_survey
+from src.ingestion.qualtrics_loader import load_qualtrics_folder, load_survey
 from src.ingestion.validator import validate_dataframe
 from src.privacy.pii_masker import detect_pii_counts, mask_dataframe
 from src import workspace
@@ -19,12 +18,7 @@ def data_directory():
 
 
 @pytest.fixture(scope="module")
-def large_canonical_files(tmp_path_factory, data_directory):
-    csv_path = data_directory / "synthetic_qualtrics_evaluation_large.csv"
-    xlsx_path = data_directory / "synthetic_qualtrics_evaluation_large.xlsx"
-    if csv_path.exists() and xlsx_path.exists():
-        return csv_path, xlsx_path
-
+def large_canonical_files(tmp_path_factory):
     from scripts.generate_large_synthetic_data import generate_canonical_responses, write_dataframe_to_xlsx
     temp_dir = tmp_path_factory.mktemp("large_synthetic")
     csv_gen = temp_dir / "synthetic_qualtrics_evaluation_large.csv"
@@ -126,9 +120,8 @@ def test_qualtrics_course_exports_map_correctly(data_directory, course_stem, exp
         assert df["WhatCouldImprove"].dropna().str.len().gt(0).any()
 
 
-def test_qualtrics_client_folder_multi_load(data_directory):
-    client_dir = data_directory / "client"
-    folder = client_dir if client_dir.is_dir() else (data_directory / "synthetic_qualtrics_exports")
+def test_qualtrics_synthetic_folder_multi_load(data_directory):
+    folder = data_directory / "synthetic_qualtrics_exports"
     assert folder.is_dir()
 
     combined = load_qualtrics_folder(folder)
@@ -136,7 +129,7 @@ def test_qualtrics_client_folder_multi_load(data_directory):
     assert combined["CourseCode"].nunique() == 5
 
     # Run analysis through workspace
-    masked, ctx, count, courses = workspace.analyse(combined, "PACE_2023_2025_Cohort")
+    masked, ctx, count, courses = workspace.analyse(combined, "Synthetic Qualtrics exports")
     assert ctx.metrics["response_count"] == 5000
     assert len(ctx.themes) >= 6
     assert courses == [
@@ -149,6 +142,6 @@ def test_qualtrics_client_folder_multi_load(data_directory):
 
     # Course scope filtering
     scope = "Finance for Non-Financial Managers - Nov 2024"
-    masked, sub_ctx, _, _ = workspace.analyse(combined, "Client Drop", scope=scope)
+    masked, sub_ctx, _, _ = workspace.analyse(combined, "Synthetic Qualtrics exports", scope=scope)
     assert sub_ctx.metrics["response_count"] == 1000
     assert sub_ctx.course_name == scope

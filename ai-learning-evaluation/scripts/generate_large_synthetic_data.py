@@ -316,8 +316,14 @@ def _sample_additional_comment(rng: random.Random, overall: int) -> str:
 # Canonical Dataset Generator
 # ---------------------------------------------------------------------------
 
+def _require_positive_count(count: int, label: str = "Response count") -> None:
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        raise ValueError(f"{label} must be a positive integer.")
+
+
 def generate_canonical_responses(count: int = 5000, seed: int = 2026) -> pd.DataFrame:
     """Generate high-volume canonical dataset matching REQUIRED_COLUMNS."""
+    _require_positive_count(count)
     rng = random.Random(seed)
     start_date = datetime(2024, 1, 15)
     rows = []
@@ -371,9 +377,14 @@ def generate_canonical_responses(count: int = 5000, seed: int = 2026) -> pd.Data
         })
 
     # Ensure deterministic PII coverage at known indexes for test assertions
-    rows[7]["AdditionalComments"] = "Please contact me directly: sarah.jenkins@adelaide.edu.au or 0412 345 678."
-    rows[23]["AdditionalComments"] = "Call David on 0401 223 889 if you hold the future leadership focus session."
-    rows[64]["AdditionalComments"] = "Reference notes and handouts available at https://pace.adelaide.edu.au/resources."
+    pii_examples = {
+        7: "Please contact me directly: sarah.jenkins@adelaide.edu.au or 0412 345 678.",
+        23: "Call David on 0401 223 889 if you hold the future leadership focus session.",
+        64: "Reference notes and handouts available at https://pace.adelaide.edu.au/resources.",
+    }
+    for index, comment in pii_examples.items():
+        if index < count:
+            rows[index]["AdditionalComments"] = comment
 
     df = pd.DataFrame(rows)
     return df[REQUIRED_COLUMNS]
@@ -391,6 +402,7 @@ def _generate_qualtrics_table(
     count: int,
     seed: int,
 ) -> list[list[Any]]:
+    _require_positive_count(count)
     rng = random.Random(seed)
     table = [h1, h2, h3]
     for idx in range(count):
@@ -983,9 +995,11 @@ def generate_all_test_datasets(
     seed: int = 2026,
     data_dir: Path | str | None = None,
     include_excel: bool = True,
-    populate_client_folder: bool = True,
+    populate_client_folder: bool = False,
 ) -> dict[str, Path]:
-    """Generate canonical and authentic Qualtrics datasets for end-to-end testing."""
+    """Generate test datasets, leaving the client-data folder alone unless opted in."""
+    _require_positive_count(canonical_count, "Canonical response count")
+    _require_positive_count(qualtrics_course_count, "Qualtrics response count")
     root = Path(data_dir) if data_dir else Path(__file__).resolve().parents[1] / "data"
     root.mkdir(parents=True, exist_ok=True)
 
@@ -997,6 +1011,7 @@ def generate_all_test_datasets(
         client_dir.mkdir(parents=True, exist_ok=True)
 
     generated: dict[str, Path] = {}
+    formats = "CSV and XLSX" if include_excel else "CSV"
 
     print(f"Generating Canonical dataset ({canonical_count:,} responses)...")
     canonical_df = generate_canonical_responses(canonical_count, seed=seed)
@@ -1059,11 +1074,11 @@ def generate_all_test_datasets(
                 client_xlsx = client_dir / f"{name_stem}.xlsx"
                 write_dataframe_to_xlsx(client_xlsx, table)
 
-        print(f"  -> Wrote CSV and XLSX for {name_stem}")
+        print(f"  -> Wrote {formats} for {name_stem}")
 
     print("\nSummary of generated synthetic data:")
-    print(f"  - Large Canonical responses: {canonical_count:,} rows (CSV & XLSX)")
-    print(f"  - Standard Canonical responses: 3,000 rows (CSV & XLSX)")
+    print(f"  - Large Canonical responses: {canonical_count:,} rows ({formats})")
+    print(f"  - Standard Canonical responses: 3,000 rows ({formats})")
     print(f"  - Authentic Qualtrics exports: 5 courses, {total_qualtrics_responses:,} rows total")
     print(f"  - Location: {root}")
     print(f"  - Qualtrics folder: {exports_dir}")
@@ -1073,21 +1088,37 @@ def generate_all_test_datasets(
     return generated
 
 
-def main() -> None:
+def _positive_count_argument(value: str) -> int:
+    try:
+        count = int(value)
+        _require_positive_count(count)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Response count must be a positive integer.") from exc
+    return count
+
+
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Generate large synthetic survey datasets.")
-    parser.add_argument("--canonical-count", type=int, default=5000, help="Responses for large canonical file (default 5000)")
-    parser.add_argument("--qualtrics-count", type=int, default=1000, help="Responses per Qualtrics course file (default 1000)")
+    parser.add_argument("--canonical-count", type=_positive_count_argument, default=5000, help="Responses for large canonical file (default 5000)")
+    parser.add_argument("--qualtrics-count", type=_positive_count_argument, default=1000, help="Responses per Qualtrics course file (default 1000)")
+    parser.add_argument("--output-dir", type=Path, help="Write generated files into this folder instead of the application's data folder")
     parser.add_argument("--seed", type=int, default=2026, help="Random seed for deterministic generation (default 2026)")
     parser.add_argument("--no-excel", action="store_true", help="Skip generating .xlsx versions")
-    parser.add_argument("--no-client", action="store_true", help="Skip copying to data/client/ folder")
-    args = parser.parse_args()
+    client_options = parser.add_mutually_exclusive_group()
+    client_options.add_argument("--populate-client", dest="populate_client_folder", action="store_true",
+                                help="Also copy synthetic exports into the output folder's client/ subfolder")
+    client_options.add_argument("--no-client", dest="populate_client_folder", action="store_false",
+                                help="Leave the client/ subfolder alone (the default)")
+    parser.set_defaults(populate_client_folder=False)
+    args = parser.parse_args(argv)
 
     generate_all_test_datasets(
         canonical_count=args.canonical_count,
         qualtrics_course_count=args.qualtrics_count,
         seed=args.seed,
+        data_dir=args.output_dir,
         include_excel=not args.no_excel,
-        populate_client_folder=not args.no_client,
+        populate_client_folder=args.populate_client_folder,
     )
 
 
