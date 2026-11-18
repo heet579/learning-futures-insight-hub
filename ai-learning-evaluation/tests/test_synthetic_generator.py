@@ -103,3 +103,11 @@ def test_cli_client_copying_requires_opt_in(tmp_path, options, populated):
     assert client.exists() is populated
     if populated:
         assert len(list(client.glob("*.csv"))) == 5
+
+
+def test_generation_is_repeatable_with_an_explicit_seed():
+    original = generator.generate_canonical_responses(65, seed=2026)
+    repeated = generator.generate_canonical_responses(65, seed=2026)
+    changed = generator.generate_canonical_responses(65, seed=2027)
+    pd.testing.assert_frame_equal(original, repeated)
+    assert not original.equals(changed)

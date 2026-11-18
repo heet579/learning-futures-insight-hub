@@ -3,7 +3,8 @@ from pathlib import Path
 
 SUITES = {
     'data': ('Survey imports, calculations and privacy', (
-        'ingestion', 'qualtrics_real_export', 'excel_import', 'metrics', 'themes', 'privacy', 'data_boundaries')),
+        'ingestion', 'qualtrics_real_export', 'excel_import', 'metrics', 'themes', 'privacy', 'data_boundaries',
+        'large_synthetic_data', 'synthetic_generator')),
     'analysis': ('Insights, questions and evidence checks', ('gemini', 'copilot', 'prompts', 'grounding')),
     'reports': ('Reports, revisions, review gates and audit', ('reporting', 'revisions', 'workflow', 'review', 'audit')),
     'accounts': ('Sign-in, accounts and session changes', ('auth', 'accounts', 'account_session', 'login')),

@@ -155,6 +155,16 @@ def test_new_files_are_discovered_by_default_and_unknowns_are_visible(project):
     assert group_for('tools/tests/test_suiterunner.py::test_one') == 'runner'
 
 
+def test_data_suite_includes_the_synthetic_generator_and_exports(project):
+    tests = project / 'ai-learning-evaluation/tests'
+    (tests / 'test_large_synthetic_data.py').touch()
+    (tests / 'test_synthetic_generator.py').touch()
+    assert selected_paths(project, ['data']) == [
+        'ai-learning-evaluation/tests/test_large_synthetic_data.py',
+        'ai-learning-evaluation/tests/test_synthetic_generator.py',
+    ]
+
+
 def test_teardown_error_overrides_pass_without_double_counting():
     book = ResultBook()
     common = dict(nodeid='ai-learning-evaluation/tests/test_metrics.py::test_one', duration=.1, skipped=False)
