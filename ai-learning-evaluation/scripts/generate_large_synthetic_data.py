@@ -995,9 +995,9 @@ def generate_all_test_datasets(
     seed: int = 2026,
     data_dir: Path | str | None = None,
     include_excel: bool = True,
-    populate_client_folder: bool = True,
+    populate_client_folder: bool = False,
 ) -> dict[str, Path]:
-    """Generate canonical and authentic Qualtrics datasets for end-to-end testing."""
+    """Generate test datasets, leaving the client-data folder alone unless opted in."""
     _require_positive_count(canonical_count, "Canonical response count")
     _require_positive_count(qualtrics_course_count, "Qualtrics response count")
     root = Path(data_dir) if data_dir else Path(__file__).resolve().parents[1] / "data"
@@ -1103,7 +1103,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--output-dir", type=Path, help="Write generated files into this folder instead of the application's data folder")
     parser.add_argument("--seed", type=int, default=2026, help="Random seed for deterministic generation (default 2026)")
     parser.add_argument("--no-excel", action="store_true", help="Skip generating .xlsx versions")
-    parser.add_argument("--no-client", action="store_true", help="Skip copying to data/client/ folder")
+    client_options = parser.add_mutually_exclusive_group()
+    client_options.add_argument("--populate-client", dest="populate_client_folder", action="store_true",
+                                help="Also copy synthetic exports into the output folder's client/ subfolder")
+    client_options.add_argument("--no-client", dest="populate_client_folder", action="store_false",
+                                help="Leave the client/ subfolder alone (the default)")
+    parser.set_defaults(populate_client_folder=False)
     args = parser.parse_args(argv)
 
     generate_all_test_datasets(
@@ -1112,7 +1117,7 @@ def main(argv: list[str] | None = None) -> None:
         seed=args.seed,
         data_dir=args.output_dir,
         include_excel=not args.no_excel,
-        populate_client_folder=not args.no_client,
+        populate_client_folder=args.populate_client_folder,
     )
 
 

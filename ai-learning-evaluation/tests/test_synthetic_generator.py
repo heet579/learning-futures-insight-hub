@@ -77,3 +77,29 @@ def test_cli_invalid_counts_show_a_clear_error(tmp_path, capsys, option, value):
     assert exc.value.code == 2
     assert "positive integer" in capsys.readouterr().err
     assert not output.exists()
+
+
+def test_generation_preserves_existing_client_files_by_default(tmp_path):
+    client = tmp_path / "client"
+    client.mkdir()
+    existing = client / "8325+-+Leadership+and+Management+Essentials+-+August+2023_September+21,+2026_13.22.csv"
+    existing.write_text("Existing local survey file", encoding="utf-8")
+    generator.generate_all_test_datasets(1, 1, data_dir=tmp_path, include_excel=False)
+    assert existing.read_text(encoding="utf-8") == "Existing local survey file"
+    assert list(client.iterdir()) == [existing]
+
+
+@pytest.mark.parametrize("options,populated", [
+    ([], False),
+    (["--populate-client"], True),
+    (["--no-client"], False),
+])
+def test_cli_client_copying_requires_opt_in(tmp_path, options, populated):
+    generator.main([
+        "--canonical-count", "1", "--qualtrics-count", "1",
+        "--output-dir", str(tmp_path), "--no-excel", *options,
+    ])
+    client = tmp_path / "client"
+    assert client.exists() is populated
+    if populated:
+        assert len(list(client.glob("*.csv"))) == 5
