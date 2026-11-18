@@ -1,15 +1,17 @@
 # Superadmin and user management
 
 Desktop and browser accounts share the same server roles. Only **superadmins** can
-list or manage users. **Admins** retain report-review and oversight access. **Members**
-create and submit reports. Everyone can update their own profile and password.
+list or manage users. **Admins** retain report-review and oversight access. **Members**,
+**facilitators** and **clients** keep their existing report workflows. Everyone can update
+their own profile and password. All five roles remain valid for existing accounts,
+creation, editing, filters and command-line management.
 
-| Action | Member | Admin | Superadmin |
+| Action | Member / Facilitator / Client | Admin | Superadmin |
 |---|---|---|---|
 | Create and submit reports | Yes | Yes | Yes |
 | Review reports under the existing assignment rules | Assigned only | Yes | Yes |
 | View oversight | No | Yes | Yes |
-| Create users and assign member/admin/superadmin | No | No | Yes |
+| Create users and assign any of the five roles | No | No | Yes |
 | Edit other users, reset passwords, enable/disable | No | No | Yes |
 | Approve/reject signup requests or remove users | No | No | Yes |
 | Change own profile/password | Yes | Yes | Yes |
@@ -47,6 +49,12 @@ Usernames stay fixed because reports and audit records refer to them. **Edit** c
 profile details and roles. Passwords cannot be viewed; **Reset password** sets a new one.
 Search and role filtering help locate an account. Signup requests still need approval.
 
+The access button always shows the next action: **Disable** for an active account and
+**Enable** for a disabled account. It updates after the server confirms the change.
+Desktop controls are temporarily disabled during a request; a failed request restores
+the controls for retry without changing the displayed status. Long browser forms
+scroll within small windows so the form buttons remain reachable.
+
 **Remove user** immediately revokes access, hides the account from the dashboard and
 reserves the username. It retains the database account as a disabled tombstone so report
 ownership and review history remain intact. It does not erase their reports or audit
@@ -74,3 +82,16 @@ or password hashes. Role changes, updates and removals are audited.
 Deploy the updated server before using either updated interface. The `deleted` account
 column is added automatically on initialisation for SQLite and Postgres; no existing
 account is automatically promoted or removed. Back up the database before deployment.
+
+## Verification
+
+From the repository root, run `node --test tools/tests/test_superadmin_browser.mjs`
+with Node.js installed for the dashboard regression checks. They exercise the actual
+view with an in-memory API and DOM, covering numeric/boolean status flags, repeated
+Enable/Disable clicks, failed requests, facilitator/client editing, creation, role
+filtering, removal confirmation and access denial for non-superadmins.
+They also hold report/account requests open while navigating, verifying that late
+responses and errors cannot replace the newer Reports or Superadmin dashboard view.
+
+The Python suite includes the real desktop dashboard and account API tests. They use
+temporary accounts and databases; no hosted accounts are changed.

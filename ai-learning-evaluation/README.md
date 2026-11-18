@@ -126,6 +126,8 @@ The desktop implementation is `src/ui/desktop.py` with the review screens in `sr
 
 Run `python -m pytest -q`. Desktop regression tests cover loading, navigation, searches beyond the preview limit, invalid files, scope changes, unsaved work, preview/edit behavior, approval and export, theme evidence and local Q&A. Desktop tests require an available Tk display.
 
+The shared Superadmin dashboard supports all five roles, including existing facilitator and client accounts. See [the dashboard guide](docs/superadmin.md) for permissions and `node --test tools/tests/test_superadmin_browser.mjs` for the browser action regression checks (run from the repository root with Node.js installed).
+
 ## macOS display troubleshooting
 
 For a grey or partially blank screen, use the [Mac recovery steps](TEAM_TESTING.md#macos-blank-or-grey-window). The app now checks the actual Tk runtime before drawing the interface, uses the system font, and displays only the selected page. Startup and callback errors are reported instead of silently leaving an incomplete window.
