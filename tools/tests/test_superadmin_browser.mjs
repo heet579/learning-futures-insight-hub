@@ -98,6 +98,33 @@ function fixture(active = 1, operatorRole = 'superadmin', targetRole = 'member')
   };
 }
 
+for (const active of [1, true, 0, false]) {
+  await check(`Enable/Disable round trips from API status ${JSON.stringify(active)}`, async () => {
+    const app = fixture(active);
+    await app.render();
+    let enabled = Boolean(active);
+    for (let step = 0; step < 4; step++) {
+      assert.equal(app.button('active').innerHTML, enabled ? 'Disable' : 'Enable');
+      await app.click('active');
+      enabled = !enabled;
+      assert.equal(Boolean(app.users[1].active), enabled);
+      assert.equal(app.button('active').innerHTML, enabled ? 'Disable' : 'Enable');
+      assert.equal(app.button('active').disabled, false);
+    }
+  });
+}
+
+await check('Failed status changes keep the previous label and allow retry', async () => {
+  const app = fixture();
+  await app.render();
+  app.failActive();
+  await app.click('active');
+  assert.equal(app.button('active').innerHTML, 'Disable');
+  assert.equal(app.button('active').disabled, false);
+  assert.equal(app.users[1].active, 1);
+  assert.ok(app.messages.some((item) => item.bad && item.message === 'Could not update account'));
+});
+
 for (const role of ['facilitator', 'client']) {
   await check(`Editing a ${role} preserves its role and exposes all five choices`, async () => {
     const app = fixture(1, 'superadmin', role);
