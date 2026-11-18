@@ -236,9 +236,54 @@ class ProfileDialog(Dialog):
 
 
 # ---- administration ----------------------------------------------------------------------
+class ChangeRoleDialog(Dialog):
+    """A small modal window to select a role for an account."""
+
+    ROLE_OPTIONS = (
+        ('admin', 'Administrator', 'Can review reports, manage all accounts, and change settings.'),
+        ('facilitator', 'Facilitator', 'Can lead courses and prepare or review evaluation reports.'),
+        ('client', 'Client', 'Can view finalized reports, dashboards, and client insights.'),
+        ('member', 'Member', 'Standard team member. Can create and prepare evaluation drafts.')
+    )
+
+    def __init__(self, parent, user, on_save):
+        username = user['username']
+        current = user['role']
+        display = user['display_name'] or username
+        super().__init__(parent, f'Change role — {username}', f'Role for {display}',
+                         'Select an account role and permissions level.', wrap=400)
+        self.on_save = on_save
+        self.username = username
+        self.selected_role = tk.StringVar(self.window, value=current)
+
+        frame = tk.Frame(self.card, bg=WHITE)
+        frame.pack(fill='x', pady=(6, 12))
+
+        for code, name, desc in self.ROLE_OPTIONS:
+            item_frame = tk.Frame(frame, bg=WHITE)
+            item_frame.pack(fill='x', pady=4)
+            rb = tk.Radiobutton(item_frame, text=name, variable=self.selected_role, value=code,
+                                font=(FONT, 10, 'bold'), bg=WHITE, fg=INK, activebackground=WHITE,
+                                selectcolor=WHITE, highlightthickness=0)
+            rb.pack(anchor='w')
+            tk.Label(item_frame, text=desc, font=(FONT, 9), bg=WHITE, fg=MUTED,
+                     wraplength=360, justify='left').pack(anchor='w', padx=(24, 0))
+
+        btn_row = tk.Frame(self.card, bg=WHITE)
+        btn_row.pack(fill='x', pady=(8, 0))
+        self.button(btn_row, 'Save role', self.submit, primary=True).pack(side='right', padx=(6, 0))
+        self.button(btn_row, 'Cancel', self.close, primary=False).pack(side='right')
+        self.status_line()
+
+    def submit(self):
+        new_role = self.selected_role.get()
+        self.close()
+        self.on_save(self.username, new_role)
+
+
 class AccountsDialog(Dialog):
     COLUMNS = (('username', 'Username', 120), ('display_name', 'Name', 150), ('email', 'Email', 200),
-               ('role', 'Role', 70), ('state', 'Status', 170))
+               ('role', 'Role', 90), ('state', 'Status', 170))
 
     def __init__(self, parent):
         super().__init__(parent, 'Manage accounts', 'Manage accounts',
@@ -255,7 +300,7 @@ class AccountsDialog(Dialog):
         row.pack(fill='x', pady=(10, 0))
         self.actions = {}
         for key, text, command in [('approve', 'Approve', self.approve), ('reject', 'Reject request', self.reject),
-                                   ('role', 'Make admin', self.toggle_role), ('active', 'Disable', self.toggle_active),
+                                   ('role', 'Change role…', self.change_role), ('active', 'Disable', self.toggle_active),
                                    ('password', 'Reset password', self.reset_password)]:
             button = self.button(row, text, command, primary=key == 'approve')
             button.pack(side='left', padx=(0, 6))
@@ -299,8 +344,7 @@ class AccountsDialog(Dialog):
         pending = not user['approved']
         self.actions['approve'].configure(state='normal' if pending else 'disabled')
         self.actions['reject'].configure(state='normal' if pending else 'disabled')
-        self.actions['role'].configure(text='Make member' if user['role'] == 'admin' else 'Make admin',
-                                       state='disabled' if pending else 'normal')
+        self.actions['role'].configure(text='Change role…', state='disabled' if pending else 'normal')
         self.actions['active'].configure(text='Disable' if user['active'] else 'Enable',
                                          state='disabled' if pending else 'normal')
 
@@ -317,6 +361,16 @@ class AccountsDialog(Dialog):
         if name and messagebox.askyesno('Reject request', f'Reject and remove the account request from “{name}”?',
                                         parent=self.window):
             self.act(remote.reject_user, 'Request from {} rejected.')
+
+    def change_role(self, role=None):
+        user = self.users.get(self.selected_name())
+        if not user:
+            return
+        if role is not None:
+            self.act(lambda name: remote.set_user_role(name, role), '{} is now ' + role + '.')
+            return
+        ChangeRoleDialog(self.window, user, on_save=lambda name, new_role: self.act(
+            lambda n: remote.set_user_role(n, new_role), '{} is now ' + new_role + '.'))
 
     def toggle_role(self):
         user = self.users.get(self.selected_name())
