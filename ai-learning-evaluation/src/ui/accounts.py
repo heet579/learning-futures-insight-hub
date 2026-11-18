@@ -107,15 +107,21 @@ class Dialog:
         if self.busy:
             return
         self.busy = True
+        self.busy_changed()
         self.say(waiting, ok=True)
 
         def finish(result, error):
             self.busy = False
+            self.busy_changed()
             if error is not None:
                 self.say(error_text(error))
             else:
                 done(result)
         run_in_background(self.window, work, finish)
+
+    def busy_changed(self):
+        """Allow account controls to reflect requests that are still running."""
+        pass
 
     def close(self):
         self.window.destroy()
@@ -266,8 +272,17 @@ class UserEditorDialog(Dialog):
         row.pack(fill='x', pady=(6, 0))
         self.save_button = self.button(row, 'Save changes' if user else 'Create user', self.submit)
         self.save_button.pack(side='left')
-        self.button(row, 'Cancel', self.close, primary=False).pack(side='left', padx=(8, 0))
+        self.cancel_button = self.button(row, 'Cancel', self.close, primary=False)
+        self.cancel_button.pack(side='left', padx=(8, 0))
         self.status_line()
+
+    def busy_changed(self):
+        for button in (self.save_button, self.cancel_button):
+            button.configure(state='disabled' if self.busy else 'normal')
+
+    def close(self):
+        if not self.busy:
+            super().close()
 
     def submit(self):
         if self.busy:
