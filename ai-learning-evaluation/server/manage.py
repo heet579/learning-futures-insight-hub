@@ -4,6 +4,7 @@ Point DATABASE_URL at the Neon database (in .env or the shell), then:
     python -m server.manage create-user lisa --role admin
     python -m server.manage create-user heet
     python -m server.manage create-user gopi --password gop123
+    python -m server.manage set-role heet --role facilitator
     python -m server.manage create-user heet --role admin --replace   # reset a password
     python -m server.manage list-users
     python -m server.manage approve-user gopi          # approve a sign-up request
@@ -34,6 +35,9 @@ def main(argv=None):
     create.add_argument('--role', choices=ROLES, default='member')
     create.add_argument('--replace', action='store_true', help='Change the password/role of an existing account')
     create.add_argument('--password', help='Password without prompting (it stays in your shell history)')
+    set_role = sub.add_parser('set-role', help='Change the role of an existing account')
+    set_role.add_argument('username')
+    set_role.add_argument('--role', choices=ROLES, required=True, help='New role for the user')
     sub.add_parser('list-users')
     sub.add_parser('check', help='Connect, create tables if needed and verify the audit chain')
     for name in ('disable-user', 'enable-user', 'approve-user'):
@@ -57,7 +61,10 @@ def main(argv=None):
         elif args.command == 'list-users':
             for row in users.list():
                 status = 'waiting for approval' if not row['approved'] else 'active' if row['active'] else 'disabled'
-                print(f"{row['username']:<20} {row['role']:<7} {status:<21} {row['email']}")
+                print(f"{row['username']:<20} {row['role']:<12} {status:<21} {row['email']}")
+        elif args.command == 'set-role':
+            users.set_role(args.username, args.role)
+            print(f'Account {args.username} role changed to {args.role}.')
         elif args.command == 'approve-user':
             users.approve(args.username)
             print(f'Account {args.username} approved.')

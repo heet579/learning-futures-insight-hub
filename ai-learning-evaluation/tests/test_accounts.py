@@ -71,8 +71,15 @@ def test_profile_email_and_password_changes(api, admin):
     # Admin password reset, role change and self-protection.
     assert api.post('/users/gopi/password', headers=admin, json={'new_password': 'reset-pass-9'}).status_code == 200
     sign_in(api, 'gopi', 'reset-pass-9')
+    assert api.post('/users/gopi/role', headers=admin, json={'role': 'facilitator'}).status_code == 200
+    assert api.post('/users/gopi/role', headers=admin, json={'role': 'client'}).status_code == 200
     assert api.post('/users/gopi/role', headers=admin, json={'role': 'admin'}).status_code == 200
+    assert api.post('/users/gopi/role', headers=admin, json={'role': 'member'}).status_code == 200
+    # Lisa cannot demote herself to any non-admin role:
     assert api.post('/users/lisa/role', headers=admin, json={'role': 'member'}).status_code == 400
+    assert api.post('/users/lisa/role', headers=admin, json={'role': 'facilitator'}).status_code == 400
+    assert api.post('/users/lisa/role', headers=admin, json={'role': 'client'}).status_code == 400
+    assert api.post('/users/gopi/role', headers=admin, json={'role': 'invalid-role'}).status_code == 422
     assert api.post('/users/lisa/active?active=false', headers=admin).status_code == 400
 
 
@@ -236,3 +243,121 @@ def test_desktop_sign_up_profile_and_admin_windows(live_server, tk_runtime, monk
     assert live_server.users.get('esrat')['display_name'] == 'Esrat Jahan'
     assert live_server.users.authenticate('esrat', 'esrat-new-pass') is not None
     remote.logout()
+
+
+def test_admin_can_select_and_change_user_roles(api, admin):
+    """Admin can configure accounts across member, admin, facilitator, client roles."""
+    from src.storage.database import ROLES
+
+    # Verify config exposes user_roles
+    cfg = api.get('/api/config').json()
+    assert 'user_roles' in cfg
+    assert set(cfg['user_roles']) == {'member', 'admin', 'facilitator', 'client'}
+
+    # Admin creates accounts with distinct roles
+    res_fac = api.post('/users', headers=admin, json={'username': 'fiona', 'password': 'fiona-pass-1',
+                                                      'role': 'facilitator', 'display_name': 'Fiona Lead'})
+    assert res_fac.status_code == 200 and res_fac.json()['role'] == 'facilitator'
+
+    res_cli = api.post('/users', headers=admin, json={'username': 'claire', 'password': 'claire-pass-1',
+                                                      'role': 'client', 'display_name': 'Claire Stakeholder'})
+    assert res_cli.status_code == 200 and res_cli.json()['role'] == 'client'
+
+    # Non-admin cannot create users or change roles
+    fiona = sign_in(api, 'fiona', 'fiona-pass-1')
+    assert api.get('/auth/me', headers=fiona).json()['role'] == 'facilitator'
+    assert api.post('/users', headers=fiona, json={'username': 'x', 'password': 'x-pass-1', 'role': 'member'}).status_code == 403
+    assert api.post('/users/claire/role', headers=fiona, json={'role': 'admin'}).status_code == 403
+
+    # Admin changes roles dynamically
+    # 1. Fiona facilitator -> client
+    ch1 = api.post('/users/fiona/role', headers=admin, json={'role': 'client'})
+    assert ch1.status_code == 200 and ch1.json()['role'] == 'client'
+    fiona_new = sign_in(api, 'fiona', 'fiona-pass-1')
+    assert api.get('/auth/me', headers=fiona_new).json()['role'] == 'client'
+
+    # 2. Claire client -> facilitator -> member -> admin
+    for r in ROLES:
+        ch = api.post('/users/claire/role', headers=admin, json={'role': r})
+        assert ch.status_code == 200 and ch.json()['role'] == r
+
+    # Demoting another admin is permitted
+    demote = api.post('/users/claire/role', headers=admin, json={'role': 'facilitator'})
+    assert demote.status_code == 200 and demote.json()['role'] == 'facilitator'
+
+
+def test_manage_cli_set_role(tmp_path, monkeypatch, capsys):
+    """The set-role CLI command changes account roles and lists them accurately."""
+    from server import manage
+    from src.storage.database import Database, UserStore
+
+    db_file = tmp_path / 'test_manage.sqlite3'
+    db_url = str(db_file)
+    monkeypatch.setenv('DATABASE_URL', db_url)
+    monkeypatch.delenv('DATABASE_URL_UNPOOLED', raising=False)
+
+    store = UserStore(Database(db_url))
+    store.create('sarah', 'sarah-pass-1', role='member')
+    assert db_file.is_file()
+
+    # Change role to facilitator
+    manage.main(['set-role', 'sarah', '--role', 'facilitator'])
+    assert store.get('sarah')['role'] == 'facilitator'
+    out = capsys.readouterr().out
+    assert 'Account sarah role changed to facilitator.' in out
+
+    # Change role to client
+    manage.main(['set-role', 'sarah', '--role', 'client'])
+    assert store.get('sarah')['role'] == 'client'
+
+    # List users formatting
+    manage.main(['list-users'])
+    list_out = capsys.readouterr().out
+    assert 'sarah' in list_out and 'client' in list_out
+
+
+def test_change_role_dialog(tk_runtime):
+    """ChangeRoleDialog allows modal role selection and callback submission."""
+    from src.ui.accounts import ChangeRoleDialog
+    saved = []
+    user = {'username': 'testuser', 'display_name': 'Test User', 'role': 'member'}
+    dialog = ChangeRoleDialog(tk_runtime, user, on_save=lambda u, r: saved.append((u, r)))
+    assert dialog.selected_role.get() == 'member'
+    dialog.selected_role.set('facilitator')
+    dialog.submit()
+    assert saved == [('testuser', 'facilitator')]
+
+
+def test_accounts_dialog_change_role(tk_runtime, monkeypatch):
+    """AccountsDialog change_role updates user role through remote client."""
+    from src.ui.accounts import AccountsDialog
+    from src import remote
+
+    calls = []
+    fake_users = [
+        {'username': 'sam', 'display_name': 'Sam Admin', 'email': 'sam@example.com', 'role': 'admin', 'approved': 1, 'active': 1},
+        {'username': 'alex', 'display_name': 'Alex Member', 'email': 'alex@example.com', 'role': 'member', 'approved': 1, 'active': 1}
+    ]
+
+    monkeypatch.setattr(remote, 'list_users', lambda: fake_users)
+    monkeypatch.setattr(remote, 'set_user_role', lambda name, role: calls.append((name, role)))
+
+    root = tk.Toplevel(tk_runtime)
+    accounts = AccountsDialog(root)
+    wait_for(root, lambda: 'alex' in accounts.users)
+
+    accounts.tree.selection_set('alex')
+    accounts.sync()
+    accounts.change_role('facilitator')
+    wait_for(root, lambda: ('alex', 'facilitator') in calls)
+    wait_for(root, lambda: not accounts.busy)
+
+    accounts.change_role('client')
+    wait_for(root, lambda: ('alex', 'client') in calls)
+    wait_for(root, lambda: not accounts.busy)
+
+    accounts.close()
+    root.destroy()
+
+
+

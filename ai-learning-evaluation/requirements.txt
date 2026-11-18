@@ -11,3 +11,4 @@ pypdf>=5,<7
 openai>=1.40,<3
 anthropic>=0.40,<2
 pytest>=8,<9
+pypdf>=4,<7

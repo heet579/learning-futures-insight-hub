@@ -26,6 +26,12 @@ const STATUS = {
   'AWAITING HUMAN REVIEW': ['Waiting for review', 'waiting'], 'HUMAN REVIEWED': ['Approved', 'approved'],
 };
 const pill = (status) => { const [text, cls] = STATUS[status] || [status, 'draft']; return `<span class="pill ${cls}">${esc(text)}</span>`; };
+const ROLE_LABELS = {
+  admin: 'Administrator',
+  facilitator: 'Facilitator',
+  client: 'Client',
+  member: 'Member',
+};
 
 function toast(message, bad = false) {
   const el = document.createElement('div');
@@ -210,7 +216,7 @@ function toggleMenu() {
   if (open) { open.remove(); $('#me')?.setAttribute('aria-expanded', 'false'); return; }
   const menu = document.createElement('div');
   menu.className = 'menu';
-  menu.innerHTML = `<div class="who"><b>${esc(S.user.display_name || S.user.username)}</b><div class="faint">${esc(S.user.username)} · ${S.user.role === 'admin' ? 'Administrator' : 'Member'}</div></div>
+  menu.innerHTML = `<div class="who"><b>${esc(S.user.display_name || S.user.username)}</b><div class="faint">${esc(S.user.username)} · ${esc(ROLE_LABELS[S.user.role] || S.user.role)}</div></div>
     <a href="#/profile">Profile and password</a>
     ${S.user.role === 'admin' ? '<a href="#/accounts">Manage accounts</a>' : ''}
     <button id="signout">Sign out</button>`;
@@ -894,9 +900,14 @@ function sendStep(el, ws) {
       return;
     }
     const option = (p) => `<option value="${esc(p.username)}">${person(p.display_name, p.username)}</option>`;
-    const admins = list.filter((p) => p.role === 'admin'), members = list.filter((p) => p.role !== 'admin');
-    select.innerHTML = admins.length && members.length
-      ? `<optgroup label="Administrators">${admins.map(option).join('')}</optgroup><optgroup label="Team members">${members.map(option).join('')}</optgroup>`
+    const groups = [
+      ['Administrators', list.filter((p) => p.role === 'admin')],
+      ['Facilitators', list.filter((p) => p.role === 'facilitator')],
+      ['Clients', list.filter((p) => p.role === 'client')],
+      ['Team members', list.filter((p) => p.role === 'member' || (!['admin', 'facilitator', 'client'].includes(p.role)))],
+    ].filter(([, members]) => members.length > 0);
+    select.innerHTML = groups.length > 1
+      ? groups.map(([label, members]) => `<optgroup label="${label}">${members.map(option).join('')}</optgroup>`).join('')
       : list.map(option).join('');
     select.disabled = false;
     $('#submit').disabled = !(ready && ws.can_edit);
@@ -1060,6 +1071,7 @@ async function accountsView() {
   shell('accounts', '<div class="loading"><div class="spinner"></div>Loading accounts…</div>');
   let users;
   try { users = await api('/users'); } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
+  const userRoles = (S.config?.user_roles && S.config.user_roles.length) ? S.config.user_roles : ['admin', 'facilitator', 'client', 'member'];
   const waiting = users.filter((u) => !u.approved);
   const state = (u) => !u.approved ? '<span class="pill waiting">Waiting for approval</span>' : u.active ? '<span class="pill approved">Active</span>' : '<span class="pill draft">Disabled</span>';
   const me = S.user.username;
@@ -1067,13 +1079,31 @@ async function accountsView() {
     <div class="hello"><h1>Accounts</h1><p>${waiting.length ? `${waiting.length} ${waiting.length === 1 ? 'person is' : 'people are'} waiting for approval.` : 'Approve new people, change roles and reset passwords. Nobody, including you, can see passwords.'}</p></div>
     <div class="table-wrap" style="max-height:none"><table><thead><tr><th>Person</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>
     ${users.map((u) => `<tr><td><b>${esc(u.display_name || u.username)}</b><div class="faint">${esc(u.username)}${u.google ? ' · Google connected' : ''}</div></td>
-      <td>${esc(u.email || '—')}</td><td>${u.role === 'admin' ? 'Administrator' : 'Member'}</td><td>${state(u)}</td>
+      <td>${esc(u.email || '—')}</td>
+      <td>${!u.approved || u.username === me
+        ? `<span>${esc(ROLE_LABELS[u.role] || u.role)}</span>${u.username === me ? ' <small class="faint">(you)</small>' : ''}`
+        : `<select class="input input-sm role-select" data-user="${esc(u.username)}" data-current="${esc(u.role)}" aria-label="Role for ${esc(u.username)}">
+            ${userRoles.map((r) => `<option value="${r}" ${u.role === r ? 'selected' : ''}>${esc(ROLE_LABELS[r] || r)}</option>`).join('')}
+          </select>`}</td>
+      <td>${state(u)}</td>
       <td><div class="actions">${!u.approved
         ? `<button class="btn btn-good btn-sm" data-act="approve" data-user="${esc(u.username)}">Approve</button><button class="btn btn-bad btn-sm" data-act="reject" data-user="${esc(u.username)}">Reject</button>`
-        : `${u.username !== me ? `<button class="btn btn-ghost btn-sm" data-act="role" data-user="${esc(u.username)}" data-role="${u.role}">${u.role === 'admin' ? 'Make member' : 'Make administrator'}</button>
+        : `${u.username !== me ? `<button class="btn btn-ghost btn-sm" data-act="role" data-user="${esc(u.username)}" data-role="${u.role}">Change role</button>
            <button class="btn btn-ghost btn-sm" data-act="active" data-user="${esc(u.username)}" data-active="${u.active}">${u.active ? 'Disable' : 'Enable'}</button>` : ''}
            <button class="btn btn-quiet btn-sm" data-act="password" data-user="${esc(u.username)}">Reset password</button>`}</div></td></tr>`).join('')}
     </tbody></table></div></div>`;
+  $$('.role-select').forEach((sel) => sel.onchange = async () => {
+    const user = encodeURIComponent(sel.dataset.user);
+    const newRole = sel.value;
+    try {
+      await api(`/users/${user}/role`, { method: 'POST', body: { role: newRole } });
+      toast(`${sel.dataset.user} is now ${ROLE_LABELS[newRole] || newRole}`);
+      accountsView();
+    } catch (error) {
+      toast(error.message, true);
+      sel.value = sel.dataset.current;
+    }
+  });
   $$('[data-act]').forEach((b) => b.onclick = async () => {
     const user = encodeURIComponent(b.dataset.user);
     const act = b.dataset.act;
@@ -1083,7 +1113,20 @@ async function accountsView() {
       if (!await dialog({ title: 'Reject this request?', body: `The account request from ${esc(b.dataset.user)} will be removed.`, confirm: 'Reject', danger: true })) return;
       call = () => api(`/users/${user}/reject`, { method: 'POST' }); message = 'Request rejected';
     }
-    if (act === 'role') { const role = b.dataset.role === 'admin' ? 'member' : 'admin'; call = () => api(`/users/${user}/role`, { method: 'POST', body: { role } }); message = `${b.dataset.user} is now ${role === 'admin' ? 'an administrator' : 'a member'}`; }
+    if (act === 'role') {
+      const currentRole = b.dataset.role;
+      const r = await dialog({
+        title: `Change role for ${esc(b.dataset.user)}`,
+        body: 'Select the role and access level for this user.',
+        confirm: 'Change role',
+        fields: `<label class="field"><span>Role</span><select class="input" name="role">
+          ${userRoles.map((k) => `<option value="${k}" ${k === currentRole ? 'selected' : ''}>${esc(ROLE_LABELS[k] || k)}</option>`).join('')}
+        </select></label>`
+      });
+      if (!r || r.role === currentRole) return;
+      call = () => api(`/users/${user}/role`, { method: 'POST', body: { role: r.role } });
+      message = `${b.dataset.user} is now ${ROLE_LABELS[r.role] || r.role}`;
+    }
     if (act === 'active') { const active = b.dataset.active !== 'true'; call = () => api(`/users/${user}/active?active=${active}`, { method: 'POST' }); message = `${b.dataset.user} ${active ? 'enabled' : 'disabled'}`; }
     if (act === 'password') {
       const r = await dialog({ title: `Reset password for ${esc(b.dataset.user)}`, body: 'Tell them the new password; they can change it in their profile.', confirm: 'Reset password',
@@ -1101,7 +1144,7 @@ async function profileView() {
   let me;
   try { me = await api('/auth/me'); } catch (error) { $('#main').innerHTML = `<div class="page"><div class="notice bad">${esc(error.message)}</div></div>`; return; }
   $('#main').innerHTML = `<div class="page narrow">
-    <div class="hello"><h1>Your profile</h1><p>Signed in as ${esc(me.username)}${me.role === 'admin' ? ', administrator' : ''}.</p></div>
+    <div class="hello"><h1>Your profile</h1><p>Signed in as ${esc(me.username)}${me.role ? `, ${esc((ROLE_LABELS[me.role] || me.role).toLowerCase())}` : ''}.</p></div>
     <form id="details"><h2 style="margin-bottom:16px">Details</h2>
       <label class="field"><span>Full name</span><input class="input" name="display_name" value="${esc(me.display_name)}" maxlength="80"></label>
       <label class="field"><span>Email</span><input class="input" name="email" type="email" value="${esc(me.email)}"></label>

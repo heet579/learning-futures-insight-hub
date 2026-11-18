@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from src.storage.database import (NO_PASSWORD, Database, DatabaseAuditTrail, DatabaseReportRepository,
-                                  UserStore, password_matches)
+                                  ROLES, UserStore, password_matches)
 from server.security import issue_token, read_token
 
 log = logging.getLogger('insight_hub.server')
@@ -238,10 +238,12 @@ def create_app(database_url=None):
         return profile(services.users.get(user['username']))
 
     # ---- administration ------------------------------------------------------------------
+    RoleType = Literal['member', 'admin', 'facilitator', 'client']
+
     class NewUser(BaseModel):
         username: str = Field(max_length=64)
         password: str = Field(max_length=1024)
-        role: Literal['member', 'admin'] = 'member'
+        role: RoleType = 'member'
         replace: bool = False
         email: str = Field(default='', max_length=254)
         display_name: str = Field(default='', max_length=80)
@@ -282,7 +284,7 @@ def create_app(database_url=None):
         return {'username': username, 'active': active}
 
     class RoleChange(BaseModel):
-        role: Literal['member', 'admin']
+        role: RoleType
 
     @app.post('/users/{username}/role')
     def set_role(username: str, body: RoleChange, admin=Depends(admin_user)):
